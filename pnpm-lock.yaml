@@ -209,9 +209,41 @@ importers:
 
   apps/cli:
     dependencies:
+      '@plantar/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@plantar/ssh':
+        specifier: workspace:*
+        version: link:../../packages/ssh
       commander:
         specifier: ^12.1.0
         version: 12.1.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
+      tsx:
+        specifier: ^4.19.0
+        version: 4.22.4
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
+  packages/core:
+    dependencies:
+      '@plantar/ssh':
+        specifier: workspace:*
+        version: link:../ssh
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.0
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
+  packages/ssh:
+    dependencies:
       ssh2:
         specifier: ^1.15.0
         version: 1.17.0
@@ -222,9 +254,6 @@ importers:
       '@types/ssh2':
         specifier: ^1.15.0
         version: 1.15.5
-      tsx:
-        specifier: ^4.19.0
-        version: 4.22.4
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
