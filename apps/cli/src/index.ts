@@ -8,6 +8,12 @@ import {
   getSiteLogs,
   setupServer,
 } from "@plantar/core";
+import {
+  DeployLogWriter,
+  appendHistory,
+  readHistory,
+  saveServerLogSnapshot,
+} from "@plantar/storage";
 
 interface ConnectionOpts {
   host: string;
@@ -109,9 +115,40 @@ withConnectionOptions(program.command("deploy"))
     const config = loadProjectConfig(projectDir);
     console.log(`Проект «${config.name}» (${projectDir})`);
 
+    const logWriter = new DeployLogWriter(config.name);
+    const log = (line: string) => {
+      console.log(line);
+      logWriter.write(line);
+    };
+    const startedAt = new Date().toISOString();
+
     const conn = await connect(opts);
     try {
-      await deployProject(conn, projectDir, config, (line) => console.log(line));
+      const result = await deployProject(conn, projectDir, config, log);
+      appendHistory({
+        project: config.name,
+        host: opts.host,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        status: "success",
+        url: result.url,
+        logFile: logWriter.file,
+      });
+      console.log(`\nЛог деплоя: ${logWriter.file}`);
+    } catch (err) {
+      const message = (err as Error).message;
+      logWriter.write(`\nОШИБКА: ${message}`);
+      appendHistory({
+        project: config.name,
+        host: opts.host,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        status: "error",
+        error: message,
+        logFile: logWriter.file,
+      });
+      console.error(`\nЛог деплоя: ${logWriter.file}`);
+      throw err;
     } finally {
       conn.close();
       console.log("\nОтключено.");
@@ -131,9 +168,33 @@ withConnectionOptions(program.command("logs"))
       console.log(logs.access || "(пусто)");
       console.log(`\n=== error (${config.name}) ===`);
       console.log(logs.error || "(пусто)");
+
+      const accessFile = saveServerLogSnapshot(config.name, "access", logs.access);
+      saveServerLogSnapshot(config.name, "error", logs.error);
+      console.log(`\nСнапшоты сохранены локально: ${path.dirname(accessFile)}`);
     } finally {
       conn.close();
       console.log("\nОтключено.");
+    }
+  });
+
+program
+  .command("history")
+  .description("история деплоев (локальная, без подключения к серверу)")
+  .option("--project <name>", "фильтр по имени проекта")
+  .action((opts: { project?: string }) => {
+    const history = readHistory().filter(
+      (r) => !opts.project || r.project === opts.project,
+    );
+    if (history.length === 0) {
+      console.log("История пуста.");
+      return;
+    }
+    for (const r of history) {
+      const when = r.startedAt.replace("T", " ").slice(0, 19);
+      const outcome = r.status === "success" ? `✓ ${r.url ?? ""}` : `✗ ${r.error?.split("\n")[0] ?? ""}`;
+      console.log(`${when}  ${r.project} → ${r.host}  ${outcome}`);
+      console.log(`  лог: ${r.logFile}`);
     }
   });
 
