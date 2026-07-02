@@ -64,3 +64,78 @@ export async function getServerInfo(conn: SshConnection): Promise<ServerInfo> {
     tools,
   };
 }
+
+export interface SetupStepResult {
+  tool: string;
+  status: "present" | "installed";
+  version: string | null;
+}
+
+const INSTALL_COMMANDS: Record<string, string[]> = {
+  node: [
+    "curl -fsSL https://deb.nodesource.com/setup_22.x | bash -",
+    "DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs",
+  ],
+  pnpm: ["npm install -g pnpm"],
+  pm2: ["npm install -g pm2"],
+  nginx: ["DEBIAN_FRONTEND=noninteractive apt-get install -y nginx"],
+  certbot: [
+    "DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx",
+  ],
+};
+
+async function run(
+  conn: SshConnection,
+  command: string,
+  log: (line: string) => void,
+): Promise<void> {
+  log(`$ ${command}`);
+  const result = await conn.exec(command);
+  if (result.code !== 0) {
+    throw new Error(
+      `Команда завершилась с кодом ${result.code}: ${command}\n${result.stderr.slice(-2000)}`,
+    );
+  }
+}
+
+export async function setupServer(
+  conn: SshConnection,
+  log: (line: string) => void = () => {},
+): Promise<SetupStepResult[]> {
+  log("Проверяю сервер…");
+  const info = await getServerInfo(conn);
+  if (!info.supported) {
+    throw new Error(
+      `ОС «${info.os.pretty}» не поддерживается. Нужна Ubuntu ${SUPPORTED_UBUNTU_VERSIONS.join(" или ")}.`,
+    );
+  }
+
+  const results: SetupStepResult[] = [];
+  let aptUpdated = false;
+
+  for (const [tool, installCommands] of Object.entries(INSTALL_COMMANDS)) {
+    if (info.tools[tool] !== null) {
+      log(`✓ ${tool} уже установлен (${info.tools[tool]})`);
+      results.push({ tool, status: "present", version: info.tools[tool] });
+      continue;
+    }
+
+    log(`→ Устанавливаю ${tool}…`);
+    if (!aptUpdated) {
+      await run(conn, "apt-get update", log);
+      aptUpdated = true;
+    }
+    for (const command of installCommands) {
+      await run(conn, command, log);
+    }
+
+    const version = await conn.exec(TOOL_VERSION_COMMANDS[tool]);
+    if (version.code !== 0) {
+      throw new Error(`${tool}: установка прошла, но инструмент не найден в PATH.`);
+    }
+    log(`✓ ${tool} установлен (${version.stdout.trim()})`);
+    results.push({ tool, status: "installed", version: version.stdout.trim() });
+  }
+
+  return results;
+}

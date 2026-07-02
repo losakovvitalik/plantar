@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { SshConnection } from "@plantar/ssh";
-import { getServerInfo } from "@plantar/core";
+import { getServerInfo, setupServer } from "@plantar/core";
 
 interface ConnectionOpts {
   host: string;
@@ -72,6 +72,22 @@ withConnectionOptions(program.command("info"))
       for (const [tool, version] of Object.entries(info.tools)) {
         console.log(`  ${tool.padEnd(8)} ${version ?? "не установлен"}`);
       }
+    } finally {
+      conn.close();
+      console.log("\nОтключено.");
+    }
+  });
+
+withConnectionOptions(program.command("setup"))
+  .description("установить Node.js, pnpm, pm2, nginx и certbot")
+  .action(async (opts: ConnectionOpts) => {
+    const conn = await connect(opts);
+    try {
+      const results = await setupServer(conn, (line) => console.log(line));
+      const installed = results.filter((r) => r.status === "installed");
+      console.log(
+        `\nГотово: установлено ${installed.length}, уже было ${results.length - installed.length}.`,
+      );
     } finally {
       conn.close();
       console.log("\nОтключено.");
