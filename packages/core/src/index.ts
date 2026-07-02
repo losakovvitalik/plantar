@@ -1,4 +1,8 @@
+import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type { SshConnection } from "@plantar/ssh";
+import type { ProjectConfig } from "@plantar/config";
 
 export interface ServerInfo {
   os: {
@@ -138,4 +142,119 @@ export async function setupServer(
   }
 
   return results;
+}
+
+export interface DeployResult {
+  target: string;
+  fileCount: number;
+  url: string;
+}
+
+async function configureNginx(
+  conn: SshConnection,
+  config: ProjectConfig,
+  log: (line: string) => void,
+): Promise<void> {
+  // Без домена сайт становится default_server — отвечает по IP.
+  const listen = config.domain ? "80" : "80 default_server";
+  const serverName = config.domain ?? "_";
+  const confPath = `/etc/nginx/sites-available/${config.name}.conf`;
+
+  const conf = `server {
+    listen ${listen};
+    server_name ${serverName};
+
+    root /var/www/${config.name};
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}`;
+
+  log(`→ Настраиваю nginx (${confPath})…`);
+  await run(conn, `cat > '${confPath}' <<'PLANTAR_EOF'\n${conf}\nPLANTAR_EOF`, log);
+
+  if (!config.domain) {
+    // Стандартный сайт-заглушка nginx тоже default_server — убираем, чтобы не конфликтовал
+    await run(conn, "rm -f /etc/nginx/sites-enabled/default", log);
+  }
+  await run(
+    conn,
+    `ln -sf '../sites-available/${config.name}.conf' '/etc/nginx/sites-enabled/${config.name}.conf'`,
+    log,
+  );
+
+  const check = await conn.exec("nginx -t");
+  if (check.code !== 0) {
+    throw new Error(`Конфигурация nginx не прошла проверку:\n${check.stderr}`);
+  }
+  await run(conn, "systemctl reload nginx", log);
+  log("✓ nginx настроен и перезагружен");
+}
+
+async function setupSsl(
+  conn: SshConnection,
+  domain: string,
+  log: (line: string) => void,
+): Promise<void> {
+  log(`→ Настраиваю HTTPS для ${domain}…`);
+  // --keep-until-expiring: при повторном деплое сертификат не перевыпускается.
+  // certbot сам дописывает SSL-блок в наш nginx-конфиг и настраивает редирект с http.
+  await run(
+    conn,
+    `certbot --nginx -d '${domain}' --non-interactive --agree-tos --register-unsafely-without-email --redirect --keep-until-expiring`,
+    log,
+  );
+  log(`✓ HTTPS настроен, сертификат будет продлеваться автоматически`);
+}
+
+export async function deployProject(
+  conn: SshConnection,
+  projectDir: string,
+  config: ProjectConfig,
+  log: (line: string) => void = () => {},
+): Promise<DeployResult> {
+  log(`→ Собираю проект: ${config.buildCommand}`);
+  try {
+    execSync(config.buildCommand, { cwd: projectDir, stdio: "pipe" });
+  } catch (err) {
+    const e = err as { stdout?: Buffer; stderr?: Buffer };
+    const output = [e.stdout, e.stderr]
+      .filter(Boolean)
+      .map(String)
+      .join("\n")
+      .slice(-3000);
+    throw new Error(`Сборка не удалась (${config.buildCommand}):\n${output}`);
+  }
+
+  const localDist = path.join(projectDir, config.buildDir);
+  if (!existsSync(localDist)) {
+    throw new Error(
+      `После сборки не найдена папка «${config.buildDir}» в ${projectDir}. Проверь buildDir в plantar.json.`,
+    );
+  }
+
+  const target = `/var/www/${config.name}`;
+  const staging = `/var/www/.${config.name}.uploading`;
+
+  await run(conn, `rm -rf '${staging}'`, log);
+  log(`→ Загружаю файлы…`);
+  const fileCount = await conn.uploadDirectory(localDist, staging, (file) =>
+    log(`  ↑ ${file}`),
+  );
+  await run(conn, `rm -rf '${target}' && mv '${staging}' '${target}'`, log);
+  log(`✓ Задеплоено файлов: ${fileCount} → ${target}`);
+
+  await configureNginx(conn, config, log);
+
+  let url: string;
+  if (config.domain) {
+    await setupSsl(conn, config.domain, log);
+    url = `https://${config.domain}/`;
+  } else {
+    url = `http://${conn.host}/`;
+  }
+  log(`✓ Сайт доступен: ${url}`);
+  return { target, fileCount, url };
 }

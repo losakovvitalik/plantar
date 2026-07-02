@@ -1,6 +1,8 @@
+import path from "node:path";
 import { Command } from "commander";
 import { SshConnection } from "@plantar/ssh";
-import { getServerInfo, setupServer } from "@plantar/core";
+import { loadProjectConfig } from "@plantar/config";
+import { deployProject, getServerInfo, setupServer } from "@plantar/core";
 
 interface ConnectionOpts {
   host: string;
@@ -88,6 +90,23 @@ withConnectionOptions(program.command("setup"))
       console.log(
         `\nГотово: установлено ${installed.length}, уже было ${results.length - installed.length}.`,
       );
+    } finally {
+      conn.close();
+      console.log("\nОтключено.");
+    }
+  });
+
+withConnectionOptions(program.command("deploy"))
+  .description("собрать проект и загрузить на сервер")
+  .option("--project <dir>", "папка проекта с plantar.json", ".")
+  .action(async (opts: ConnectionOpts & { project: string }) => {
+    const projectDir = path.resolve(opts.project);
+    const config = loadProjectConfig(projectDir);
+    console.log(`Проект «${config.name}» (${projectDir})`);
+
+    const conn = await connect(opts);
+    try {
+      await deployProject(conn, projectDir, config, (line) => console.log(line));
     } finally {
       conn.close();
       console.log("\nОтключено.");

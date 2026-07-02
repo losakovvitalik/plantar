@@ -1,5 +1,5 @@
 {
-  "name": "@plantar/core",
+  "name": "@plantar/config",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,8 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@plantar/config": "workspace:*",
-    "@plantar/ssh": "workspace:*"
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
