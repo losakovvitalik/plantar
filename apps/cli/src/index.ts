@@ -2,7 +2,12 @@ import path from "node:path";
 import { Command } from "commander";
 import { SshConnection } from "@plantar/ssh";
 import { loadProjectConfig } from "@plantar/config";
-import { deployProject, getServerInfo, setupServer } from "@plantar/core";
+import {
+  deployProject,
+  getServerInfo,
+  getSiteLogs,
+  setupServer,
+} from "@plantar/core";
 
 interface ConnectionOpts {
   host: string;
@@ -107,6 +112,25 @@ withConnectionOptions(program.command("deploy"))
     const conn = await connect(opts);
     try {
       await deployProject(conn, projectDir, config, (line) => console.log(line));
+    } finally {
+      conn.close();
+      console.log("\nОтключено.");
+    }
+  });
+
+withConnectionOptions(program.command("logs"))
+  .description("показать логи nginx по сайту (access и error)")
+  .option("--project <dir>", "папка проекта с plantar.json", ".")
+  .option("--lines <n>", "сколько последних строк показать", "50")
+  .action(async (opts: ConnectionOpts & { project: string; lines: string }) => {
+    const config = loadProjectConfig(path.resolve(opts.project));
+    const conn = await connect(opts);
+    try {
+      const logs = await getSiteLogs(conn, config.name, Number(opts.lines));
+      console.log(`\n=== access (${config.name}) ===`);
+      console.log(logs.access || "(пусто)");
+      console.log(`\n=== error (${config.name}) ===`);
+      console.log(logs.error || "(пусто)");
     } finally {
       conn.close();
       console.log("\nОтключено.");

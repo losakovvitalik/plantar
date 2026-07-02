@@ -144,6 +144,25 @@ export async function setupServer(
   return results;
 }
 
+export interface SiteLogs {
+  access: string;
+  error: string;
+}
+
+export async function getSiteLogs(
+  conn: SshConnection,
+  siteName: string,
+  lines = 50,
+): Promise<SiteLogs> {
+  const read = async (kind: "access" | "error") => {
+    const result = await conn.exec(
+      `tail -n ${lines} '/var/log/nginx/${siteName}.${kind}.log' 2>/dev/null`,
+    );
+    return result.stdout.trimEnd();
+  };
+  return { access: await read("access"), error: await read("error") };
+}
+
 export interface DeployResult {
   target: string;
   fileCount: number;
@@ -166,6 +185,9 @@ async function configureNginx(
 
     root /var/www/${config.name};
     index index.html;
+
+    access_log /var/log/nginx/${config.name}.access.log;
+    error_log /var/log/nginx/${config.name}.error.log;
 
     location / {
         try_files $uri $uri/ /index.html;
