@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import type { ProjectConfigInput } from "../../../preload/index.d";
 import { Button } from "./ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
@@ -63,13 +70,15 @@ export function ProjectSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogTitle>{title}</DialogTitle>
-        <DialogDescription className="truncate font-mono text-[12px]">
-          {folderPath}
-        </DialogDescription>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription className="truncate font-mono text-[12px]">
+            {folderPath}
+          </DialogDescription>
+        </DialogHeader>
 
-        <form onSubmit={submit} className="mt-4 flex flex-col gap-3">
+        <form onSubmit={submit} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="prj-name">Название</Label>
             <Input
@@ -125,14 +134,14 @@ export function ProjectSettingsDialog({
             </p>
           )}
 
-          <div className="mt-1 flex justify-end gap-2">
+          <DialogFooter className="mt-1">
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Отмена
             </Button>
             <Button type="submit" disabled={busy || !name}>
               {busy ? "Сохраняю…" : submitLabel}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

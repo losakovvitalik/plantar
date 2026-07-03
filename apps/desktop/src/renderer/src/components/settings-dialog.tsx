@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import type { AppSettings } from "@plantar/storage";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./ui/dialog";
+import { Button } from "./ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Switch } from "./ui/switch";
@@ -12,7 +20,7 @@ interface Props {
 
 export function SettingsDialog({ open, onOpenChange }: Props) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [savedFlash, setSavedFlash] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -22,32 +30,27 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
     })();
   }, [open]);
 
-  async function apply(patch: Partial<AppSettings>) {
+  async function save() {
     if (!settings) return;
-    const next = { ...settings, ...patch };
-    setSettings(next);
-    const result = await window.plantar.setSettings(next);
-    if (result.ok) {
-      setSavedFlash(true);
-      window.setTimeout(() => setSavedFlash(false), 1500);
-    }
+    setBusy(true);
+    const result = await window.plantar.setSettings({
+      ...settings,
+      letsEncryptEmail: settings.letsEncryptEmail.trim(),
+    });
+    setBusy(false);
+    if (result.ok) onOpenChange(false);
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <div className="flex items-baseline justify-between">
+      <DialogContent>
+        <DialogHeader>
           <DialogTitle>Настройки</DialogTitle>
-          <span
-            className={`text-[12.5px] font-semibold text-moss transition-opacity ${savedFlash ? "opacity-100" : "opacity-0"}`}
-          >
-            Сохранено ✓
-          </span>
-        </div>
-        <DialogDescription className="sr-only">Глобальные настройки Plantar</DialogDescription>
+          <DialogDescription className="sr-only">Глобальные настройки Plantar</DialogDescription>
+        </DialogHeader>
 
         {settings && (
-          <div className="mt-2 flex flex-col gap-6">
+          <div className="flex flex-col gap-6">
             <div className="flex items-start justify-between gap-6">
               <div>
                 <Label htmlFor="log-copies" className="text-[13.5px] font-semibold">
@@ -61,7 +64,9 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
               <Switch
                 id="log-copies"
                 checked={settings.saveServerLogCopies}
-                onCheckedChange={(checked) => void apply({ saveServerLogCopies: checked })}
+                onCheckedChange={(checked) =>
+                  setSettings({ ...settings, saveServerLogCopies: checked })
+                }
               />
             </div>
 
@@ -78,17 +83,22 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                 id="le-email"
                 type="email"
                 placeholder="you@example.com"
-                defaultValue={settings.letsEncryptEmail}
-                onBlur={(e) => {
-                  if (e.target.value !== settings.letsEncryptEmail) {
-                    void apply({ letsEncryptEmail: e.target.value.trim() });
-                  }
-                }}
+                value={settings.letsEncryptEmail}
+                onChange={(e) => setSettings({ ...settings, letsEncryptEmail: e.target.value })}
                 className="max-w-xs"
               />
             </div>
           </div>
         )}
+
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Отмена
+          </Button>
+          <Button onClick={() => void save()} disabled={busy || !settings}>
+            {busy ? "Сохраняю…" : "Сохранить"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

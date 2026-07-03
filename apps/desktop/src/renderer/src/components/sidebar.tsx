@@ -1,6 +1,6 @@
 import { FolderPlus, Package, Plus, Server, Settings, Sprout, Trash2 } from "lucide-react";
 import type { ProjectRecord, ServerRecord } from "../../../preload/index.d";
-import type { Selection } from "../App";
+import type { Selection } from "../app";
 import { cn } from "../lib/utils";
 
 interface Props {

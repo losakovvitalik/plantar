@@ -1,7 +1,14 @@
 import { useState } from "react";
 import type { ServerRecord } from "../../../preload/index.d";
 import { Button } from "./ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { RadioCard, RadioGroup } from "./ui/radio-group";
@@ -50,13 +57,15 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogTitle>Добавить сервер</DialogTitle>
-        <DialogDescription>
-          Понадобятся адрес сервера и данные для входа — их выдаёт хостинг.
-        </DialogDescription>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Добавить сервер</DialogTitle>
+          <DialogDescription>
+            Понадобятся адрес сервера и данные для входа — их выдаёт хостинг.
+          </DialogDescription>
+        </DialogHeader>
 
-        <form onSubmit={submit} className="mt-4 flex flex-col gap-3">
+        <form onSubmit={submit} className="flex flex-col gap-3">
           <div className="grid grid-cols-[1fr_88px] gap-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="srv-host">Адрес (IP)</Label>
@@ -140,14 +149,14 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
             </p>
           )}
 
-          <div className="mt-1 flex justify-end gap-2">
+          <DialogFooter className="mt-1">
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Отмена
             </Button>
             <Button type="submit" disabled={busy || !host || !user || !password}>
               {busy ? "Подключаюсь…" : "Добавить сервер"}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

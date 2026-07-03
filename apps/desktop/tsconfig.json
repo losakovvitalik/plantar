@@ -1,5 +1,12 @@
 {
   "files": [],
+  // paths дублируются из tsconfig.web.json — их читает shadcn CLI при генерации компонентов
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/renderer/src/*"]
+    }
+  },
   "references": [
     { "path": "./tsconfig.node.json" },
     { "path": "./tsconfig.web.json" }

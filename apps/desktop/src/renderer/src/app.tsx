@@ -1,16 +1,16 @@
 import { Sprout } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectRecord, ServerRecord } from "../../preload/index.d";
-import { AddServerDialog } from "./components/AddServerDialog";
-import { ProjectSettingsDialog } from "./components/ProjectSettingsDialog";
-import { DeployTab } from "./components/DeployTab";
-import { EnvTab } from "./components/EnvTab";
-import { HistoryTab } from "./components/HistoryTab";
-import { LogsTab } from "./components/LogsTab";
-import { PasswordDialog } from "./components/PasswordDialog";
-import { SettingsDialog } from "./components/SettingsDialog";
-import { Sidebar } from "./components/Sidebar";
-import { StatusTab } from "./components/StatusTab";
+import { AddServerDialog } from "./components/add-server-dialog";
+import { ProjectSettingsDialog } from "./components/project-settings-dialog";
+import { DeployTab } from "./components/deploy-tab";
+import { EnvTab } from "./components/env-tab";
+import { HistoryTab } from "./components/history-tab";
+import { LogsTab } from "./components/logs-tab";
+import { PasswordDialog } from "./components/password-dialog";
+import { SettingsDialog } from "./components/settings-dialog";
+import { Sidebar } from "./components/sidebar";
+import { StatusTab } from "./components/status-tab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 
 export type Selection = { kind: "server" | "project"; id: string } | null;
@@ -130,7 +130,7 @@ export default function App() {
                   {projectServer.name} · {selectedProject.path}
                 </span>
               </div>
-              <TabsList className="mt-3 -mb-px">
+              <TabsList className="mt-3">
                 <TabsTrigger value="deploy">Деплой</TabsTrigger>
                 <TabsTrigger value="env">Переменные</TabsTrigger>
                 <TabsTrigger value="status">Статус</TabsTrigger>

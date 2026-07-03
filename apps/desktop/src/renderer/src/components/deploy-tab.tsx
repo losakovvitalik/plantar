@@ -1,7 +1,7 @@
 import { ExternalLink, Globe, Pencil, Rocket } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectConfig, ProjectRecord, ServerRecord } from "../../../preload/index.d";
-import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
+import { ProjectSettingsDialog } from "./project-settings-dialog";
 import { Button } from "./ui/button";
 import { Switch } from "./ui/switch";
 
