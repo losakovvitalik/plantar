@@ -108,6 +108,8 @@ export default function App() {
 
   return (
     <div className="flex h-screen">
+      {/* Зона перетаскивания окна на всю ширину; интерактивным элементам поверх неё нужен no-drag */}
+      <div className="fixed inset-x-0 top-0 h-10 [-webkit-app-region:drag]" />
       <Sidebar
         servers={servers}
         projects={projects}

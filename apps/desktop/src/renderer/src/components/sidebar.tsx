@@ -28,8 +28,8 @@ export function Sidebar({
 }: Props) {
   return (
     <aside className="flex w-60 shrink-0 flex-col bg-pine text-sage">
-      {/* Зона перетаскивания окна под скрытым тайтлбаром macOS */}
-      <div className="h-10 shrink-0 [-webkit-app-region:drag]" />
+      {/* Отступ под кнопки-светофоры macOS; зона перетаскивания — общая полоса в app.tsx */}
+      <div className="h-10 shrink-0" />
 
       <div className="flex items-center gap-2 px-4 pb-4">
         <Sprout className="size-5 text-sprout" />
