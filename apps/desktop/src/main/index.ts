@@ -160,11 +160,31 @@ interface AddProjectInput {
   config?: ProjectConfigInput;
 }
 
+/** Два проекта с одним name на одном сервере деплоились бы в один /var/www/<name> */
+function assertNameFreeOnServer(serverId: string, name: string, excludeProjectId?: string): void {
+  const clash = readProjects().find((p) => {
+    if (p.serverId !== serverId || p.id === excludeProjectId) return false;
+    let existingName = p.name;
+    try {
+      existingName = loadProjectConfig(p.path).name;
+    } catch {
+      /* plantar.json недоступен — используем имя на момент добавления */
+    }
+    return existingName === name;
+  });
+  if (clash) {
+    throw new Error(
+      `Имя «${name}» уже занято проектом на этом сервере (${clash.path}). ` +
+        `Проекты с одинаковым именем деплоятся в одну папку и перетирают друг друга — укажи другое имя.`,
+    );
+  }
+}
+
 function addProject(input: AddProjectInput): ProjectRecord {
   getServer(input.serverId);
-  const config = input.config
-    ? writeProjectConfig(input.path, input.config)
-    : loadProjectConfig(input.path);
+  const parsedConfig = input.config ? null : loadProjectConfig(input.path);
+  assertNameFreeOnServer(input.serverId, (input.config ?? parsedConfig!).name);
+  const config = input.config ? writeProjectConfig(input.path, input.config) : parsedConfig!;
   const record: ProjectRecord = {
     id: randomUUID(),
     serverId: input.serverId,
@@ -283,6 +303,7 @@ app.whenReady().then(() => {
   ipcMain.handle("projects:writeConfig", (_e, args: { projectId: string; config: ProjectConfigInput }) =>
     toResult(async () => {
       const project = getProject(args.projectId);
+      assertNameFreeOnServer(project.serverId, args.config.name, project.id);
       const config = writeProjectConfig(project.path, args.config);
       if (config.name !== project.name) {
         writeProjects(
