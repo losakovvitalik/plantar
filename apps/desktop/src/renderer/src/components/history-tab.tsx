@@ -76,7 +76,7 @@ export function HistoryTab({ project }: Props) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="max-w-sm text-center">
-          <History className="mx-auto size-8 text-ink-soft/40" />
+          <History className="mx-auto size-8 text-[#b8bfb8]" />
           <h3 className="mt-3 text-[15px] font-bold">Пока ни одного деплоя</h3>
           <p className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">
             Здесь появится каждая попытка деплоя этого проекта — со статусом, временем и полным

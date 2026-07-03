@@ -237,7 +237,7 @@ export function EnvTab({ project }: Props) {
       <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
         {files && files.length === 0 && !adding && (
           <div className="flex flex-col items-center py-10 text-center">
-            <FileKey2 className="size-8 text-ink-soft/40" />
+            <FileKey2 className="size-8 text-[#b8bfb8]" />
             <h3 className="mt-3 text-[15px] font-bold">В проекте нет .env-файлов</h3>
             <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-ink-soft">
               Переменные окружения подставляются в приложение при сборке — например, адрес API

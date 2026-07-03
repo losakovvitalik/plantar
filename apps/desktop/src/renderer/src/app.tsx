@@ -131,11 +131,21 @@ export default function App() {
                 </span>
               </div>
               <TabsList className="mt-3">
-                <TabsTrigger value="deploy">Деплой</TabsTrigger>
-                <TabsTrigger value="env">Переменные</TabsTrigger>
-                <TabsTrigger value="status">Статус</TabsTrigger>
-                <TabsTrigger value="logs">Логи</TabsTrigger>
-                <TabsTrigger value="history">История</TabsTrigger>
+                <TabsTrigger className="px-4" value="deploy">
+                  Деплой
+                </TabsTrigger>
+                <TabsTrigger className="px-4" value="env">
+                  Переменные
+                </TabsTrigger>
+                <TabsTrigger className="px-4" value="status">
+                  Статус
+                </TabsTrigger>
+                <TabsTrigger className="px-4" value="logs">
+                  Логи
+                </TabsTrigger>
+                <TabsTrigger className="px-4" value="history">
+                  История
+                </TabsTrigger>
               </TabsList>
             </header>
             <div className="min-h-0 flex-1 px-6 py-5">
@@ -180,7 +190,7 @@ export default function App() {
         ) : (
           <div className="flex h-full items-center justify-center">
             <div className="max-w-sm text-center">
-              <Sprout className="mx-auto size-9 text-moss/50" />
+              <Sprout className="mx-auto size-9 text-sage" />
               <h2 className="mt-3 text-[16px] font-bold">
                 {servers.length === 0 ? "Добавь первый сервер" : "Выбери сервер или проект"}
               </h2>
