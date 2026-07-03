@@ -1,13 +1,21 @@
-import type { ProjectConfig, ProjectConfigInput } from "@plantar/config";
+import type { DetectedProject, ProjectConfig, ProjectConfigInput } from "@plantar/config";
 import type { ServerInfo, SiteLogs } from "@plantar/core";
 import type { AppSettings, DeployRecord, ProjectRecord, ServerRecord } from "@plantar/storage";
 
-export type { ProjectConfig, ProjectConfigInput, ServerInfo, SiteLogs, ProjectRecord, ServerRecord };
+export type {
+  DetectedProject,
+  ProjectConfig,
+  ProjectConfigInput,
+  ServerInfo,
+  SiteLogs,
+  ProjectRecord,
+  ServerRecord,
+};
 
 export interface PickedProject {
   path: string;
   config: ProjectConfig | null;
-  suggestedName: string;
+  detected: DetectedProject;
 }
 
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };

@@ -6,6 +6,7 @@ import { SshConnection } from "@plantar/ssh";
 import { deployProject, getServerInfo, getSiteLogs } from "@plantar/core";
 import {
   type ProjectConfigInput,
+  detectProjectConfig,
   hasProjectConfig,
   loadProjectConfig,
   writeProjectConfig,
@@ -131,7 +132,7 @@ function connectWithPassword(
   });
 }
 
-/** Выбор папки проекта: возвращает путь и конфиг, если plantar.json уже есть */
+/** Выбор папки проекта: возвращает путь, конфиг (если plantar.json уже есть) и автоопределённые настройки */
 async function pickProjectFolder(win: BrowserWindow) {
   const picked = await dialog.showOpenDialog(win, {
     title: "Выбери папку проекта",
@@ -140,16 +141,10 @@ async function pickProjectFolder(win: BrowserWindow) {
   if (picked.canceled || picked.filePaths.length === 0) return null;
 
   const projectPath = picked.filePaths[0];
-  const suggestedName =
-    path
-      .basename(projectPath)
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "my-app";
   return {
     path: projectPath,
     config: hasProjectConfig(projectPath) ? loadProjectConfig(projectPath) : null,
-    suggestedName,
+    detected: detectProjectConfig(projectPath),
   };
 }
 

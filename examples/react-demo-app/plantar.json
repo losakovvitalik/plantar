@@ -1,6 +1,8 @@
 {
-  "name": "plantar-demo",
-  "buildCommand": "pnpm build",
+  "name": "react-app",
+  "type": "static",
+  "packageManager": "npm",
+  "buildCommand": "npm run build",
   "buildDir": "dist",
   "domain": "plantar.timestock.pro"
 }

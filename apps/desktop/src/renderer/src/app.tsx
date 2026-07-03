@@ -1,6 +1,6 @@
 import { Sprout } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ProjectRecord, ServerRecord } from "../../preload/index.d";
+import type { ProjectConfigInput, ProjectRecord, ServerRecord } from "../../preload/index.d";
 import { AddServerDialog } from "./components/add-server-dialog";
 import { ProjectSettingsDialog } from "./components/project-settings-dialog";
 import { DeployTab } from "./components/deploy-tab";
@@ -46,16 +46,32 @@ export default function App() {
     void refresh();
   }, [refresh]);
 
-  function showError(message: string) {
+  const showError = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(null), 6000);
-  }
+  }, []);
 
-  // Папка выбрана, но plantar.json ещё нет — ждём, пока пользователь заполнит настройки
+  // Любая непойманная ошибка должна быть видна пользователю, а не молча теряться
+  useEffect(() => {
+    const onRejection = (e: PromiseRejectionEvent) => {
+      const reason = e.reason instanceof Error ? e.reason.message : String(e.reason);
+      showError(`Непредвиденная ошибка: ${reason}`);
+    };
+    const onError = (e: ErrorEvent) => showError(`Непредвиденная ошибка: ${e.message}`);
+    window.addEventListener("unhandledrejection", onRejection);
+    window.addEventListener("error", onError);
+    return () => {
+      window.removeEventListener("unhandledrejection", onRejection);
+      window.removeEventListener("error", onError);
+    };
+  }, [showError]);
+
+  // Папка выбрана — показываем экран подтверждения настроек перед добавлением
   const [newProject, setNewProject] = useState<{
     serverId: string;
     path: string;
-    suggestedName: string;
+    initial: Partial<ProjectConfigInput>;
+    note: string;
   } | null>(null);
 
   async function addProject(serverId: string) {
@@ -66,22 +82,15 @@ export default function App() {
     }
     if (!picked.data) return; // пользователь закрыл выбор папки
 
-    if (picked.data.config) {
-      // plantar.json уже есть — добавляем сразу
-      const result = await window.plantar.addProject({ serverId, path: picked.data.path });
-      if (!result.ok) {
-        showError(result.error);
-        return;
-      }
-      await refresh();
-      setSelection({ kind: "project", id: result.data.id });
-    } else {
-      setNewProject({
-        serverId,
-        path: picked.data.path,
-        suggestedName: picked.data.suggestedName,
-      });
-    }
+    const { path, config, detected } = picked.data;
+    setNewProject({
+      serverId,
+      path,
+      initial: config ?? detected.config,
+      note: config
+        ? "Настройки взяты из plantar.json в папке проекта."
+        : `${detected.framework ? `Определён фреймворк: ${detected.framework}. ` : "Настройки определены автоматически. "}Проверьте внимательно значения и добавьте проект.`,
+    });
   }
 
   async function removeServer(server: ServerRecord) {
@@ -221,7 +230,8 @@ export default function App() {
         onOpenChange={(open) => !open && setNewProject(null)}
         title="Новый проект"
         folderPath={newProject?.path ?? ""}
-        initial={{ name: newProject?.suggestedName ?? "" }}
+        initial={newProject?.initial ?? {}}
+        note={newProject?.note}
         submitLabel="Добавить проект"
         onSubmit={async (config) => {
           if (!newProject) return null;

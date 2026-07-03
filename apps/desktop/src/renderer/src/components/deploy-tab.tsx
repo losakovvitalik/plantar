@@ -1,4 +1,4 @@
-import { ExternalLink, Globe, Pencil, Rocket } from "lucide-react";
+import { ExternalLink, Globe, Rocket, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectConfig, ProjectRecord, ServerRecord } from "../../../preload/index.d";
 import { ProjectSettingsDialog } from "./project-settings-dialog";
@@ -98,17 +98,21 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
                 по IP <span className="font-mono">{server.host}</span>, без домена
               </span>
             )}
-            <button
-              onClick={() => setSettingsOpen(true)}
-              title="Настройки проекта"
-              className="rounded-md p-1 text-ink-soft outline-none hover:bg-ink/5 hover:text-ink focus-visible:ring-2 focus-visible:ring-moss/50"
-            >
-              <Pencil className="size-3.5" />
-            </button>
           </span>
         )}
 
-        <label className="ml-auto flex cursor-pointer items-center gap-2 text-[12.5px] text-ink-soft select-none">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto text-ink-soft"
+          onClick={() => setSettingsOpen(true)}
+          disabled={!config}
+        >
+          <Settings2 className="size-3.5" />
+          Настройки проекта
+        </Button>
+
+        <label className="flex cursor-pointer items-center gap-2 text-[12.5px] text-ink-soft select-none">
           Показывать команды
           <Switch checked={showCommands} onCheckedChange={toggleCommands} />
         </label>

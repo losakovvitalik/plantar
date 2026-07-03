@@ -12,12 +12,16 @@ import {
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
+const PACKAGE_MANAGERS = ["npm", "pnpm", "yarn", "bun"] as const;
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
   folderPath: string;
   initial: Partial<ProjectConfigInput>;
+  /** Подсказка об источнике настроек (автоопределение / plantar.json) */
+  note?: string;
   submitLabel: string;
   /** Возвращает текст ошибки или null при успехе */
   onSubmit: (config: ProjectConfigInput) => Promise<string | null>;
@@ -29,11 +33,14 @@ export function ProjectSettingsDialog({
   title,
   folderPath,
   initial,
+  note,
   submitLabel,
   onSubmit,
 }: Props) {
   const [name, setName] = useState("");
   const [domain, setDomain] = useState("");
+  const [packageManager, setPackageManager] =
+    useState<ProjectConfigInput["packageManager"]>("npm");
   const [buildCommand, setBuildCommand] = useState("npm run build");
   const [buildDir, setBuildDir] = useState("dist");
   const [busy, setBusy] = useState(false);
@@ -43,6 +50,7 @@ export function ProjectSettingsDialog({
     if (open) {
       setName(initial.name ?? "");
       setDomain(initial.domain ?? "");
+      setPackageManager(initial.packageManager ?? "npm");
       setBuildCommand(initial.buildCommand ?? "npm run build");
       setBuildDir(initial.buildDir ?? "dist");
       setError(null);
@@ -59,7 +67,11 @@ export function ProjectSettingsDialog({
     setBusy(true);
     setError(null);
     const result = await onSubmit({
+      // Поля, которые диалог не редактирует, сохраняем как есть
+      type: initial.type,
+      port: initial.port,
       name,
+      packageManager,
       buildCommand: buildCommand.trim() || undefined,
       buildDir: buildDir.trim() || undefined,
       domain: domain.trim() || undefined,
@@ -79,6 +91,12 @@ export function ProjectSettingsDialog({
         </DialogHeader>
 
         <form onSubmit={submit} className="flex flex-col gap-3">
+          {note && (
+            <p className="rounded-lg bg-moss/10 px-3 py-2 text-[12.5px] leading-snug text-moss">
+              {note}
+            </p>
+          )}
+
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="prj-name">Название</Label>
             <Input
@@ -90,8 +108,8 @@ export function ProjectSettingsDialog({
               autoFocus
             />
             <p className="text-[12px] leading-snug text-ink-soft/80">
-              Строчные латинские буквы, цифры и дефис. Так будет называться папка сайта на
-              сервере.
+              Строчные латинские буквы, цифры и дефис. Так будет называться
+              папка сайта на сервере.
             </p>
           </div>
 
@@ -104,19 +122,30 @@ export function ProjectSettingsDialog({
               placeholder="app.mysite.ru"
             />
             <p className="text-[12px] leading-snug text-ink-soft/80">
-              С доменом сайт получит HTTPS-сертификат автоматически. Оставь пустым — сайт будет
-              открываться по IP сервера.
+              С доменом сайт получит HTTPS-сертификат автоматически. Если
+              оставить пустым, сайт будет открываться по IP сервера.
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="prj-build">Команда сборки</Label>
-              <Input
-                id="prj-build"
-                value={buildCommand}
-                onChange={(e) => setBuildCommand(e.target.value)}
-              />
+              <Label htmlFor="prj-pm">Менеджер пакетов</Label>
+              <select
+                id="prj-pm"
+                value={packageManager}
+                onChange={(e) =>
+                  setPackageManager(
+                    e.target.value as ProjectConfigInput["packageManager"],
+                  )
+                }
+                className="border-input focus-visible:border-ring/60 focus-visible:ring-ring/30 h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:ring-2"
+              >
+                {PACKAGE_MANAGERS.map((pm) => (
+                  <option key={pm} value={pm}>
+                    {pm}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="prj-dist">Папка сборки</Label>
@@ -128,6 +157,21 @@ export function ProjectSettingsDialog({
             </div>
           </div>
 
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="prj-build">Команда сборки</Label>
+            <Input
+              id="prj-build"
+              value={buildCommand}
+              onChange={(e) => setBuildCommand(e.target.value)}
+            />
+            <p className="text-[12px] leading-snug text-ink-soft/80">
+              Выполняется в папке проекта перед деплоем. Сюда можно вписать
+              любую команду и флаги, например{" "}
+              <span className="font-mono">npm run build -- --mode staging</span>
+              .
+            </p>
+          </div>
+
           {error && (
             <p className="rounded-lg bg-clay/10 px-3 py-2 text-[12.5px] leading-snug whitespace-pre-wrap text-clay">
               {error}
@@ -135,7 +179,11 @@ export function ProjectSettingsDialog({
           )}
 
           <DialogFooter className="mt-1">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+            >
               Отмена
             </Button>
             <Button type="submit" disabled={busy || !name}>
