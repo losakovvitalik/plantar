@@ -1,6 +1,9 @@
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
 import type { SshConnection } from "@plantar/ssh";
 import type { ProjectConfig } from "@plantar/config";
 
@@ -239,12 +242,11 @@ export async function deployProject(
 ): Promise<DeployResult> {
   log(`→ Собираю проект: ${config.buildCommand}`);
   try {
-    execSync(config.buildCommand, { cwd: projectDir, stdio: "pipe" });
+    await execAsync(config.buildCommand, { cwd: projectDir, maxBuffer: 50 * 1024 * 1024 });
   } catch (err) {
-    const e = err as { stdout?: Buffer; stderr?: Buffer };
+    const e = err as { stdout?: string; stderr?: string };
     const output = [e.stdout, e.stderr]
       .filter(Boolean)
-      .map(String)
       .join("\n")
       .slice(-3000);
     throw new Error(`Сборка не удалась (${config.buildCommand}):\n${output}`);

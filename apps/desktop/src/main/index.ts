@@ -1,48 +1,223 @@
-import os from "node:os";
+import { randomUUID } from "node:crypto";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { BrowserWindow, app, ipcMain } from "electron";
+import { BrowserWindow, app, dialog, ipcMain, shell } from "electron";
 import { SshConnection } from "@plantar/ssh";
-import { getServerInfo } from "@plantar/core";
+import { deployProject, getServerInfo, getSiteLogs } from "@plantar/core";
+import {
+  type ProjectConfigInput,
+  hasProjectConfig,
+  loadProjectConfig,
+  writeProjectConfig,
+} from "@plantar/config";
+import {
+  DeployLogWriter,
+  type ProjectRecord,
+  type ServerRecord,
+  appendHistory,
+  readProjects,
+  readServers,
+  saveServerLogSnapshot,
+  writeProjects,
+  writeServers,
+} from "@plantar/storage";
+import { generateKeyPair, installPublicKey } from "./ssh-setup";
 
-interface ConnectionParams {
-  host: string;
-  port: string;
-  user: string;
-  password?: string;
-  keyPath?: string;
-}
+type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-function expandHome(p: string): string {
-  return p.startsWith("~") ? path.join(os.homedir(), p.slice(1)) : p;
-}
-
-async function withConnection<T>(
-  params: ConnectionParams,
-  fn: (conn: SshConnection) => Promise<T>,
-): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+async function toResult<T>(fn: () => Promise<T>): Promise<IpcResult<T>> {
   try {
-    const conn = await SshConnection.connect({
-      host: params.host,
-      port: params.port ? Number(params.port) : 22,
-      username: params.user,
-      password: params.password || undefined,
-      privateKeyPath: params.keyPath ? expandHome(params.keyPath) : undefined,
-    });
-    try {
-      return { ok: true, data: await fn(conn) };
-    } finally {
-      conn.close();
-    }
+    return { ok: true, data: await fn() };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }
 }
 
-function createWindow(): void {
+function getServer(id: string): ServerRecord {
+  const server = readServers().find((s) => s.id === id);
+  if (!server) throw new Error("Сервер не найден. Обнови список.");
+  return server;
+}
+
+function getProject(id: string): ProjectRecord {
+  const project = readProjects().find((p) => p.id === id);
+  if (!project) throw new Error("Проект не найден. Обнови список.");
+  return project;
+}
+
+async function connect(server: ServerRecord, password?: string): Promise<SshConnection> {
+  if (server.auth === "password" && !password) {
+    throw new Error("Для этого сервера нужен пароль.");
+  }
+  return SshConnection.connect({
+    host: server.host,
+    port: server.port,
+    username: server.user,
+    password: server.auth === "password" ? password : undefined,
+    privateKeyPath: server.auth === "key" ? server.keyPath : undefined,
+  });
+}
+
+interface AddServerInput {
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  auth: "key" | "password";
+  /** Для auth=key используется один раз — чтобы установить ключ; не сохраняется */
+  password: string;
+}
+
+async function addServer(input: AddServerInput): Promise<ServerRecord> {
+  const id = randomUUID();
+  const base = {
+    id,
+    name: input.name || input.host,
+    host: input.host,
+    port: input.port,
+    user: input.user,
+  };
+
+  let record: ServerRecord;
+  if (input.auth === "key") {
+    const keyPath = await generateKeyPair(id, `plantar-${base.name}`);
+    const conn = await connectWithPassword(base, input.password);
+    try {
+      await installPublicKey(conn, keyPath);
+    } finally {
+      conn.close();
+    }
+    // Проверяем, что ключ действительно работает, прежде чем сохранить сервер
+    const test = await SshConnection.connect({
+      host: base.host,
+      port: base.port,
+      username: base.user,
+      privateKeyPath: keyPath,
+    });
+    test.close();
+    record = { ...base, auth: "key", keyPath };
+  } else {
+    const conn = await connectWithPassword(base, input.password);
+    conn.close();
+    record = { ...base, auth: "password" };
+  }
+
+  writeServers([...readServers(), record]);
+  return record;
+}
+
+function connectWithPassword(
+  base: { host: string; port: number; user: string },
+  password: string,
+): Promise<SshConnection> {
+  if (!password) throw new Error("Введи пароль сервера.");
+  return SshConnection.connect({
+    host: base.host,
+    port: base.port,
+    username: base.user,
+    password,
+  });
+}
+
+/** Выбор папки проекта: возвращает путь и конфиг, если plantar.json уже есть */
+async function pickProjectFolder(win: BrowserWindow) {
+  const picked = await dialog.showOpenDialog(win, {
+    title: "Выбери папку проекта",
+    properties: ["openDirectory"],
+  });
+  if (picked.canceled || picked.filePaths.length === 0) return null;
+
+  const projectPath = picked.filePaths[0];
+  const suggestedName =
+    path
+      .basename(projectPath)
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "my-app";
+  return {
+    path: projectPath,
+    config: hasProjectConfig(projectPath) ? loadProjectConfig(projectPath) : null,
+    suggestedName,
+  };
+}
+
+interface AddProjectInput {
+  serverId: string;
+  path: string;
+  /** Если передан — GUI создаёт plantar.json в папке проекта */
+  config?: ProjectConfigInput;
+}
+
+function addProject(input: AddProjectInput): ProjectRecord {
+  getServer(input.serverId);
+  const config = input.config
+    ? writeProjectConfig(input.path, input.config)
+    : loadProjectConfig(input.path);
+  const record: ProjectRecord = {
+    id: randomUUID(),
+    serverId: input.serverId,
+    name: config.name,
+    path: input.path,
+  };
+  writeProjects([...readProjects(), record]);
+  return record;
+}
+
+async function runDeploy(
+  projectId: string,
+  password: string | undefined,
+  win: BrowserWindow,
+): Promise<{ url: string }> {
+  const project = getProject(projectId);
+  const server = getServer(project.serverId);
+  const config = loadProjectConfig(project.path);
+
+  const logWriter = new DeployLogWriter(config.name);
+  const log = (line: string) => {
+    logWriter.write(line);
+    win.webContents.send("deploy:log", { projectId, line });
+  };
+  const startedAt = new Date().toISOString();
+
+  const conn = await connect(server, password);
+  try {
+    const result = await deployProject(conn, project.path, config, log);
+    appendHistory({
+      project: config.name,
+      host: server.host,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      status: "success",
+      url: result.url,
+      logFile: logWriter.file,
+    });
+    return { url: result.url };
+  } catch (err) {
+    const message = (err as Error).message;
+    logWriter.write(`\nОШИБКА: ${message}`);
+    appendHistory({
+      project: config.name,
+      host: server.host,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      status: "error",
+      error: message,
+      logFile: logWriter.file,
+    });
+    throw err;
+  } finally {
+    conn.close();
+  }
+}
+
+function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 960,
-    height: 700,
+    width: 1080,
+    height: 720,
+    minWidth: 900,
+    minHeight: 600,
     title: "Plantar",
+    titleBarStyle: "hiddenInset",
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       sandbox: false,
@@ -54,14 +229,101 @@ function createWindow(): void {
   } else {
     win.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
+  return win;
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle("server:info", (_event, params: ConnectionParams) =>
-    withConnection(params, (conn) => getServerInfo(conn)),
+  const win = createWindow();
+
+  ipcMain.handle("servers:list", () => toResult(async () => readServers()));
+  ipcMain.handle("servers:add", (_e, input: AddServerInput) => toResult(() => addServer(input)));
+  ipcMain.handle("servers:remove", (_e, id: string) =>
+    toResult(async () => {
+      writeServers(readServers().filter((s) => s.id !== id));
+      writeProjects(readProjects().filter((p) => p.serverId !== id));
+    }),
   );
 
-  createWindow();
+  ipcMain.handle("projects:list", () => toResult(async () => readProjects()));
+  ipcMain.handle("projects:pick", () => toResult(() => pickProjectFolder(win)));
+  ipcMain.handle("projects:add", (_e, input: AddProjectInput) =>
+    toResult(async () => addProject(input)),
+  );
+  ipcMain.handle("projects:remove", (_e, id: string) =>
+    toResult(async () => {
+      writeProjects(readProjects().filter((p) => p.id !== id));
+    }),
+  );
+  ipcMain.handle("projects:readConfig", (_e, projectId: string) =>
+    toResult(async () => loadProjectConfig(getProject(projectId).path)),
+  );
+  ipcMain.handle("projects:writeConfig", (_e, args: { projectId: string; config: ProjectConfigInput }) =>
+    toResult(async () => {
+      const project = getProject(args.projectId);
+      const config = writeProjectConfig(project.path, args.config);
+      if (config.name !== project.name) {
+        writeProjects(
+          readProjects().map((p) => (p.id === project.id ? { ...p, name: config.name } : p)),
+        );
+      }
+      return config;
+    }),
+  );
+
+  // .env-файлы читаются и пишутся только локально — принцип «env не покидает устройство»
+  const ENV_FILE_RE = /^\.env[\w.-]*$/;
+  const envFilePath = (projectId: string, file: string) => {
+    if (!ENV_FILE_RE.test(file)) throw new Error("Недопустимое имя env-файла.");
+    return path.join(getProject(projectId).path, file);
+  };
+
+  ipcMain.handle("env:list", (_e, projectId: string) =>
+    toResult(async () =>
+      readdirSync(getProject(projectId).path)
+        .filter((f) => ENV_FILE_RE.test(f))
+        .sort(),
+    ),
+  );
+  ipcMain.handle("env:read", (_e, args: { projectId: string; file: string }) =>
+    toResult(async () => readFileSync(envFilePath(args.projectId, args.file), "utf8")),
+  );
+  ipcMain.handle("env:write", (_e, args: { projectId: string; file: string; content: string }) =>
+    toResult(async () => {
+      writeFileSync(envFilePath(args.projectId, args.file), args.content);
+    }),
+  );
+
+  ipcMain.handle("server:info", (_e, args: { serverId: string; password?: string }) =>
+    toResult(async () => {
+      const conn = await connect(getServer(args.serverId), args.password);
+      try {
+        return await getServerInfo(conn);
+      } finally {
+        conn.close();
+      }
+    }),
+  );
+
+  ipcMain.handle("deploy:run", (_e, args: { projectId: string; password?: string }) =>
+    toResult(() => runDeploy(args.projectId, args.password, win)),
+  );
+
+  ipcMain.handle("logs:get", (_e, args: { projectId: string; password?: string }) =>
+    toResult(async () => {
+      const project = getProject(args.projectId);
+      const conn = await connect(getServer(project.serverId), args.password);
+      try {
+        const logs = await getSiteLogs(conn, project.name, 200);
+        saveServerLogSnapshot(project.name, "access", logs.access);
+        saveServerLogSnapshot(project.name, "error", logs.error);
+        return logs;
+      } finally {
+        conn.close();
+      }
+    }),
+  );
+
+  ipcMain.handle("open-external", (_e, url: string) => shell.openExternal(url));
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

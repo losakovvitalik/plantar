@@ -1,120 +1,66 @@
-* {
-  box-sizing: border-box;
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #f6f7f2;
+  --color-card: #ffffff;
+  --color-line: #e3e7de;
+  --color-ink: #1b2620;
+  --color-ink-soft: #5c6b60;
+  --color-moss: #2f6f4f;
+  --color-moss-deep: #245740;
+  --color-pine: #1c2e24;
+  --color-pine-edge: #2c4536;
+  --color-sage: #a7bca9;
+  --color-sprout: #7fd49b;
+  --color-soil: #101b14;
+  --color-clay: #c2543f;
+  --color-amber: #8a6420;
+  --color-amber-bg: #f7efdd;
+
+  --font-sans: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
 }
 
 body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #f5f6f8;
-  color: #1d2129;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
 
-.app {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 24px;
+::selection {
+  background: color-mix(in srgb, var(--color-moss) 25%, transparent);
 }
 
-h1 {
-  font-size: 22px;
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
 }
 
-.card {
-  background: #fff;
-  border: 1px solid #e3e6ea;
-  border-radius: 10px;
-  padding: 20px;
-  margin-bottom: 16px;
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
-.card h2 {
-  margin-top: 0;
-  font-size: 17px;
-}
-
-.card.error {
-  border-color: #e5484d;
-  color: #c62a2f;
-  white-space: pre-wrap;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
-  color: #4b5563;
-}
-
-input {
-  padding: 8px 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
-button {
-  padding: 9px 18px;
-  border: none;
-  border-radius: 6px;
-  background: #2f6f4f;
-  color: #fff;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.badge {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 99px;
-  vertical-align: middle;
-}
-
-.badge.ok {
-  background: #e6f4ea;
-  color: #1e7e40;
-}
-
-.badge.fail {
-  background: #fdebeb;
-  color: #c62a2f;
-}
-
-.tools {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.tools li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-}
-
-.dot {
+/* Тонкие скроллбары — в терминале лога и сайдбаре */
+.thin-scroll::-webkit-scrollbar {
   width: 8px;
-  height: 8px;
-  border-radius: 50%;
 }
-
-.dot.ok {
-  background: #2f9e5d;
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 4px;
 }
-
-.dot.fail {
-  background: #d1d5db;
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }

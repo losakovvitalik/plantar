@@ -53,6 +53,48 @@ export function saveServerLogSnapshot(
   return file;
 }
 
+export interface ServerRecord {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  /** password-серверы не хранят секрет — пароль запрашивается при каждом подключении */
+  auth: "key" | "password";
+  keyPath?: string;
+}
+
+export interface ProjectRecord {
+  id: string;
+  serverId: string;
+  /** name из plantar.json на момент добавления */
+  name: string;
+  path: string;
+}
+
+function readJsonList<T>(file: string): T[] {
+  const full = path.join(dataDir(), file);
+  if (!existsSync(full)) return [];
+  return JSON.parse(readFileSync(full, "utf8")) as T[];
+}
+
+function writeJsonList<T>(file: string, list: T[]): void {
+  mkdirSync(dataDir(), { recursive: true });
+  writeFileSync(path.join(dataDir(), file), JSON.stringify(list, null, 2));
+}
+
+export const readServers = () => readJsonList<ServerRecord>("servers.json");
+export const writeServers = (list: ServerRecord[]) => writeJsonList("servers.json", list);
+export const readProjects = () => readJsonList<ProjectRecord>("projects.json");
+export const writeProjects = (list: ProjectRecord[]) => writeJsonList("projects.json", list);
+
+/** Директория для SSH-ключей, которые Plantar создаёт сам */
+export function keysDir(): string {
+  const dir = path.join(dataDir(), "keys");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return dir;
+}
+
 export interface DeployRecord {
   project: string;
   host: string;

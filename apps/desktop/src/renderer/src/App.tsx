@@ -1,93 +1,233 @@
-import { useState } from "react";
-import type { ServerInfo } from "@plantar/core";
-import type { ConnectionParams } from "../../preload/index.d";
+import { Sprout } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ProjectRecord, ServerRecord } from "../../preload/index.d";
+import { AddServerDialog } from "./components/AddServerDialog";
+import { ProjectSettingsDialog } from "./components/ProjectSettingsDialog";
+import { DeployTab } from "./components/DeployTab";
+import { EnvTab } from "./components/EnvTab";
+import { LogsTab } from "./components/LogsTab";
+import { PasswordDialog } from "./components/PasswordDialog";
+import { Sidebar } from "./components/Sidebar";
+import { StatusTab } from "./components/StatusTab";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
+
+export type Selection = { kind: "server" | "project"; id: string } | null;
 
 export default function App() {
-  const [form, setForm] = useState<ConnectionParams>({
-    host: "",
-    port: "22",
-    user: "root",
-    keyPath: "~/.ssh/id_ed25519",
-    password: "",
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<ServerInfo | null>(null);
+  const [servers, setServers] = useState<ServerRecord[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [selection, setSelection] = useState<Selection>(null);
+  const [addServerOpen, setAddServerOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
-  const set = (field: keyof ConnectionParams) =>
-    (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm({ ...form, [field]: e.target.value });
+  // Промис-обёртка над диалогом пароля: askPassword(server) → ввод пользователя
+  const [passwordFor, setPasswordFor] = useState<ServerRecord | null>(null);
+  const passwordResolve = useRef<(value: string | null) => void>();
+  const askPassword = useCallback((server: ServerRecord) => {
+    setPasswordFor(server);
+    return new Promise<string | null>((resolve) => {
+      passwordResolve.current = resolve;
+    });
+  }, []);
 
-  async function checkServer(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setInfo(null);
-    const result = await window.plantar.getServerInfo(form);
-    setLoading(false);
-    if (result.ok) {
-      setInfo(result.data);
+  const refresh = useCallback(async () => {
+    const [srv, prj] = await Promise.all([
+      window.plantar.listServers(),
+      window.plantar.listProjects(),
+    ]);
+    if (srv.ok) setServers(srv.data);
+    if (prj.ok) setProjects(prj.data);
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  function showError(message: string) {
+    setToast(message);
+    window.setTimeout(() => setToast(null), 6000);
+  }
+
+  // Папка выбрана, но plantar.json ещё нет — ждём, пока пользователь заполнит настройки
+  const [newProject, setNewProject] = useState<{
+    serverId: string;
+    path: string;
+    suggestedName: string;
+  } | null>(null);
+
+  async function addProject(serverId: string) {
+    const picked = await window.plantar.pickProject();
+    if (!picked.ok) {
+      showError(picked.error);
+      return;
+    }
+    if (!picked.data) return; // пользователь закрыл выбор папки
+
+    if (picked.data.config) {
+      // plantar.json уже есть — добавляем сразу
+      const result = await window.plantar.addProject({ serverId, path: picked.data.path });
+      if (!result.ok) {
+        showError(result.error);
+        return;
+      }
+      await refresh();
+      setSelection({ kind: "project", id: result.data.id });
     } else {
-      setError(result.error);
+      setNewProject({
+        serverId,
+        path: picked.data.path,
+        suggestedName: picked.data.suggestedName,
+      });
     }
   }
 
+  async function removeServer(server: ServerRecord) {
+    if (!window.confirm(`Удалить сервер «${server.name}» и его проекты из списка?`)) return;
+    await window.plantar.removeServer(server.id);
+    if (selection?.id === server.id) setSelection(null);
+    await refresh();
+  }
+
+  async function removeProject(project: ProjectRecord) {
+    if (!window.confirm(`Убрать проект «${project.name}» из списка? Файлы не удаляются.`)) return;
+    await window.plantar.removeProject(project.id);
+    if (selection?.id === project.id) setSelection(null);
+    await refresh();
+  }
+
+  const selectedServer =
+    selection?.kind === "server" ? servers.find((s) => s.id === selection.id) : undefined;
+  const selectedProject =
+    selection?.kind === "project" ? projects.find((p) => p.id === selection.id) : undefined;
+  const projectServer = selectedProject
+    ? servers.find((s) => s.id === selectedProject.serverId)
+    : undefined;
+
   return (
-    <div className="app">
-      <h1>Plantar</h1>
+    <div className="flex h-screen">
+      <Sidebar
+        servers={servers}
+        projects={projects}
+        selection={selection}
+        onSelect={setSelection}
+        onAddServer={() => setAddServerOpen(true)}
+        onAddProject={addProject}
+        onRemoveServer={removeServer}
+        onRemoveProject={removeProject}
+      />
 
-      <form className="card" onSubmit={checkServer}>
-        <h2>Сервер</h2>
-        <div className="grid">
-          <label>
-            Адрес
-            <input value={form.host} onChange={set("host")} placeholder="1.2.3.4" required />
-          </label>
-          <label>
-            Порт
-            <input value={form.port} onChange={set("port")} />
-          </label>
-          <label>
-            Пользователь
-            <input value={form.user} onChange={set("user")} required />
-          </label>
-          <label>
-            Путь к SSH-ключу
-            <input value={form.keyPath} onChange={set("keyPath")} />
-          </label>
-          <label>
-            Пароль (если без ключа)
-            <input type="password" value={form.password} onChange={set("password")} />
-          </label>
-        </div>
-        <button type="submit" disabled={loading || !form.host}>
-          {loading ? "Подключаюсь…" : "Проверить сервер"}
-        </button>
-      </form>
+      <main className="flex min-w-0 flex-1 flex-col">
+        {selectedProject && projectServer ? (
+          <Tabs defaultValue="deploy" key={selectedProject.id} className="flex h-full flex-col">
+            <header className="px-6 pt-5">
+              <div className="flex items-baseline gap-3">
+                <h1 className="text-lg font-bold">{selectedProject.name}</h1>
+                <span className="font-mono text-[12px] text-ink-soft">
+                  {projectServer.name} · {selectedProject.path}
+                </span>
+              </div>
+              <TabsList className="mt-3 -mb-px">
+                <TabsTrigger value="deploy">Деплой</TabsTrigger>
+                <TabsTrigger value="env">Переменные</TabsTrigger>
+                <TabsTrigger value="status">Статус</TabsTrigger>
+                <TabsTrigger value="logs">Логи</TabsTrigger>
+              </TabsList>
+            </header>
+            <div className="min-h-0 flex-1 px-6 py-5">
+              <TabsContent value="deploy" className="h-full">
+                <DeployTab
+                  project={selectedProject}
+                  server={projectServer}
+                  askPassword={askPassword}
+                  onProjectChanged={refresh}
+                />
+              </TabsContent>
+              <TabsContent value="env" className="h-full">
+                <EnvTab project={selectedProject} />
+              </TabsContent>
+              <TabsContent value="status" className="h-full">
+                <StatusTab server={projectServer} askPassword={askPassword} />
+              </TabsContent>
+              <TabsContent value="logs" className="h-full">
+                <LogsTab
+                  project={selectedProject}
+                  server={projectServer}
+                  askPassword={askPassword}
+                />
+              </TabsContent>
+            </div>
+          </Tabs>
+        ) : selectedServer ? (
+          <div className="flex h-full flex-col">
+            <header className="px-6 pt-5">
+              <h1 className="text-lg font-bold">{selectedServer.name}</h1>
+              <p className="mt-0.5 text-[13px] text-ink-soft">
+                Сервер. Добавь проект через «+» в списке слева, чтобы деплоить.
+              </p>
+            </header>
+            <div className="min-h-0 flex-1 px-6 py-5">
+              <StatusTab server={selectedServer} askPassword={askPassword} />
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <div className="max-w-sm text-center">
+              <Sprout className="mx-auto size-9 text-moss/50" />
+              <h2 className="mt-3 text-[16px] font-bold">
+                {servers.length === 0 ? "Добавь первый сервер" : "Выбери сервер или проект"}
+              </h2>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">
+                {servers.length === 0
+                  ? "Понадобятся IP-адрес и пароль — их выдаёт хостинг. Дальше Plantar настроит всё сам."
+                  : "Слева — твои серверы и проекты на них."}
+              </p>
+            </div>
+          </div>
+        )}
+      </main>
 
-      {error && <div className="card error">{error}</div>}
+      <AddServerDialog
+        open={addServerOpen}
+        onOpenChange={setAddServerOpen}
+        onAdded={async (server) => {
+          await refresh();
+          setSelection({ kind: "server", id: server.id });
+        }}
+      />
 
-      {info && (
-        <div className="card">
-          <h2>
-            {info.os.pretty}{" "}
-            <span className={info.supported ? "badge ok" : "badge fail"}>
-              {info.supported ? "поддерживается" : "не поддерживается"}
-            </span>
-          </h2>
-          <p>
-            CPU: {info.cpuCores} · RAM: {info.memoryTotalMb} МБ · Свободно на диске:{" "}
-            {info.diskFreeRootGb} ГБ
-          </p>
-          <h3>Инструменты</h3>
-          <ul className="tools">
-            {Object.entries(info.tools).map(([tool, version]) => (
-              <li key={tool}>
-                <span className={version ? "dot ok" : "dot fail"} />
-                <strong>{tool}</strong> {version ?? "не установлен"}
-              </li>
-            ))}
-          </ul>
+      <ProjectSettingsDialog
+        open={newProject !== null}
+        onOpenChange={(open) => !open && setNewProject(null)}
+        title="Новый проект"
+        folderPath={newProject?.path ?? ""}
+        initial={{ name: newProject?.suggestedName ?? "" }}
+        submitLabel="Добавить проект"
+        onSubmit={async (config) => {
+          if (!newProject) return null;
+          const result = await window.plantar.addProject({
+            serverId: newProject.serverId,
+            path: newProject.path,
+            config,
+          });
+          if (!result.ok) return result.error;
+          setNewProject(null);
+          await refresh();
+          setSelection({ kind: "project", id: result.data.id });
+          return null;
+        }}
+      />
+
+      <PasswordDialog
+        serverName={passwordFor ? passwordFor.name : null}
+        onSubmit={(password) => {
+          setPasswordFor(null);
+          passwordResolve.current?.(password);
+        }}
+      />
+
+      {toast && (
+        <div className="fixed right-4 bottom-4 z-50 max-w-sm rounded-lg border border-clay/30 bg-card px-4 py-3 text-[13px] whitespace-pre-wrap text-clay shadow-lg">
+          {toast}
         </div>
       )}
     </div>
