@@ -4,13 +4,9 @@ import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 
 export default defineConfig({
   main: {
-    plugins: [
-      // Workspace-пакеты — это TypeScript-исходники, их нужно бандлить;
-      // ssh2 остаётся внешним (обычный node-модуль).
-      externalizeDepsPlugin({
-        exclude: ["@plantar/core", "@plantar/ssh", "@plantar/config", "@plantar/storage"],
-      }),
-    ],
+    // Внешним остаётся только рантайм-«dependencies» (ssh2) — всё остальное,
+    // включая workspace-пакеты, бандлится и в упакованное приложение не попадает.
+    plugins: [externalizeDepsPlugin()],
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
