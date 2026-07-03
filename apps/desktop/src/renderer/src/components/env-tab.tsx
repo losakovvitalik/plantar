@@ -1,4 +1,4 @@
-import { ChevronRight, FileKey2, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, Eye, EyeOff, FileKey2, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { ProjectRecord } from "../../../preload/index.d";
 import { Button } from "./ui/button";
@@ -37,16 +37,21 @@ function serializeEnv(lines: EnvLine[]): string {
 function EnvFileEditor({
   project,
   file,
+  showAll,
   onDirtyChange,
 }: {
   project: ProjectRecord;
   file: string;
+  /** Показать значения всех переменных (общий переключатель вкладки) */
+  showAll: boolean;
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const [lines, setLines] = useState<EnvLine[] | null>(null);
   const [dirty, setDirtyState] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Индексы строк, значения которых раскрыты вручную */
+  const [revealed, setRevealed] = useState<Set<number>>(new Set());
 
   const setDirty = (value: boolean) => {
     setDirtyState(value);
@@ -79,7 +84,21 @@ function EnvFileEditor({
 
   function removeLine(index: number) {
     setLines((prev) => prev!.filter((_, i) => i !== index));
+    // Индексы строк после удалённой сдвигаются — пересчитываем раскрытые
+    setRevealed(
+      (prev) =>
+        new Set([...prev].filter((i) => i !== index).map((i) => (i > index ? i - 1 : i))),
+    );
     setDirty(true);
+  }
+
+  function toggleReveal(index: number) {
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
   }
 
   function addVar() {
@@ -105,8 +124,10 @@ function EnvFileEditor({
       {varCount === 0 && (
         <p className="text-[13px] text-ink-soft">Файл пуст — добавь первую переменную.</p>
       )}
-      {lines.map((line, i) =>
-        line.type === "var" ? (
+      {lines.map((line, i) => {
+        if (line.type !== "var") return null;
+        const isRevealed = showAll || revealed.has(i);
+        return (
           <div key={i} className="group flex items-center gap-2">
             <Input
               value={line.key}
@@ -120,7 +141,21 @@ function EnvFileEditor({
               onChange={(e) => update(i, { value: e.target.value })}
               placeholder="значение"
               className="flex-1 font-mono text-[12.5px]"
+              autoComplete="off"
+              style={
+                isRevealed
+                  ? undefined
+                  : ({ WebkitTextSecurity: "disc" } as React.CSSProperties)
+              }
             />
+            <button
+              onClick={() => toggleReveal(i)}
+              disabled={showAll}
+              title={isRevealed ? "Скрыть значение" : "Показать значение"}
+              className="rounded-md p-1.5 text-ink-soft/50 outline-none hover:bg-moss/10 hover:text-ink disabled:pointer-events-none disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-moss/50"
+            >
+              {isRevealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
             <button
               onClick={() => removeLine(i)}
               title="Удалить переменную"
@@ -129,8 +164,8 @@ function EnvFileEditor({
               <Trash2 className="size-4" />
             </button>
           </div>
-        ) : null,
-      )}
+        );
+      })}
 
       <div className="mt-1 flex items-center gap-3">
         <Button variant="ghost" size="sm" onClick={addVar}>
@@ -161,6 +196,7 @@ export function EnvTab({ project }: Props) {
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState(".env");
+  const [showAll, setShowAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadFiles = useCallback(async () => {
@@ -178,6 +214,7 @@ export function EnvTab({ project }: Props) {
     setMounted(new Set());
     setDirtyFiles(new Set());
     setAdding(false);
+    setShowAll(false);
     setError(null);
     void loadFiles();
   }, [loadFiles]);
@@ -246,6 +283,15 @@ export function EnvTab({ project }: Props) {
           </div>
         )}
 
+        {files && files.length > 0 && (
+          <div className="mb-2 flex justify-end">
+            <Button variant="ghost" size="sm" onClick={() => setShowAll((v) => !v)}>
+              {showAll ? <EyeOff /> : <Eye />}
+              {showAll ? "Скрыть все" : "Показать все"}
+            </Button>
+          </div>
+        )}
+
         <div className="flex flex-col gap-2">
           {(files ?? []).map((file) => {
             const isOpen = open.has(file);
@@ -271,6 +317,7 @@ export function EnvTab({ project }: Props) {
                     <EnvFileEditor
                       project={project}
                       file={file}
+                      showAll={showAll}
                       onDirtyChange={(d) => setFileDirty(file, d)}
                     />
                   </div>
