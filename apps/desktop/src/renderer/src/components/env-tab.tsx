@@ -196,7 +196,8 @@ export function EnvTab({ project }: Props) {
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState(".env");
-  const [showAll, setShowAll] = useState(false);
+  /** Файлы, у которых раскрыты все значения */
+  const [shownFiles, setShownFiles] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   const loadFiles = useCallback(async () => {
@@ -214,7 +215,7 @@ export function EnvTab({ project }: Props) {
     setMounted(new Set());
     setDirtyFiles(new Set());
     setAdding(false);
-    setShowAll(false);
+    setShownFiles(new Set());
     setError(null);
     void loadFiles();
   }, [loadFiles]);
@@ -227,6 +228,18 @@ export function EnvTab({ project }: Props) {
       return next;
     });
     setMounted((prev) => new Set(prev).add(file));
+  }
+
+  function toggleShown(file: string) {
+    const showing = !shownFiles.has(file);
+    setShownFiles((prev) => {
+      const next = new Set(prev);
+      if (showing) next.add(file);
+      else next.delete(file);
+      return next;
+    });
+    // «Показать все» на свёрнутом файле заодно раскрывает секцию
+    if (showing && !open.has(file)) toggle(file);
   }
 
   function setFileDirty(file: string, dirty: boolean) {
@@ -283,41 +296,44 @@ export function EnvTab({ project }: Props) {
           </div>
         )}
 
-        {files && files.length > 0 && (
-          <div className="mb-2 flex justify-end">
-            <Button variant="ghost" size="sm" onClick={() => setShowAll((v) => !v)}>
-              {showAll ? <EyeOff /> : <Eye />}
-              {showAll ? "Скрыть все" : "Показать все"}
-            </Button>
-          </div>
-        )}
-
         <div className="flex flex-col gap-2">
           {(files ?? []).map((file) => {
             const isOpen = open.has(file);
+            const isShown = shownFiles.has(file);
             return (
               <div key={file} className="rounded-xl border border-line bg-card">
-                <button
-                  onClick={() => toggle(file)}
-                  className="flex w-full items-center gap-2.5 rounded-xl px-4 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-moss/50"
-                >
-                  <ChevronRight
-                    className={`size-4 shrink-0 text-ink-soft/60 transition-transform ${isOpen ? "rotate-90" : ""}`}
-                  />
-                  <span className="font-mono text-[13px] font-medium">{file}</span>
-                  {dirtyFiles.has(file) && (
-                    <span
-                      className="size-1.5 rounded-full bg-amber"
-                      title="Есть несохранённые изменения"
+                <div className="flex items-center rounded-xl pr-2">
+                  <button
+                    onClick={() => toggle(file)}
+                    className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-4 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-moss/50"
+                  >
+                    <ChevronRight
+                      className={`size-4 shrink-0 text-ink-soft/60 transition-transform ${isOpen ? "rotate-90" : ""}`}
                     />
-                  )}
-                </button>
+                    <span className="font-mono text-[13px] font-medium">{file}</span>
+                    {dirtyFiles.has(file) && (
+                      <span
+                        className="size-1.5 rounded-full bg-amber"
+                        title="Есть несохранённые изменения"
+                      />
+                    )}
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleShown(file)}
+                    className="shrink-0 text-ink-soft"
+                  >
+                    {isShown ? <EyeOff /> : <Eye />}
+                    {isShown ? "Скрыть все" : "Показать все"}
+                  </Button>
+                </div>
                 {mounted.has(file) && (
                   <div className={isOpen ? "" : "hidden"}>
                     <EnvFileEditor
                       project={project}
                       file={file}
-                      showAll={showAll}
+                      showAll={isShown}
                       onDirtyChange={(d) => setFileDirty(file, d)}
                     />
                   </div>
