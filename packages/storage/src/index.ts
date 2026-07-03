@@ -83,6 +83,29 @@ function writeJsonList<T>(file: string, list: T[]): void {
   writeFileSync(path.join(dataDir(), file), JSON.stringify(list, null, 2));
 }
 
+export interface AppSettings {
+  /** Сохранять локальные копии серверных логов при каждом просмотре */
+  saveServerLogCopies: boolean;
+  /** Email для Let's Encrypt (уведомления о проблемах с сертификатами); пусто — без email */
+  letsEncryptEmail: string;
+}
+
+const DEFAULT_SETTINGS: AppSettings = {
+  saveServerLogCopies: true,
+  letsEncryptEmail: "",
+};
+
+export function readSettings(): AppSettings {
+  const file = path.join(dataDir(), "settings.json");
+  if (!existsSync(file)) return { ...DEFAULT_SETTINGS };
+  return { ...DEFAULT_SETTINGS, ...(JSON.parse(readFileSync(file, "utf8")) as object) };
+}
+
+export function writeSettings(settings: AppSettings): void {
+  mkdirSync(dataDir(), { recursive: true });
+  writeFileSync(path.join(dataDir(), "settings.json"), JSON.stringify(settings, null, 2));
+}
+
 export const readServers = () => readJsonList<ServerRecord>("servers.json");
 export const writeServers = (list: ServerRecord[]) => writeJsonList("servers.json", list);
 export const readProjects = () => readJsonList<ProjectRecord>("projects.json");

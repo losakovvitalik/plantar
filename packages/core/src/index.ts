@@ -222,16 +222,24 @@ async function setupSsl(
   conn: SshConnection,
   domain: string,
   log: (line: string) => void,
+  email?: string,
 ): Promise<void> {
   log(`→ Настраиваю HTTPS для ${domain}…`);
+  // С email Let's Encrypt предупредит о проблемах с продлением сертификата
+  const account = email ? `--email '${email}' --no-eff-email` : "--register-unsafely-without-email";
   // --keep-until-expiring: при повторном деплое сертификат не перевыпускается.
   // certbot сам дописывает SSL-блок в наш nginx-конфиг и настраивает редирект с http.
   await run(
     conn,
-    `certbot --nginx -d '${domain}' --non-interactive --agree-tos --register-unsafely-without-email --redirect --keep-until-expiring`,
+    `certbot --nginx -d '${domain}' --non-interactive --agree-tos ${account} --redirect --keep-until-expiring`,
     log,
   );
   log(`✓ HTTPS настроен, сертификат будет продлеваться автоматически`);
+}
+
+export interface DeployOptions {
+  /** Email для регистрации в Let's Encrypt */
+  letsEncryptEmail?: string;
 }
 
 export async function deployProject(
@@ -239,6 +247,7 @@ export async function deployProject(
   projectDir: string,
   config: ProjectConfig,
   log: (line: string) => void = () => {},
+  options: DeployOptions = {},
 ): Promise<DeployResult> {
   log(`→ Собираю проект: ${config.buildCommand}`);
   try {
@@ -274,7 +283,7 @@ export async function deployProject(
 
   let url: string;
   if (config.domain) {
-    await setupSsl(conn, config.domain, log);
+    await setupSsl(conn, config.domain, log, options.letsEncryptEmail);
     url = `https://${config.domain}/`;
   } else {
     url = `http://${conn.host}/`;

@@ -8,6 +8,8 @@ export interface ConnectOptions {
   username: string;
   password?: string;
   privateKeyPath?: string;
+  /** Содержимое приватного ключа; имеет приоритет над privateKeyPath */
+  privateKey?: string | Buffer;
 }
 
 export interface ExecResult {
@@ -33,9 +35,9 @@ export class SshConnection {
           port: options.port ?? 22,
           username: options.username,
           password: options.password,
-          privateKey: options.privateKeyPath
-            ? readFileSync(options.privateKeyPath)
-            : undefined,
+          privateKey:
+            options.privateKey ??
+            (options.privateKeyPath ? readFileSync(options.privateKeyPath) : undefined),
         });
     });
   }

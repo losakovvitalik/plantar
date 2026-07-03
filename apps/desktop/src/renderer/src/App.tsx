@@ -5,8 +5,10 @@ import { AddServerDialog } from "./components/AddServerDialog";
 import { ProjectSettingsDialog } from "./components/ProjectSettingsDialog";
 import { DeployTab } from "./components/DeployTab";
 import { EnvTab } from "./components/EnvTab";
+import { HistoryTab } from "./components/HistoryTab";
 import { LogsTab } from "./components/LogsTab";
 import { PasswordDialog } from "./components/PasswordDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { Sidebar } from "./components/Sidebar";
 import { StatusTab } from "./components/StatusTab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
@@ -18,6 +20,7 @@ export default function App() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [selection, setSelection] = useState<Selection>(null);
   const [addServerOpen, setAddServerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   // Промис-обёртка над диалогом пароля: askPassword(server) → ввод пользователя
@@ -111,6 +114,7 @@ export default function App() {
         selection={selection}
         onSelect={setSelection}
         onAddServer={() => setAddServerOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
         onAddProject={addProject}
         onRemoveServer={removeServer}
         onRemoveProject={removeProject}
@@ -131,6 +135,7 @@ export default function App() {
                 <TabsTrigger value="env">Переменные</TabsTrigger>
                 <TabsTrigger value="status">Статус</TabsTrigger>
                 <TabsTrigger value="logs">Логи</TabsTrigger>
+                <TabsTrigger value="history">История</TabsTrigger>
               </TabsList>
             </header>
             <div className="min-h-0 flex-1 px-6 py-5">
@@ -154,6 +159,9 @@ export default function App() {
                   server={projectServer}
                   askPassword={askPassword}
                 />
+              </TabsContent>
+              <TabsContent value="history" className="h-full">
+                <HistoryTab project={selectedProject} />
               </TabsContent>
             </div>
           </Tabs>
@@ -186,6 +194,7 @@ export default function App() {
         )}
       </main>
 
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <AddServerDialog
         open={addServerOpen}
         onOpenChange={setAddServerOpen}

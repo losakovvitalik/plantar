@@ -1,4 +1,4 @@
-import { FolderPlus, Package, Plus, Server, Sprout, Trash2 } from "lucide-react";
+import { FolderPlus, Package, Plus, Server, Settings, Sprout, Trash2 } from "lucide-react";
 import type { ProjectRecord, ServerRecord } from "../../../preload/index.d";
 import type { Selection } from "../App";
 import { cn } from "../lib/utils";
@@ -12,6 +12,7 @@ interface Props {
   onAddProject: (serverId: string) => void;
   onRemoveServer: (server: ServerRecord) => void;
   onRemoveProject: (project: ProjectRecord) => void;
+  onOpenSettings: () => void;
 }
 
 export function Sidebar({
@@ -23,6 +24,7 @@ export function Sidebar({
   onAddProject,
   onRemoveServer,
   onRemoveProject,
+  onOpenSettings,
 }: Props) {
   return (
     <aside className="flex w-60 shrink-0 flex-col bg-pine text-sage">
@@ -121,6 +123,16 @@ export function Sidebar({
           );
         })}
       </nav>
+
+      <div className="border-t border-pine-edge px-2 py-2">
+        <button
+          onClick={onOpenSettings}
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-sage/80 outline-none hover:bg-pine-edge/50 hover:text-sage focus-visible:ring-2 focus-visible:ring-sprout/50"
+        >
+          <Settings className="size-4" />
+          Настройки
+        </button>
+      </div>
     </aside>
   );
 }

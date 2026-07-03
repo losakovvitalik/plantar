@@ -15,6 +15,12 @@ const api = {
   writeProjectConfig: (projectId: string, config: unknown) =>
     invoke("projects:writeConfig", { projectId, config }),
 
+  getSettings: () => invoke("settings:get"),
+  setSettings: (settings: unknown) => invoke("settings:set", settings),
+
+  listHistory: (projectId: string) => invoke("history:list", projectId),
+  readDeployLog: (logFile: string) => invoke("history:readLog", logFile),
+
   listEnvFiles: (projectId: string) => invoke("env:list", projectId),
   readEnvFile: (projectId: string, file: string) => invoke("env:read", { projectId, file }),
   writeEnvFile: (projectId: string, file: string, content: string) =>

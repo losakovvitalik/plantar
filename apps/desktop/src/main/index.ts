@@ -14,14 +14,25 @@ import {
   DeployLogWriter,
   type ProjectRecord,
   type ServerRecord,
+  type AppSettings,
   appendHistory,
+  dataDir,
+  readHistory,
   readProjects,
   readServers,
+  readSettings,
   saveServerLogSnapshot,
   writeProjects,
   writeServers,
+  writeSettings,
 } from "@plantar/storage";
-import { generateKeyPair, installPublicKey } from "./ssh-setup";
+import {
+  generateKeyPair,
+  installPublicKey,
+  loadPrivateKey,
+  migratePlainKeys,
+  storePrivateKey,
+} from "./ssh-setup";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -54,7 +65,7 @@ async function connect(server: ServerRecord, password?: string): Promise<SshConn
     port: server.port,
     username: server.user,
     password: server.auth === "password" ? password : undefined,
-    privateKeyPath: server.auth === "key" ? server.keyPath : undefined,
+    privateKey: server.auth === "key" ? loadPrivateKey(server.keyPath!) : undefined,
   });
 }
 
@@ -80,10 +91,10 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
 
   let record: ServerRecord;
   if (input.auth === "key") {
-    const keyPath = await generateKeyPair(id, `plantar-${base.name}`);
+    const { privateKeyPem, publicKey } = await generateKeyPair(id, `plantar-${base.name}`);
     const conn = await connectWithPassword(base, input.password);
     try {
-      await installPublicKey(conn, keyPath);
+      await installPublicKey(conn, publicKey);
     } finally {
       conn.close();
     }
@@ -92,9 +103,10 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
       host: base.host,
       port: base.port,
       username: base.user,
-      privateKeyPath: keyPath,
+      privateKey: privateKeyPem,
     });
     test.close();
+    const keyPath = storePrivateKey(id, privateKeyPem);
     record = { ...base, auth: "key", keyPath };
   } else {
     const conn = await connectWithPassword(base, input.password);
@@ -179,9 +191,12 @@ async function runDeploy(
   };
   const startedAt = new Date().toISOString();
 
+  const settings = readSettings();
   const conn = await connect(server, password);
   try {
-    const result = await deployProject(conn, project.path, config, log);
+    const result = await deployProject(conn, project.path, config, log, {
+      letsEncryptEmail: settings.letsEncryptEmail || undefined,
+    });
     appendHistory({
       project: config.name,
       host: server.host,
@@ -233,7 +248,15 @@ function createWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
+  migratePlainKeys();
   const win = createWindow();
+
+  ipcMain.handle("settings:get", () => toResult(async () => readSettings()));
+  ipcMain.handle("settings:set", (_e, settings: AppSettings) =>
+    toResult(async () => {
+      writeSettings(settings);
+    }),
+  );
 
   ipcMain.handle("servers:list", () => toResult(async () => readServers()));
   ipcMain.handle("servers:add", (_e, input: AddServerInput) => toResult(() => addServer(input)));
@@ -293,6 +316,34 @@ app.whenReady().then(() => {
     }),
   );
 
+  ipcMain.handle("history:list", (_e, projectId: string) =>
+    toResult(async () => {
+      const project = getProject(projectId);
+      const server = getServer(project.serverId);
+      // Имя сайта могли поменять в plantar.json — берём актуальное, с фолбэком
+      let name = project.name;
+      try {
+        name = loadProjectConfig(project.path).name;
+      } catch {
+        /* plantar.json недоступен — используем имя на момент добавления */
+      }
+      return readHistory()
+        .filter((r) => r.project === name && r.host === server.host)
+        .reverse();
+    }),
+  );
+  ipcMain.handle("history:readLog", (_e, logFile: string) =>
+    toResult(async () => {
+      // Читаем только файлы из хранилища логов Plantar
+      const logsRoot = path.join(dataDir(), "logs") + path.sep;
+      const resolved = path.resolve(logFile);
+      if (!resolved.startsWith(logsRoot)) {
+        throw new Error("Недопустимый путь к файлу лога.");
+      }
+      return readFileSync(resolved, "utf8");
+    }),
+  );
+
   ipcMain.handle("server:info", (_e, args: { serverId: string; password?: string }) =>
     toResult(async () => {
       const conn = await connect(getServer(args.serverId), args.password);
@@ -314,8 +365,10 @@ app.whenReady().then(() => {
       const conn = await connect(getServer(project.serverId), args.password);
       try {
         const logs = await getSiteLogs(conn, project.name, 200);
-        saveServerLogSnapshot(project.name, "access", logs.access);
-        saveServerLogSnapshot(project.name, "error", logs.error);
+        if (readSettings().saveServerLogCopies) {
+          saveServerLogSnapshot(project.name, "access", logs.access);
+          saveServerLogSnapshot(project.name, "error", logs.error);
+        }
         return logs;
       } finally {
         conn.close();

@@ -1,6 +1,6 @@
 import type { ProjectConfig, ProjectConfigInput } from "@plantar/config";
 import type { ServerInfo, SiteLogs } from "@plantar/core";
-import type { ProjectRecord, ServerRecord } from "@plantar/storage";
+import type { AppSettings, DeployRecord, ProjectRecord, ServerRecord } from "@plantar/storage";
 
 export type { ProjectConfig, ProjectConfigInput, ServerInfo, SiteLogs, ProjectRecord, ServerRecord };
 
@@ -41,6 +41,12 @@ declare global {
         projectId: string,
         config: ProjectConfigInput,
       ) => Promise<IpcResult<ProjectConfig>>;
+
+      getSettings: () => Promise<IpcResult<AppSettings>>;
+      setSettings: (settings: AppSettings) => Promise<IpcResult<void>>;
+
+      listHistory: (projectId: string) => Promise<IpcResult<DeployRecord[]>>;
+      readDeployLog: (logFile: string) => Promise<IpcResult<string>>;
 
       listEnvFiles: (projectId: string) => Promise<IpcResult<string[]>>;
       readEnvFile: (projectId: string, file: string) => Promise<IpcResult<string>>;
