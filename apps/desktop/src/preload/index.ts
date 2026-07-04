@@ -34,7 +34,10 @@ const api = {
     invoke("server:info", { serverId, password }),
   isServerConnected: (serverId: string) => invoke("server:isConnected", serverId),
   deploy: (projectId: string, password?: string) => invoke("deploy:run", { projectId, password }),
-  getLogs: (projectId: string, password?: string) => invoke("logs:get", { projectId, password }),
+
+  startLogStream: (projectId: string, source: string, password?: string) =>
+    invoke("logs:streamStart", { projectId, source, password }),
+  stopLogStream: (streamId: string) => invoke("logs:streamStop", streamId),
 
   openExternal: (url: string) => invoke("open-external", url),
 
@@ -42,6 +45,23 @@ const api = {
     const handler = (_e: unknown, data: { projectId: string; line: string }) => callback(data);
     ipcRenderer.on("deploy:log", handler);
     return () => ipcRenderer.removeListener("deploy:log", handler);
+  },
+
+  onLogStreamData: (
+    callback: (event: { streamId: string; channel: string; text: string }) => void,
+  ) => {
+    const handler = (
+      _e: unknown,
+      data: { streamId: string; channel: string; text: string },
+    ) => callback(data);
+    ipcRenderer.on("logs:stream-data", handler);
+    return () => ipcRenderer.removeListener("logs:stream-data", handler);
+  },
+
+  onLogStreamEnd: (callback: (event: { streamId: string }) => void) => {
+    const handler = (_e: unknown, data: { streamId: string }) => callback(data);
+    ipcRenderer.on("logs:stream-end", handler);
+    return () => ipcRenderer.removeListener("logs:stream-end", handler);
   },
 
   onOpenProject: (callback: (event: { projectId: string }) => void) => {

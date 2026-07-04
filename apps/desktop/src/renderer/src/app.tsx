@@ -252,6 +252,7 @@ export default function App() {
                 <LogsTab
                   project={selectedProject}
                   server={projectServer}
+                  config={projectConfig}
                   askPassword={askPassword}
                 />
               </TabsContent>

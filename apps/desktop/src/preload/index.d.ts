@@ -1,13 +1,13 @@
 import type { DetectedProject, ProjectConfig, ProjectConfigInput } from "@plantar/config";
-import type { ServerInfo, SiteLogs } from "@plantar/core";
+import type { LogStreamSource, ServerInfo } from "@plantar/core";
 import type { AppSettings, DeployRecord, ProjectRecord, ServerRecord } from "@plantar/storage";
 
 export type {
   DetectedProject,
+  LogStreamSource,
   ProjectConfig,
   ProjectConfigInput,
   ServerInfo,
-  SiteLogs,
   ProjectRecord,
   ServerRecord,
 };
@@ -73,13 +73,29 @@ declare global {
       /** Есть ли живое соединение с сервером — тогда пароль не понадобится */
       isServerConnected: (serverId: string) => Promise<IpcResult<boolean>>;
       deploy: (projectId: string, password?: string) => Promise<IpcResult<{ url?: string }>>;
-      getLogs: (projectId: string, password?: string) => Promise<IpcResult<SiteLogs>>;
+
+      /** Живой хвост логов: события приходят в onLogStreamData до stopLogStream */
+      startLogStream: (
+        projectId: string,
+        source: LogStreamSource,
+        password?: string,
+      ) => Promise<IpcResult<{ streamId: string }>>;
+      stopLogStream: (streamId: string) => Promise<IpcResult<void>>;
 
       openExternal: (url: string) => Promise<IpcResult<void>>;
 
       onDeployLog: (
         callback: (event: { projectId: string; line: string }) => void,
       ) => () => void;
+
+      onLogStreamData: (
+        callback: (event: {
+          streamId: string;
+          channel: "out" | "err";
+          text: string;
+        }) => void,
+      ) => () => void;
+      onLogStreamEnd: (callback: (event: { streamId: string }) => void) => () => void;
 
       onOpenProject: (callback: (event: { projectId: string }) => void) => () => void;
     };

@@ -18,6 +18,17 @@ export interface ExecResult {
   code: number;
 }
 
+export interface ExecStreamHandlers {
+  onStdout: (text: string) => void;
+  onStderr: (text: string) => void;
+  /** Вызывается один раз — когда команда завершилась или канал закрылся */
+  onClose: () => void;
+}
+
+export interface ExecStreamHandle {
+  stop: () => void;
+}
+
 export class SshConnection {
   private closed = false;
 
@@ -55,6 +66,35 @@ export class SshConnection {
           // и позволяет заметить обрыв простаивающего соединения
           keepaliveInterval: 15_000,
         });
+    });
+  }
+
+  /**
+   * Запускает команду и отдаёт её вывод по мере появления.
+   * stop() закрывает канал — долгоживущая команда (tail -F) завершается.
+   */
+  execStream(command: string, handlers: ExecStreamHandlers): Promise<ExecStreamHandle> {
+    return new Promise((resolve, reject) => {
+      this.client.exec(command, (err, stream) => {
+        if (err) return reject(err);
+        // Отдельные декодеры на канал: граница чанка может резать многобайтный символ
+        const stdoutDecoder = new TextDecoder();
+        const stderrDecoder = new TextDecoder();
+        let closed = false;
+        stream.on("data", (chunk: Buffer) => {
+          handlers.onStdout(stdoutDecoder.decode(chunk, { stream: true }));
+        });
+        stream.stderr.on("data", (chunk: Buffer) => {
+          handlers.onStderr(stderrDecoder.decode(chunk, { stream: true }));
+        });
+        stream.on("close", () => {
+          if (closed) return;
+          closed = true;
+          handlers.onClose();
+        });
+        // end() шлёт EOF — команда вида «tail … & cat; kill …» завершает себя сама
+        resolve({ stop: () => stream.end() });
+      });
     });
   }
 

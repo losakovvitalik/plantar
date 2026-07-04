@@ -4,9 +4,10 @@ import path from "node:path";
 import { BrowserWindow, Notification, app, dialog, ipcMain, shell } from "electron";
 import { SshConnection } from "@plantar/ssh";
 import {
+  type LogStreamSource,
   deployProject,
   getServerInfo,
-  getSiteLogs,
+  logStreamCommand,
   readProjectEnv,
   removeDeployedProject,
   writeProjectEnv,
@@ -453,17 +454,82 @@ app.whenReady().then(() => {
     toResult(() => runDeploy(args.projectId, args.password, win)),
   );
 
-  ipcMain.handle("logs:get", (_e, args: { projectId: string; password?: string }) =>
-    toResult(async () => {
-      const project = getProject(args.projectId);
-      return withServer(getServer(project.serverId), args.password, async (conn) => {
-        const logs = await getSiteLogs(conn, project.name, 200);
-        if (readSettings().saveServerLogCopies) {
-          saveServerLogSnapshot(project.name, "access", logs.access);
-          saveServerLogSnapshot(project.name, "error", logs.error);
+  // Живые лог-стримы: id → остановка. Активный стрим держит соединение в пуле занятым
+  const logStreams = new Map<string, () => void>();
+  // При перезагрузке renderer подписчики пропадают — останавливаем осиротевшие стримы
+  win.webContents.on("did-navigate", () => {
+    for (const stop of logStreams.values()) stop();
+  });
+
+  ipcMain.handle(
+    "logs:streamStart",
+    (_e, args: { projectId: string; source: LogStreamSource; password?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        const server = getServer(project.serverId);
+        // Имя могли поменять в plantar.json — берём актуальное, с фолбэком
+        let name = project.name;
+        try {
+          name = loadProjectConfig(project.path).name;
+        } catch {
+          /* plantar.json недоступен — используем имя на момент добавления */
         }
-        return logs;
-      });
+
+        const streamId = randomUUID();
+        const send = (channel: string, payload: unknown) => {
+          if (!win.isDestroyed()) win.webContents.send(channel, payload);
+        };
+        // Просмотренные nginx-логи сохраняются локально при закрытии стрима (настройка)
+        const snapshot =
+          args.source === "nginx" && readSettings().saveServerLogCopies
+            ? { access: "", error: "" }
+            : null;
+        const collect = (kind: "access" | "error", text: string) => {
+          if (snapshot) snapshot[kind] = (snapshot[kind] + text).slice(-512_000);
+        };
+
+        await new Promise<void>((started, failed) => {
+          // Внутренний промис резолвится при закрытии стрима — до этого соединение занято
+          withServer(server, args.password, (conn) =>
+            new Promise<void>((closed) => {
+              conn
+                .execStream(logStreamCommand(args.source, name), {
+                  onStdout: (text) => {
+                    collect("access", text);
+                    send("logs:stream-data", { streamId, channel: "out", text });
+                  },
+                  onStderr: (text) => {
+                    collect("error", text);
+                    send("logs:stream-data", { streamId, channel: "err", text });
+                  },
+                  onClose: () => {
+                    logStreams.delete(streamId);
+                    if (snapshot) {
+                      saveServerLogSnapshot(name, "access", snapshot.access);
+                      saveServerLogSnapshot(name, "error", snapshot.error);
+                    }
+                    send("logs:stream-end", { streamId });
+                    closed();
+                  },
+                })
+                .then((handle) => {
+                  logStreams.set(streamId, handle.stop);
+                  started();
+                })
+                .catch((err) => {
+                  closed();
+                  failed(err);
+                });
+            }),
+          ).catch(failed);
+        });
+        return { streamId };
+      }),
+  );
+
+  ipcMain.handle("logs:streamStop", (_e, streamId: string) =>
+    toResult(async () => {
+      logStreams.get(streamId)?.();
     }),
   );
 
