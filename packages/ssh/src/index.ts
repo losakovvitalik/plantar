@@ -84,22 +84,28 @@ export class SshConnection {
 
   /**
    * Рекурсивно загружает содержимое localDir в remoteDir.
+   * Папки из excludeDirs (по имени, на любом уровне) пропускаются.
    * Возвращает количество загруженных файлов.
    */
   async uploadDirectory(
     localDir: string,
     remoteDir: string,
     onFile?: (relativePath: string) => void,
+    excludeDirs: string[] = [],
   ): Promise<number> {
     const entries = readdirSync(localDir, { recursive: true, withFileTypes: true });
 
     const toPosix = (p: string) => p.split(path.sep).join(path.posix.sep);
+    const excluded = (relativePath: string) =>
+      relativePath.split(path.posix.sep).some((part) => excludeDirs.includes(part));
     const dirs = entries
       .filter((e) => e.isDirectory())
-      .map((e) => toPosix(path.join(path.relative(localDir, e.parentPath), e.name)));
+      .map((e) => toPosix(path.join(path.relative(localDir, e.parentPath), e.name)))
+      .filter((d) => !excluded(d));
     const files = entries
       .filter((e) => e.isFile())
-      .map((e) => toPosix(path.join(path.relative(localDir, e.parentPath), e.name)));
+      .map((e) => toPosix(path.join(path.relative(localDir, e.parentPath), e.name)))
+      .filter((f) => !excluded(f));
 
     const mkdirTargets = [remoteDir, ...dirs.map((d) => path.posix.join(remoteDir, d))];
     const mkdir = await this.exec(

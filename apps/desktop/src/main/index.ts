@@ -235,6 +235,10 @@ async function runDeploy(
     const result = await deployProject(conn, project.path, config, log, {
       letsEncryptEmail: settings.letsEncryptEmail || undefined,
     });
+    // Порт выбирается на сервере при первом деплое — закрепляем его в конфиге
+    if (result.port && result.port !== config.port) {
+      writeProjectConfig(project.path, { ...config, port: result.port });
+    }
     appendHistory({
       project: config.name,
       host: server.host,

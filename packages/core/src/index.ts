@@ -170,31 +170,50 @@ export interface DeployResult {
   target: string;
   fileCount: number;
   url: string;
+  /** Порт Node.js-приложения; статические сайты его не используют */
+  port?: number;
 }
 
 async function configureNginx(
   conn: SshConnection,
   config: ProjectConfig,
   log: (line: string) => void,
+  appPort?: number,
 ): Promise<void> {
   // Без домена сайт становится default_server — отвечает по IP.
   const listen = config.domain ? "80" : "80 default_server";
   const serverName = config.domain ?? "_";
   const confPath = `/etc/nginx/sites-available/${config.name}.conf`;
 
+  // Для node-приложения nginx проксирует запросы на порт, для статики — раздаёт файлы
+  const location = appPort
+    ? `location / {
+        proxy_pass http://127.0.0.1:${appPort};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }`
+    : `location / {
+        try_files $uri $uri/ /index.html;
+    }`;
+
+  const rootLines = appPort
+    ? ""
+    : `
+    root /var/www/${config.name};
+    index index.html;
+`;
+
   const conf = `server {
     listen ${listen};
     server_name ${serverName};
-
-    root /var/www/${config.name};
-    index index.html;
-
+${rootLines}
     access_log /var/log/nginx/${config.name}.access.log;
     error_log /var/log/nginx/${config.name}.error.log;
 
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
+    ${location}
 }`;
 
   log(`→ Настраиваю nginx (${confPath})…`);
@@ -249,6 +268,18 @@ export async function deployProject(
   log: (line: string) => void = () => {},
   options: DeployOptions = {},
 ): Promise<DeployResult> {
+  return config.type === "node"
+    ? deployNode(conn, projectDir, config, log, options)
+    : deployStatic(conn, projectDir, config, log, options);
+}
+
+async function deployStatic(
+  conn: SshConnection,
+  projectDir: string,
+  config: ProjectConfig,
+  log: (line: string) => void,
+  options: DeployOptions,
+): Promise<DeployResult> {
   log(`→ Собираю проект: ${config.buildCommand}`);
   try {
     await execAsync(config.buildCommand, { cwd: projectDir, maxBuffer: 50 * 1024 * 1024 });
@@ -290,4 +321,124 @@ export async function deployProject(
   }
   log(`✓ Сайт доступен: ${url}`);
   return { target, fileCount, url };
+}
+
+const APP_PORT_RANGE = { from: 3001, to: 3999 };
+
+/** Свободный порт: не занят слушающим процессом и не выдан другому сайту в nginx */
+async function pickFreePort(conn: SshConnection): Promise<number> {
+  const used = new Set<number>();
+
+  const listening = await conn.exec("ss -tlnH");
+  for (const match of listening.stdout.matchAll(/:(\d+)\s/g)) {
+    used.add(Number(match[1]));
+  }
+
+  // Порты упавших приложений не слушаются, но закреплены в конфигах nginx
+  const assigned = await conn.exec(
+    "grep -rhoE 'proxy_pass http://127\\.0\\.0\\.1:[0-9]+' /etc/nginx/sites-available/ 2>/dev/null",
+  );
+  for (const match of assigned.stdout.matchAll(/:(\d+)/g)) {
+    used.add(Number(match[1]));
+  }
+
+  for (let port = APP_PORT_RANGE.from; port <= APP_PORT_RANGE.to; port++) {
+    if (!used.has(port)) return port;
+  }
+  throw new Error(
+    `Не нашлось свободного порта в диапазоне ${APP_PORT_RANGE.from}–${APP_PORT_RANGE.to}.`,
+  );
+}
+
+/** Ждёт, пока приложение начнёт отвечать по HTTP; при неудаче — ошибка с логами pm2 */
+async function waitForApp(
+  conn: SshConnection,
+  name: string,
+  port: number,
+  log: (line: string) => void,
+): Promise<void> {
+  log(`→ Проверяю, что приложение отвечает на порту ${port}…`);
+  const check = await conn.exec(
+    `for i in $(seq 1 30); do ` +
+      `code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://127.0.0.1:${port}/); ` +
+      `if [ "$code" != "000" ]; then exit 0; fi; sleep 1; done; exit 1`,
+  );
+  if (check.code !== 0) {
+    const logs = await conn.exec(`pm2 logs '${name}' --nostream --lines 30 2>&1`);
+    throw new Error(
+      `Приложение не отвечает на порту ${port}. Последние строки логов:\n${logs.stdout.slice(-3000)}`,
+    );
+  }
+  log("✓ Приложение отвечает");
+}
+
+async function deployNode(
+  conn: SshConnection,
+  projectDir: string,
+  config: ProjectConfig,
+  log: (line: string) => void,
+  options: DeployOptions,
+): Promise<DeployResult> {
+  const target = `/var/www/${config.name}`;
+  const staging = `/var/www/.${config.name}.uploading`;
+
+  await run(conn, `rm -rf '${staging}'`, log);
+  log("→ Загружаю файлы…");
+  const fileCount = await conn.uploadDirectory(
+    projectDir,
+    staging,
+    (file) => log(`  ↑ ${file}`),
+    ["node_modules", ".git"],
+  );
+  log(`✓ Загружено файлов: ${fileCount}`);
+
+  log(`→ Устанавливаю зависимости: ${config.packageManager} install`);
+  await run(conn, `cd '${staging}' && ${config.packageManager} install`, log);
+
+  const port = config.port ?? (await pickFreePort(conn));
+  if (port !== config.port) log(`✓ Приложению назначен порт ${port}`);
+
+  await run(conn, `rm -rf '${target}' && mv '${staging}' '${target}'`, log);
+  log(`✓ Задеплоено файлов: ${fileCount} → ${target}`);
+
+  // pm2 запускает первый токен команды как исполняемый файл; "node app.js" → скрипт app.js
+  const startCommand = config.startCommand ?? `${config.packageManager} start`;
+  const tokens = startCommand.trim().split(/\s+/);
+  if (tokens[0] === "node") tokens.shift();
+  const [script, ...scriptArgs] = tokens;
+  if (!script) throw new Error("Команда запуска пуста — укажите startCommand в plantar.json.");
+
+  const ecosystemPath = `${target}/plantar.pm2.config.cjs`;
+  const ecosystem = `module.exports = {
+  apps: [
+    {
+      name: ${JSON.stringify(config.name)},
+      cwd: ${JSON.stringify(target)},
+      script: ${JSON.stringify(script)},
+      args: ${JSON.stringify(scriptArgs.join(" "))},
+      env: { PORT: ${port}, NODE_ENV: "production" },
+    },
+  ],
+};`;
+  await run(conn, `cat > '${ecosystemPath}' <<'PLANTAR_EOF'\n${ecosystem}\nPLANTAR_EOF`, log);
+
+  log(`→ Запускаю приложение через pm2: ${startCommand}`);
+  await run(conn, `pm2 startOrRestart '${ecosystemPath}' --update-env`, log);
+  // pm2 startup + save: приложение переживёт перезагрузку сервера
+  await run(conn, `pm2 startup systemd -u "$(whoami)" --hp "$HOME"`, log);
+  await run(conn, "pm2 save", log);
+
+  await waitForApp(conn, config.name, port, log);
+
+  await configureNginx(conn, config, log, port);
+
+  let url: string;
+  if (config.domain) {
+    await setupSsl(conn, config.domain, log, options.letsEncryptEmail);
+    url = `https://${config.domain}/`;
+  } else {
+    url = `http://${conn.host}/`;
+  }
+  log(`✓ Приложение доступно: ${url}`);
+  return { target, fileCount, url, port };
 }

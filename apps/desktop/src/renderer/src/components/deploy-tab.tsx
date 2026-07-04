@@ -21,6 +21,8 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
   const [running, setRunning] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Настройки сохранены, но ещё не применены к серверу деплоем
+  const [pendingSettings, setPendingSettings] = useState(false);
   const [showCommands, setShowCommands] = useState(
     () => localStorage.getItem(SHOW_COMMANDS_KEY) !== "0",
   );
@@ -66,6 +68,7 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
       password = entered;
     }
     setRunning(true);
+    setPendingSettings(false);
     setLines([]);
     setUrl(null);
     setError(null);
@@ -118,6 +121,12 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
         </label>
       </div>
 
+      {pendingSettings && !running && (
+        <p className="rounded-lg bg-moss/10 px-3 py-2 text-[12.5px] leading-snug text-moss">
+          Настройки сохранены. Они применятся к сайту при следующем деплое.
+        </p>
+      )}
+
       {url && (
         <button
           onClick={() => window.plantar.openExternal(url)}
@@ -161,6 +170,9 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
         onSubmit={async (input) => {
           const result = await window.plantar.writeProjectConfig(project.id, input);
           if (!result.ok) return result.error;
+          if (JSON.stringify(result.data) !== JSON.stringify(config)) {
+            setPendingSettings(true);
+          }
           setConfig(result.data);
           setSettingsOpen(false);
           await onProjectChanged();
