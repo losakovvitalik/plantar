@@ -23,8 +23,12 @@ const projectConfigSchema = z.object({
   startCommand: z.string().optional(),
   /** Порт Node.js-приложения; назначается автоматически при первом деплое */
   port: z.number().int().min(1).max(65535).optional(),
-  /** Домен сайта; если не указан — сайт отвечает по IP сервера */
-  domain: z.string().optional(),
+  /** Домен сайта; если не указан — сайт отвечает по IP сервера.
+   * Regex также защищает от инъекции в shell-команды деплоя (certbot, nginx) */
+  domain: z
+    .string()
+    .regex(/^[a-z0-9.-]+$/i, "только латинские буквы, цифры, точки и дефис")
+    .optional(),
 });
 
 export type ProjectConfig = z.infer<typeof projectConfigSchema>;

@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { safeStorage } from "electron";
-import { SshConnection } from "@plantar/ssh";
+import { SshConnection, shellQuote } from "@plantar/ssh";
 import { keysDir, readServers, writeServers } from "@plantar/storage";
 
 const execFileAsync = promisify(execFile);
@@ -93,8 +93,10 @@ export function migratePlainKeys(): void {
 
 /** Добавляет публичный ключ в authorized_keys на сервере (идемпотентно) */
 export async function installPublicKey(conn: SshConnection, publicKey: string): Promise<void> {
+  // Ключ содержит комментарий с именем сервера — экранируем, имя ничем не ограничено
+  const quotedKey = shellQuote(publicKey);
   const result = await conn.exec(
-    `mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && { grep -qxF '${publicKey}' ~/.ssh/authorized_keys || echo '${publicKey}' >> ~/.ssh/authorized_keys; }`,
+    `mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && { grep -qxF ${quotedKey} ~/.ssh/authorized_keys || echo ${quotedKey} >> ~/.ssh/authorized_keys; }`,
   );
   if (result.code !== 0) {
     throw new Error(`Не удалось установить ключ на сервер:\n${result.stderr}`);

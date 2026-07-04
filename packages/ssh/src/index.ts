@@ -2,6 +2,14 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { Client, type SFTPWrapper } from "ssh2";
 
+/**
+ * Оборачивает строку в одинарные кавычки для подстановки в shell-команду.
+ * Одинарная кавычка внутри строки не может выйти из кавычек: ' → '\''
+ */
+export function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 export interface ConnectOptions {
   host: string;
   port?: number;
@@ -111,7 +119,9 @@ export class SshConnection {
           stderr += chunk;
         });
         stream.on("close", (code: number | null) => {
-          resolve({ stdout, stderr, code: code ?? 0 });
+          // null — канал закрылся без exit-кода (обрыв соединения, kill по сигналу);
+          // считаем это ошибкой, иначе оборванная команда выглядит успешной
+          resolve({ stdout, stderr, code: code ?? -1 });
         });
       });
     });
@@ -170,7 +180,7 @@ export class SshConnection {
 
     const mkdirTargets = [remoteDir, ...dirs.map((d) => path.posix.join(remoteDir, d))];
     const mkdir = await this.exec(
-      `mkdir -p ${mkdirTargets.map((d) => `'${d}'`).join(" ")}`,
+      `mkdir -p ${mkdirTargets.map(shellQuote).join(" ")}`,
     );
     if (mkdir.code !== 0) {
       throw new Error(`Не удалось создать директории на сервере: ${mkdir.stderr}`);
