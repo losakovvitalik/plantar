@@ -3,7 +3,12 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { BrowserWindow, Notification, app, dialog, ipcMain, shell } from "electron";
 import { SshConnection } from "@plantar/ssh";
-import { deployProject, getServerInfo, getSiteLogs } from "@plantar/core";
+import {
+  deployProject,
+  getServerInfo,
+  getSiteLogs,
+  removeDeployedProject,
+} from "@plantar/core";
 import {
   type ProjectConfigInput,
   detectProjectConfig,
@@ -217,7 +222,7 @@ async function runDeploy(
   projectId: string,
   password: string | undefined,
   win: BrowserWindow,
-): Promise<{ url: string }> {
+): Promise<{ url?: string }> {
   const project = getProject(projectId);
   const server = getServer(project.serverId);
   const config = loadProjectConfig(project.path);
@@ -325,6 +330,27 @@ app.whenReady().then(() => {
     toResult(async () => {
       writeProjects(readProjects().filter((p) => p.id !== id));
     }),
+  );
+  ipcMain.handle(
+    "projects:removeFromServer",
+    (_e, args: { projectId: string; password?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        const server = getServer(project.serverId);
+        // Имя могли поменять в plantar.json — берём актуальное, с фолбэком
+        let name = project.name;
+        try {
+          name = loadProjectConfig(project.path).name;
+        } catch {
+          /* plantar.json недоступен — используем имя на момент добавления */
+        }
+        const conn = await connect(server, args.password);
+        try {
+          await removeDeployedProject(conn, name);
+        } finally {
+          conn.close();
+        }
+      }),
   );
   ipcMain.handle("projects:readConfig", (_e, projectId: string) =>
     toResult(async () => loadProjectConfig(getProject(projectId).path)),

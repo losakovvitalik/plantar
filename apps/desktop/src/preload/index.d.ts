@@ -44,6 +44,10 @@ declare global {
         config?: ProjectConfigInput;
       }) => Promise<IpcResult<ProjectRecord>>;
       removeProject: (id: string) => Promise<IpcResult<void>>;
+      removeProjectFromServer: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<void>>;
       readProjectConfig: (projectId: string) => Promise<IpcResult<ProjectConfig>>;
       writeProjectConfig: (
         projectId: string,
@@ -65,7 +69,7 @@ declare global {
       ) => Promise<IpcResult<void>>;
 
       getServerInfo: (serverId: string, password?: string) => Promise<IpcResult<ServerInfo>>;
-      deploy: (projectId: string, password?: string) => Promise<IpcResult<{ url: string }>>;
+      deploy: (projectId: string, password?: string) => Promise<IpcResult<{ url?: string }>>;
       getLogs: (projectId: string, password?: string) => Promise<IpcResult<SiteLogs>>;
 
       openExternal: (url: string) => Promise<IpcResult<void>>;

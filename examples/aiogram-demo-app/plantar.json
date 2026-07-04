@@ -1,0 +1,9 @@
+{
+  "name": "aiogram-demo-app",
+  "type": "bot",
+  "runtime": "python",
+  "packageManager": "npm",
+  "buildCommand": "npm run build",
+  "buildDir": "dist",
+  "startCommand": "python bot.py"
+}

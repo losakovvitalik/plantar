@@ -12,8 +12,10 @@ const projectConfigSchema = z.object({
       /^[a-z0-9][a-z0-9-]*$/,
       "только строчные латинские буквы, цифры и дефис",
     ),
-  /** Тип проекта: статический сайт или Node.js-приложение */
-  type: z.enum(["static", "node"]).default("static"),
+  /** Тип проекта: статический сайт, Node.js-приложение или Telegram-бот */
+  type: z.enum(["static", "node", "bot"]).default("static"),
+  /** Рантайм бота; python — зависимости из requirements.txt в venv */
+  runtime: z.enum(["node", "python"]).default("node"),
   packageManager: z.enum(PACKAGE_MANAGERS).default("npm"),
   buildCommand: z.string().default("npm run build"),
   buildDir: z.string().default("dist"),
@@ -134,6 +136,39 @@ const NODE_FRAMEWORKS: Array<[dep: string, label: string]> = [
   ["hono", "Hono"],
 ];
 
+// Библиотеки Telegram-ботов; проверяются раньше серверных фреймворков
+const BOT_FRAMEWORKS: Array<[dep: string, label: string]> = [
+  ["grammy", "grammY"],
+  ["telegraf", "Telegraf"],
+  ["node-telegram-bot-api", "node-telegram-bot-api"],
+];
+
+// Библиотеки Python-ботов; ищутся в requirements.txt и pyproject.toml
+const PYTHON_BOT_LIBS: Array<[dep: string, label: string]> = [
+  ["aiogram", "aiogram"],
+  ["python-telegram-bot", "python-telegram-bot"],
+  ["pytelegrambotapi", "pyTelegramBotAPI"],
+];
+
+const PYTHON_MAIN_FILES = ["bot.py", "main.py", "app.py"];
+
+function detectPythonBot(projectDir: string, name: string): DetectedProject | null {
+  const text = ["requirements.txt", "pyproject.toml"]
+    .map((file) => path.join(projectDir, file))
+    .filter(existsSync)
+    .map((file) => readFileSync(file, "utf8").toLowerCase())
+    .join("\n");
+  const lib = PYTHON_BOT_LIBS.find(([dep]) => text.includes(dep));
+  if (!lib) return null;
+
+  const main =
+    PYTHON_MAIN_FILES.find((file) => existsSync(path.join(projectDir, file))) ?? "main.py";
+  return {
+    config: { name, type: "bot", runtime: "python", startCommand: `python ${main}` },
+    framework: lib[1],
+  };
+}
+
 /** Предзаполняет конфиг проекта по package.json и lockfile */
 export function detectProjectConfig(projectDir: string): DetectedProject {
   const pkg = readPackageJson(projectDir);
@@ -146,16 +181,25 @@ export function detectProjectConfig(projectDir: string): DetectedProject {
     sanitizeName(path.basename(projectDir)) ||
     "my-app";
 
+  const pythonBot = detectPythonBot(projectDir, name);
+  if (pythonBot) return pythonBot;
+
+  const botFramework = BOT_FRAMEWORKS.find(([dep]) => pkg?.dependencies?.[dep]);
   const nodeFramework = NODE_FRAMEWORKS.find(([dep]) => pkg?.dependencies?.[dep]);
-  if (nodeFramework) {
+  if (botFramework || nodeFramework) {
     const startCommand = pkg?.scripts?.start
       ? `${packageManager} start`
       : pkg?.main
         ? `node ${pkg.main}`
         : `${packageManager} start`;
     return {
-      config: { name, packageManager, type: "node", startCommand },
-      framework: nodeFramework[1],
+      config: {
+        name,
+        packageManager,
+        type: botFramework ? "bot" : "node",
+        startCommand,
+      },
+      framework: (botFramework ?? nodeFramework)![1],
     };
   }
 

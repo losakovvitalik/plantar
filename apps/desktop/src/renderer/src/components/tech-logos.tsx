@@ -13,6 +13,18 @@ export function ReactLogo({ className }: { className?: string }) {
   );
 }
 
+export function TelegramLogo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="11" fill="#2AABEE" />
+      <path
+        d="M5.06 11.68l11.3-4.36c.53-.19.99.13.82.92l.001-.001-1.924 9.066c-.143.638-.524.793-1.058.492l-2.93-2.16-1.413 1.362c-.156.156-.288.288-.59.288l.208-2.983 5.43-4.906c.237-.208-.051-.325-.365-.118l-6.712 4.226-2.893-.903c-.628-.196-.642-.628.131-.928z"
+        fill="#fff"
+      />
+    </svg>
+  );
+}
+
 export function NodeLogo({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">

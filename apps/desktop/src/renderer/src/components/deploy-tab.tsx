@@ -20,6 +20,8 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
   const [lines, setLines] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
+  // Успешный деплой без адреса (боты) — показываем текст вместо ссылки
+  const [deployed, setDeployed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Настройки сохранены, но ещё не применены к серверу деплоем
   const [pendingSettings, setPendingSettings] = useState(false);
@@ -71,11 +73,13 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
     setPendingSettings(false);
     setLines([]);
     setUrl(null);
+    setDeployed(false);
     setError(null);
     const result = await window.plantar.deploy(project.id, password);
     setRunning(false);
     if (result.ok) {
-      setUrl(result.data.url);
+      setUrl(result.data.url ?? null);
+      setDeployed(true);
     } else {
       setError(result.error);
     }
@@ -91,7 +95,7 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
           {running ? "Деплою…" : "Задеплоить"}
         </Button>
 
-        {config && (
+        {config && config.type !== "bot" && (
           <span className="inline-flex items-center gap-1.5 text-[13px] text-ink-soft">
             <Globe className="size-3.5" />
             {config.domain ? (
@@ -127,7 +131,7 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
         </p>
       )}
 
-      {url && (
+      {url ? (
         <button
           onClick={() => window.plantar.openExternal(url)}
           className="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-moss outline-none hover:underline focus-visible:ring-2 focus-visible:ring-moss/50"
@@ -135,6 +139,12 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
           Сайт задеплоен: {url}
           <ExternalLink className="size-3.5" />
         </button>
+      ) : (
+        deployed && (
+          <p className="self-start text-sm font-semibold text-moss">
+            Бот задеплоен и запущен.
+          </p>
+        )
       )}
 
       {error && (

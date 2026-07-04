@@ -8,6 +8,7 @@ import { EnvTab } from "./components/env-tab";
 import { HistoryTab } from "./components/history-tab";
 import { LogsTab } from "./components/logs-tab";
 import { PasswordDialog } from "./components/password-dialog";
+import { RemoveProjectDialog } from "./components/remove-project-dialog";
 import { SettingsDialog } from "./components/settings-dialog";
 import { Sidebar } from "./components/sidebar";
 import { StatusTab } from "./components/status-tab";
@@ -107,12 +108,8 @@ export default function App() {
     await refresh();
   }
 
-  async function removeProject(project: ProjectRecord) {
-    if (!window.confirm(`Убрать проект «${project.name}» из списка? Файлы не удаляются.`)) return;
-    await window.plantar.removeProject(project.id);
-    if (selection?.id === project.id) setSelection(null);
-    await refresh();
-  }
+  // Проект, для которого открыт диалог удаления (из списка или с сервера)
+  const [removingProject, setRemovingProject] = useState<ProjectRecord | null>(null);
 
   const selectedServer =
     selection?.kind === "server" ? servers.find((s) => s.id === selection.id) : undefined;
@@ -135,7 +132,7 @@ export default function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         onAddProject={addProject}
         onRemoveServer={removeServer}
-        onRemoveProject={removeProject}
+        onRemoveProject={setRemovingProject}
       />
 
       <main className="flex min-w-0 flex-1 flex-col">
@@ -252,6 +249,21 @@ export default function App() {
           await refresh();
           setSelection({ kind: "project", id: result.data.id });
           return null;
+        }}
+      />
+
+      <RemoveProjectDialog
+        project={removingProject}
+        server={
+          removingProject
+            ? (servers.find((s) => s.id === removingProject.serverId) ?? null)
+            : null
+        }
+        askPassword={askPassword}
+        onClose={() => setRemovingProject(null)}
+        onRemoved={async () => {
+          if (selection?.id === removingProject?.id) setSelection(null);
+          await refresh();
         }}
       />
 

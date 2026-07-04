@@ -31,6 +31,9 @@ const TOOL_VERSION_COMMANDS: Record<string, string> = {
   pm2: "pm2 --version 2>&1",
   nginx: "nginx -v 2>&1",
   certbot: "certbot --version 2>&1",
+  // Для python-ботов; python3 есть в Ubuntu из коробки, а venv — нет,
+  // поэтому проверяем ensurepip: он ставится вместе с python3-venv
+  python: "python3 -m ensurepip --version >/dev/null 2>&1 && python3 --version 2>&1",
 };
 
 function parseOsRelease(text: string, field: string): string {
@@ -88,6 +91,9 @@ const INSTALL_COMMANDS: Record<string, string[]> = {
   nginx: ["DEBIAN_FRONTEND=noninteractive apt-get install -y nginx"],
   certbot: [
     "DEBIAN_FRONTEND=noninteractive apt-get install -y certbot python3-certbot-nginx",
+  ],
+  python: [
+    "DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv python3-pip",
   ],
 };
 
@@ -166,11 +172,46 @@ export async function getSiteLogs(
   return { access: await read("access"), error: await read("error") };
 }
 
+/** Останавливает проект и удаляет его следы с сервера: pm2-процесс, файлы, конфиг nginx */
+export async function removeDeployedProject(
+  conn: SshConnection,
+  name: string,
+  log: (line: string) => void = () => {},
+): Promise<void> {
+  // У статических сайтов pm2-процесса нет — отсутствие не ошибка
+  log(`→ Останавливаю pm2-процесс «${name}»…`);
+  const deleted = await conn.exec(`pm2 delete '${name}'`);
+  if (deleted.code === 0) {
+    await run(conn, "pm2 save --force", log);
+    log("✓ Процесс остановлен и убран из автозапуска");
+  } else {
+    log("  pm2-процесс не найден — пропускаю");
+  }
+
+  log("→ Удаляю файлы проекта…");
+  await run(conn, `rm -rf '/var/www/${name}' '/var/www/.${name}.uploading'`, log);
+
+  // Конфиг nginx есть только у сайтов; у ботов его нет
+  const conf = await conn.exec(`test -e '/etc/nginx/sites-available/${name}.conf'`);
+  if (conf.code === 0) {
+    log("→ Удаляю конфиг nginx…");
+    await run(
+      conn,
+      `rm -f '/etc/nginx/sites-enabled/${name}.conf' '/etc/nginx/sites-available/${name}.conf'`,
+      log,
+    );
+    await run(conn, "systemctl reload nginx", log);
+  }
+
+  log(`✓ Проект «${name}» удалён с сервера`);
+}
+
 export interface DeployResult {
   target: string;
   fileCount: number;
-  url: string;
-  /** Порт Node.js-приложения; статические сайты его не используют */
+  /** Адрес сайта; у ботов его нет */
+  url?: string;
+  /** Порт Node.js-приложения; статические сайты и боты его не используют */
   port?: number;
 }
 
@@ -268,9 +309,14 @@ export async function deployProject(
   log: (line: string) => void = () => {},
   options: DeployOptions = {},
 ): Promise<DeployResult> {
-  return config.type === "node"
-    ? deployNode(conn, projectDir, config, log, options)
-    : deployStatic(conn, projectDir, config, log, options);
+  switch (config.type) {
+    case "node":
+      return deployNode(conn, projectDir, config, log, options);
+    case "bot":
+      return deployBot(conn, projectDir, config, log);
+    default:
+      return deployStatic(conn, projectDir, config, log, options);
+  }
 }
 
 async function deployStatic(
@@ -372,13 +418,18 @@ async function waitForApp(
   log("✓ Приложение отвечает");
 }
 
-async function deployNode(
+/** Общее для node и bot: загрузка проекта, установка зависимостей, подмена целевой папки */
+async function uploadApp(
   conn: SshConnection,
   projectDir: string,
   config: ProjectConfig,
   log: (line: string) => void,
-  options: DeployOptions,
-): Promise<DeployResult> {
+): Promise<{ target: string; fileCount: number }> {
+  const python = config.runtime === "python";
+  if (python && !existsSync(path.join(projectDir, "requirements.txt"))) {
+    throw new Error(`Не найден requirements.txt в ${projectDir} — он нужен python-боту.`);
+  }
+
   const target = `/var/www/${config.name}`;
   const staging = `/var/www/.${config.name}.uploading`;
 
@@ -388,26 +439,49 @@ async function deployNode(
     projectDir,
     staging,
     (file) => log(`  ↑ ${file}`),
-    ["node_modules", ".git"],
+    python ? [".venv", "__pycache__", ".git"] : ["node_modules", ".git"],
   );
   log(`✓ Загружено файлов: ${fileCount}`);
 
-  log(`→ Устанавливаю зависимости: ${config.packageManager} install`);
-  await run(conn, `cd '${staging}' && ${config.packageManager} install`, log);
-
-  const port = config.port ?? (await pickFreePort(conn));
-  if (port !== config.port) log(`✓ Приложению назначен порт ${port}`);
+  if (python) {
+    log("→ Создаю виртуальное окружение и ставлю зависимости: pip install -r requirements.txt");
+    await run(
+      conn,
+      `cd '${staging}' && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`,
+      log,
+    );
+  } else {
+    log(`→ Устанавливаю зависимости: ${config.packageManager} install`);
+    await run(conn, `cd '${staging}' && ${config.packageManager} install`, log);
+  }
 
   await run(conn, `rm -rf '${target}' && mv '${staging}' '${target}'`, log);
   log(`✓ Задеплоено файлов: ${fileCount} → ${target}`);
+  return { target, fileCount };
+}
 
-  // pm2 запускает первый токен команды как исполняемый файл; "node app.js" → скрипт app.js
-  const startCommand = config.startCommand ?? `${config.packageManager} start`;
+/** Пишет pm2-конфиг и запускает процесс; настраивает автозапуск после перезагрузки сервера */
+async function startWithPm2(
+  conn: SshConnection,
+  target: string,
+  config: ProjectConfig,
+  env: Record<string, string | number>,
+  log: (line: string) => void,
+): Promise<void> {
+  const python = config.runtime === "python";
+  // pm2 запускает первый токен команды как исполняемый файл; интерпретатор
+  // ("node app.js", "python bot.py") отрезаем — pm2 подставит свой
+  const startCommand =
+    config.startCommand ?? (python ? "" : `${config.packageManager} start`);
   const tokens = startCommand.trim().split(/\s+/);
-  if (tokens[0] === "node") tokens.shift();
+  if (["node", "python", "python3"].includes(tokens[0])) tokens.shift();
   const [script, ...scriptArgs] = tokens;
   if (!script) throw new Error("Команда запуска пуста — укажите startCommand в plantar.json.");
 
+  // Python-процесс запускается интерпретатором из venv, созданного при деплое
+  const interpreterLine = python
+    ? `\n      interpreter: ${JSON.stringify(`${target}/.venv/bin/python`)},`
+    : "";
   const ecosystemPath = `${target}/plantar.pm2.config.cjs`;
   const ecosystem = `module.exports = {
   apps: [
@@ -415,18 +489,33 @@ async function deployNode(
       name: ${JSON.stringify(config.name)},
       cwd: ${JSON.stringify(target)},
       script: ${JSON.stringify(script)},
-      args: ${JSON.stringify(scriptArgs.join(" "))},
-      env: { PORT: ${port}, NODE_ENV: "production" },
+      args: ${JSON.stringify(scriptArgs.join(" "))},${interpreterLine}
+      env: ${JSON.stringify(env)},
     },
   ],
 };`;
   await run(conn, `cat > '${ecosystemPath}' <<'PLANTAR_EOF'\n${ecosystem}\nPLANTAR_EOF`, log);
 
-  log(`→ Запускаю приложение через pm2: ${startCommand}`);
+  log(`→ Запускаю через pm2: ${startCommand}`);
   await run(conn, `pm2 startOrRestart '${ecosystemPath}' --update-env`, log);
-  // pm2 startup + save: приложение переживёт перезагрузку сервера
+  // pm2 startup + save: процесс переживёт перезагрузку сервера
   await run(conn, `pm2 startup systemd -u "$(whoami)" --hp "$HOME"`, log);
   await run(conn, "pm2 save", log);
+}
+
+async function deployNode(
+  conn: SshConnection,
+  projectDir: string,
+  config: ProjectConfig,
+  log: (line: string) => void,
+  options: DeployOptions,
+): Promise<DeployResult> {
+  const { target, fileCount } = await uploadApp(conn, projectDir, config, log);
+
+  const port = config.port ?? (await pickFreePort(conn));
+  if (port !== config.port) log(`✓ Приложению назначен порт ${port}`);
+
+  await startWithPm2(conn, target, config, { PORT: port, NODE_ENV: "production" }, log);
 
   await waitForApp(conn, config.name, port, log);
 
@@ -441,4 +530,58 @@ async function deployNode(
   }
   log(`✓ Приложение доступно: ${url}`);
   return { target, fileCount, url, port };
+}
+
+interface Pm2Process {
+  name: string;
+  pm2_env: { status: string; pm_uptime: number };
+}
+
+/** Бот не слушает порт, поэтому вместо HTTP-проверки убеждаемся,
+ *  что pm2-процесс живёт несколько секунд и не перезапускается */
+async function waitForStableProcess(
+  conn: SshConnection,
+  name: string,
+  log: (line: string) => void,
+): Promise<void> {
+  log("→ Проверяю, что процесс работает…");
+  const result = await conn.exec(`sleep 5; echo "NOW:$(date +%s%3N)"; pm2 jlist 2>/dev/null`);
+  const now = Number(result.stdout.match(/^NOW:(\d+)$/m)?.[1]);
+
+  let processes: Pm2Process[] = [];
+  const jsonStart = result.stdout.indexOf("[");
+  if (jsonStart !== -1) {
+    try {
+      processes = JSON.parse(result.stdout.slice(jsonStart)) as Pm2Process[];
+    } catch {
+      /* нечитаемый вывод pm2 — обработается как «процесс не найден» */
+    }
+  }
+
+  const app = processes.find((p) => p.name === name);
+  const stable =
+    app && app.pm2_env.status === "online" && now - app.pm2_env.pm_uptime >= 4000;
+  if (!stable) {
+    const logs = await conn.exec(`pm2 logs '${name}' --nostream --lines 30 2>&1`);
+    throw new Error(
+      `Процесс «${name}» не запустился или падает сразу после старта. Последние строки логов:\n${logs.stdout.slice(-3000)}`,
+    );
+  }
+  log("✓ Процесс работает стабильно");
+}
+
+async function deployBot(
+  conn: SshConnection,
+  projectDir: string,
+  config: ProjectConfig,
+  log: (line: string) => void,
+): Promise<DeployResult> {
+  const { target, fileCount } = await uploadApp(conn, projectDir, config, log);
+
+  await startWithPm2(conn, target, config, { NODE_ENV: "production" }, log);
+
+  await waitForStableProcess(conn, config.name, log);
+
+  log("✓ Бот запущен. pm2 перезапустит его после падения и после перезагрузки сервера.");
+  return { target, fileCount };
 }

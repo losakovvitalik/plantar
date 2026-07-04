@@ -11,6 +11,8 @@ const api = {
   pickProject: () => invoke("projects:pick"),
   addProject: (input: unknown) => invoke("projects:add", input),
   removeProject: (id: string) => invoke("projects:remove", id),
+  removeProjectFromServer: (projectId: string, password?: string) =>
+    invoke("projects:removeFromServer", { projectId, password }),
   readProjectConfig: (projectId: string) => invoke("projects:readConfig", projectId),
   writeProjectConfig: (projectId: string, config: unknown) =>
     invoke("projects:writeConfig", { projectId, config }),

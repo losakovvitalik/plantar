@@ -1,0 +1,9 @@
+{
+  "name": "bot-demo-app",
+  "type": "bot",
+  "runtime": "node",
+  "packageManager": "npm",
+  "buildCommand": "npm run build",
+  "buildDir": "dist",
+  "startCommand": "npm start"
+}

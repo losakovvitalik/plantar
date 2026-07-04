@@ -11,11 +11,11 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { NodeLogo, ReactLogo } from "./tech-logos";
+import { NodeLogo, ReactLogo, TelegramLogo } from "./tech-logos";
 
 const PACKAGE_MANAGERS = ["npm", "pnpm", "yarn", "bun"] as const;
 
-type ProjectType = "static" | "node";
+type ProjectType = "static" | "node" | "bot";
 
 const PROJECT_TYPES: Array<{
   value: ProjectType;
@@ -34,6 +34,12 @@ const PROJECT_TYPES: Array<{
     label: "Node.js",
     hint: "Серверное приложение: Express и другие",
     Logo: NodeLogo,
+  },
+  {
+    value: "bot",
+    label: "Telegram-бот",
+    hint: "Бот на long polling: grammY, aiogram и другие",
+    Logo: TelegramLogo,
   },
 ];
 
@@ -61,6 +67,7 @@ export function ProjectSettingsDialog({
   onSubmit,
 }: Props) {
   const [type, setType] = useState<ProjectType>("static");
+  const [runtime, setRuntime] = useState<"node" | "python">("node");
   const [name, setName] = useState("");
   const [domain, setDomain] = useState("");
   const [packageManager, setPackageManager] =
@@ -75,6 +82,7 @@ export function ProjectSettingsDialog({
   useEffect(() => {
     if (open) {
       setType(initial.type ?? "static");
+      setRuntime(initial.runtime ?? "node");
       setName(initial.name ?? "");
       setDomain(initial.domain ?? "");
       setPackageManager(initial.packageManager ?? "npm");
@@ -104,12 +112,14 @@ export function ProjectSettingsDialog({
       // Порт статики диалог не редактирует — сохраняем как есть
       port: type === "node" ? portValue : initial.port,
       type,
+      runtime: type === "bot" ? runtime : undefined,
       name,
       packageManager,
       buildCommand: buildCommand.trim() || undefined,
       buildDir: buildDir.trim() || undefined,
       startCommand: startCommand.trim() || undefined,
-      domain: domain.trim() || undefined,
+      // Бот работает без домена — не тащим его из прежних настроек
+      domain: type === "bot" ? undefined : domain.trim() || undefined,
     });
     setBusy(false);
     if (result) setError(result);
@@ -175,41 +185,59 @@ export function ProjectSettingsDialog({
             </p>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="prj-domain">Домен</Label>
-            <Input
-              id="prj-domain"
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-              placeholder="app.mysite.ru"
-            />
-            <p className="text-[12px] leading-snug text-ink-soft/80">
-              С доменом сайт получит HTTPS-сертификат автоматически. Если
-              оставить пустым, сайт будет открываться по IP сервера.
-            </p>
-          </div>
+          {type !== "bot" && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="prj-domain">Домен</Label>
+              <Input
+                id="prj-domain"
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+                placeholder="app.mysite.ru"
+              />
+              <p className="text-[12px] leading-snug text-ink-soft/80">
+                С доменом сайт получит HTTPS-сертификат автоматически. Если
+                оставить пустым, сайт будет открываться по IP сервера.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="prj-pm">Менеджер пакетов</Label>
-              <select
-                id="prj-pm"
-                value={packageManager}
-                onChange={(e) =>
-                  setPackageManager(
-                    e.target.value as ProjectConfigInput["packageManager"],
-                  )
-                }
-                className="border-input focus-visible:border-ring/60 focus-visible:ring-ring/30 h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:ring-2"
-              >
-                {PACKAGE_MANAGERS.map((pm) => (
-                  <option key={pm} value={pm}>
-                    {pm}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {type === "static" ? (
+            {type === "bot" && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="prj-runtime">Рантайм</Label>
+                <select
+                  id="prj-runtime"
+                  value={runtime}
+                  onChange={(e) => setRuntime(e.target.value as "node" | "python")}
+                  className="border-input focus-visible:border-ring/60 focus-visible:ring-ring/30 h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:ring-2"
+                >
+                  <option value="node">Node.js</option>
+                  <option value="python">Python</option>
+                </select>
+              </div>
+            )}
+            {!(type === "bot" && runtime === "python") && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="prj-pm">Менеджер пакетов</Label>
+                <select
+                  id="prj-pm"
+                  value={packageManager}
+                  onChange={(e) =>
+                    setPackageManager(
+                      e.target.value as ProjectConfigInput["packageManager"],
+                    )
+                  }
+                  className="border-input focus-visible:border-ring/60 focus-visible:ring-ring/30 h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:ring-2"
+                >
+                  {PACKAGE_MANAGERS.map((pm) => (
+                    <option key={pm} value={pm}>
+                      {pm}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {type === "static" && (
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="prj-dist">Папка сборки</Label>
                 <Input
@@ -218,7 +246,8 @@ export function ProjectSettingsDialog({
                   onChange={(e) => setBuildDir(e.target.value)}
                 />
               </div>
-            ) : (
+            )}
+            {type === "node" && (
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="prj-port">Порт</Label>
                 <Input
@@ -256,14 +285,25 @@ export function ProjectSettingsDialog({
                 id="prj-start"
                 value={startCommand}
                 onChange={(e) => setStartCommand(e.target.value)}
-                placeholder={`${packageManager} start`}
+                placeholder={
+                  type === "bot" && runtime === "python"
+                    ? "python bot.py"
+                    : `${packageManager} start`
+                }
               />
-              <p className="text-[12px] leading-snug text-ink-soft/80">
-                Так приложение запускается на сервере (через pm2). Порт
-                передаётся приложению в переменной{" "}
-                <span className="font-mono">PORT</span>; если поле «Порт»
-                пустое, свободный порт подберётся при первом деплое.
-              </p>
+              {type === "bot" ? (
+                <p className="text-[12px] leading-snug text-ink-soft/80">
+                  Так бот запускается на сервере (через pm2). Токен и другие
+                  секреты задаются на вкладке «Переменные».
+                </p>
+              ) : (
+                <p className="text-[12px] leading-snug text-ink-soft/80">
+                  Так приложение запускается на сервере (через pm2). Порт
+                  передаётся приложению в переменной{" "}
+                  <span className="font-mono">PORT</span>; если поле «Порт»
+                  пустое, свободный порт подберётся при первом деплое.
+                </p>
+              )}
             </div>
           )}
 
