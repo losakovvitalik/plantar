@@ -10,6 +10,7 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
+    "@plantar/i18n": "workspace:*",
     "@plantar/config": "workspace:*",
     "@plantar/core": "workspace:*",
     "@plantar/ssh": "workspace:*",

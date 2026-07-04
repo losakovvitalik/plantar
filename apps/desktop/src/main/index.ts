@@ -316,6 +316,7 @@ function createWindow(): BrowserWindow {
 if (process.platform === "win32") app.setAppUserModelId("com.plantar.desktop");
 
 app.whenReady().then(() => {
+  setLanguage(readSettings().language);
   migratePlainKeys();
   const win = createWindow();
 

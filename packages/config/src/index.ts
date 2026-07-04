@@ -1,46 +1,45 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { t } from "./messages";
 
 export const PACKAGE_MANAGERS = ["npm", "pnpm", "yarn", "bun"] as const;
 export type PackageManager = (typeof PACKAGE_MANAGERS)[number];
 
-const projectConfigSchema = z.object({
-  name: z
-    .string()
-    .regex(
-      /^[a-z0-9][a-z0-9-]*$/,
-      "только строчные латинские буквы, цифры и дефис",
-    ),
-  /** Тип проекта: статический сайт, Node.js-приложение или Telegram-бот */
-  type: z.enum(["static", "node", "bot"]).default("static"),
-  /** Рантайм бота; python — зависимости из requirements.txt в venv */
-  runtime: z.enum(["node", "python"]).default("node"),
-  packageManager: z.enum(PACKAGE_MANAGERS).default("npm"),
-  buildCommand: z.string().default("npm run build"),
-  buildDir: z.string().default("dist"),
-  /** Команда запуска Node.js-приложения; статические сайты её не используют */
-  startCommand: z.string().optional(),
-  /** Порт Node.js-приложения; назначается автоматически при первом деплое */
-  port: z.number().int().min(1).max(65535).optional(),
-  /** Домен сайта; если не указан — сайт отвечает по IP сервера.
-   * Regex также защищает от инъекции в shell-команды деплоя (certbot, nginx) */
-  domain: z
-    .string()
-    .regex(/^[a-z0-9.-]+$/i, "только латинские буквы, цифры, точки и дефис")
-    .optional(),
-});
+// Фабрика, а не константа: сообщения об ошибках должны браться на момент
+// парсинга — язык устанавливается приложением после импорта модуля
+const projectConfigSchema = () =>
+  z.object({
+    name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, t("nameRegex")),
+    /** Тип проекта: статический сайт, Node.js-приложение или Telegram-бот */
+    type: z.enum(["static", "node", "bot"]).default("static"),
+    /** Рантайм бота; python — зависимости из requirements.txt в venv */
+    runtime: z.enum(["node", "python"]).default("node"),
+    packageManager: z.enum(PACKAGE_MANAGERS).default("npm"),
+    buildCommand: z.string().default("npm run build"),
+    buildDir: z.string().default("dist"),
+    /** Команда запуска Node.js-приложения; статические сайты её не используют */
+    startCommand: z.string().optional(),
+    /** Порт Node.js-приложения; назначается автоматически при первом деплое */
+    port: z.number().int().min(1).max(65535).optional(),
+    /** Домен сайта; если не указан — сайт отвечает по IP сервера.
+     * Regex также защищает от инъекции в shell-команды деплоя (certbot, nginx) */
+    domain: z
+      .string()
+      .regex(/^[a-z0-9.-]+$/i, t("domainRegex"))
+      .optional(),
+  });
 
-export type ProjectConfig = z.infer<typeof projectConfigSchema>;
-export type ProjectConfigInput = z.input<typeof projectConfigSchema>;
+export type ProjectConfig = z.infer<ReturnType<typeof projectConfigSchema>>;
+export type ProjectConfigInput = z.input<ReturnType<typeof projectConfigSchema>>;
 
 function parseConfig(raw: unknown): ProjectConfig {
-  const parsed = projectConfigSchema.safeParse(raw);
+  const parsed = projectConfigSchema().safeParse(raw);
   if (!parsed.success) {
     const issues = parsed.error.issues
-      .map((issue) => `  ${issue.path.join(".") || "(корень)"}: ${issue.message}`)
+      .map((issue) => `  ${issue.path.join(".") || t("issueRoot")}: ${issue.message}`)
       .join("\n");
-    throw new Error(`plantar.json — ошибки конфигурации:\n${issues}`);
+    throw new Error(t("configInvalid", { issues }));
   }
   return parsed.data;
 }
@@ -52,14 +51,14 @@ export function hasProjectConfig(projectDir: string): boolean {
 export function loadProjectConfig(projectDir: string): ProjectConfig {
   const file = path.join(projectDir, "plantar.json");
   if (!existsSync(file)) {
-    throw new Error(`Не найден plantar.json в ${projectDir}`);
+    throw new Error(t("configNotFound", { dir: projectDir }));
   }
 
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(file, "utf8"));
   } catch (err) {
-    throw new Error(`plantar.json — некорректный JSON: ${(err as Error).message}`);
+    throw new Error(t("configBadJson", { message: (err as Error).message }));
   }
 
   return parseConfig(raw);

@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { Client, type SFTPWrapper } from "ssh2";
+import { t } from "./messages";
 
 /**
  * Оборачивает строку в одинарные кавычки для подстановки в shell-команду.
@@ -183,7 +184,7 @@ export class SshConnection {
       `mkdir -p ${mkdirTargets.map(shellQuote).join(" ")}`,
     );
     if (mkdir.code !== 0) {
-      throw new Error(`Не удалось создать директории на сервере: ${mkdir.stderr}`);
+      throw new Error(t("mkdirFailed", { stderr: mkdir.stderr }));
     }
 
     const sftp = await this.sftp();

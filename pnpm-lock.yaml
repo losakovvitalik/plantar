@@ -215,6 +215,9 @@ importers:
       '@plantar/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@plantar/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@plantar/ssh':
         specifier: workspace:*
         version: link:../../packages/ssh
@@ -256,6 +259,9 @@ importers:
       '@plantar/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@plantar/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@plantar/ssh':
         specifier: workspace:*
         version: link:../../packages/ssh
@@ -374,6 +380,9 @@ importers:
 
   packages/config:
     dependencies:
+      '@plantar/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       zod:
         specifier: ^3.23.0
         version: 3.25.76
@@ -390,6 +399,9 @@ importers:
       '@plantar/config':
         specifier: workspace:*
         version: link:../config
+      '@plantar/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       '@plantar/ssh':
         specifier: workspace:*
         version: link:../ssh
@@ -401,8 +413,17 @@ importers:
         specifier: ^5.6.0
         version: 5.9.3
 
+  packages/i18n:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
   packages/ssh:
     dependencies:
+      '@plantar/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       ssh2:
         specifier: ^1.15.0
         version: 1.17.0
@@ -418,6 +439,10 @@ importers:
         version: 5.9.3
 
   packages/storage:
+    dependencies:
+      '@plantar/i18n':
+        specifier: workspace:*
+        version: link:../i18n
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

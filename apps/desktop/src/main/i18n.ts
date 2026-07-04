@@ -1,9 +1,12 @@
-import { type Language, readSettings } from "@plantar/storage";
+import { type Messages, createT } from "@plantar/i18n";
+
+export { setLanguage } from "@plantar/i18n";
 
 /**
  * Строки main-процесса (ошибки IPC, системные уведомления, диалоги ОС).
- * Словарь renderer живёт отдельно в renderer/src/i18n — main не может
- * импортировать код renderer, а строк здесь немного.
+ * Язык процесса общий с пакетами (@plantar/i18n) — index.ts задаёт его
+ * из настроек при старте и при их сохранении. Словарь renderer живёт
+ * отдельно в renderer/src/i18n — main не может импортировать код renderer.
  */
 const MESSAGES = {
   serverNotFound: {
@@ -53,24 +56,6 @@ const MESSAGES = {
     ru: "Не удалось установить ключ на сервер:\n{stderr}",
     en: "Failed to install the key on the server:\n{stderr}",
   },
-} satisfies Record<string, Record<Language, string>>;
+} satisfies Messages<string>;
 
-type MainMessageKey = keyof typeof MESSAGES;
-
-let currentLanguage: Language = readSettings().language;
-
-/** Вызывается при сохранении настроек, чтобы новые сообщения шли на выбранном языке */
-export function setLanguage(language: Language): void {
-  currentLanguage = language;
-}
-
-export function t(
-  key: MainMessageKey,
-  params?: Record<string, string | number>,
-): string {
-  const template = MESSAGES[key][currentLanguage];
-  if (!params) return template;
-  return template.replace(/\{(\w+)\}/g, (match, name: string) =>
-    name in params ? String(params[name]) : match,
-  );
-}
+export const t = createT(MESSAGES);

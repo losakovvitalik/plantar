@@ -1,6 +1,9 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { type Language, systemLanguage } from "@plantar/i18n";
+
+export type { Language } from "@plantar/i18n";
 
 /** Директория данных Plantar по конвенциям ОС */
 export function dataDir(): string {
@@ -81,14 +84,6 @@ function readJsonList<T>(file: string): T[] {
 function writeJsonList<T>(file: string, list: T[]): void {
   mkdirSync(dataDir(), { recursive: true });
   writeFileSync(path.join(dataDir(), file), JSON.stringify(list, null, 2));
-}
-
-export type Language = "ru" | "en";
-
-/** Язык по умолчанию — из локали системы; для всех, кроме русскоязычных, — английский */
-function systemLanguage(): Language {
-  const locale = Intl.DateTimeFormat().resolvedOptions().locale ?? "";
-  return locale.toLowerCase().startsWith("ru") ? "ru" : "en";
 }
 
 export interface AppSettings {

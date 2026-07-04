@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 const execAsync = promisify(exec);
 import type { SshConnection } from "@plantar/ssh";
 import type { ProjectConfig } from "@plantar/config";
+import { t } from "./messages";
 
 export interface ServerInfo {
   os: {
@@ -106,7 +107,11 @@ async function run(
   const result = await conn.exec(command);
   if (result.code !== 0) {
     throw new Error(
-      `Команда завершилась с кодом ${result.code}: ${command}\n${result.stderr.slice(-2000)}`,
+      t("commandFailed", {
+        code: result.code,
+        command,
+        stderr: result.stderr.slice(-2000),
+      }),
     );
   }
 }
@@ -115,11 +120,14 @@ export async function setupServer(
   conn: SshConnection,
   log: (line: string) => void = () => {},
 ): Promise<SetupStepResult[]> {
-  log("Проверяю сервер…");
+  log(t("checkingServer"));
   const info = await getServerInfo(conn);
   if (!info.supported) {
     throw new Error(
-      `ОС «${info.os.pretty}» не поддерживается. Нужна Ubuntu ${SUPPORTED_UBUNTU_VERSIONS.join(" или ")}.`,
+      t("osUnsupported", {
+        os: info.os.pretty,
+        versions: SUPPORTED_UBUNTU_VERSIONS.join(" / "),
+      }),
     );
   }
 
@@ -128,12 +136,12 @@ export async function setupServer(
 
   for (const [tool, installCommands] of Object.entries(INSTALL_COMMANDS)) {
     if (info.tools[tool] !== null) {
-      log(`✓ ${tool} уже установлен (${info.tools[tool]})`);
+      log(t("toolPresent", { tool, version: info.tools[tool] }));
       results.push({ tool, status: "present", version: info.tools[tool] });
       continue;
     }
 
-    log(`→ Устанавливаю ${tool}…`);
+    log(t("toolInstalling", { tool }));
     if (!aptUpdated) {
       await run(conn, "apt-get update", log);
       aptUpdated = true;
@@ -144,9 +152,9 @@ export async function setupServer(
 
     const version = await conn.exec(TOOL_VERSION_COMMANDS[tool]);
     if (version.code !== 0) {
-      throw new Error(`${tool}: установка прошла, но инструмент не найден в PATH.`);
+      throw new Error(t("toolMissingAfterInstall", { tool }));
     }
-    log(`✓ ${tool} установлен (${version.stdout.trim()})`);
+    log(t("toolInstalled", { tool, version: version.stdout.trim() }));
     results.push({ tool, status: "installed", version: version.stdout.trim() });
   }
 
@@ -179,7 +187,7 @@ export async function writeProjectEnv(
       `echo '${encoded}' | base64 -d > '${file}' && chmod 600 '${file}'`,
   );
   if (result.code !== 0) {
-    throw new Error(`Не удалось сохранить переменные на сервере:\n${result.stderr.slice(-2000)}`);
+    throw new Error(t("envSaveFailed", { stderr: result.stderr.slice(-2000) }));
   }
 }
 
@@ -252,16 +260,16 @@ export async function removeDeployedProject(
   log: (line: string) => void = () => {},
 ): Promise<void> {
   // У статических сайтов pm2-процесса нет — отсутствие не ошибка
-  log(`→ Останавливаю pm2-процесс «${name}»…`);
+  log(t("stoppingPm2", { name }));
   const deleted = await conn.exec(`pm2 delete '${name}'`);
   if (deleted.code === 0) {
     await run(conn, "pm2 save --force", log);
-    log("✓ Процесс остановлен и убран из автозапуска");
+    log(t("pm2Stopped"));
   } else {
-    log("  pm2-процесс не найден — пропускаю");
+    log(t("pm2NotFound"));
   }
 
-  log("→ Удаляю файлы проекта…");
+  log(t("removingFiles"));
   await run(
     conn,
     `rm -rf '/var/www/${name}' '/var/www/.${name}.uploading' '${envStorePath(name)}'`,
@@ -271,7 +279,7 @@ export async function removeDeployedProject(
   // Конфиг nginx есть только у сайтов; у ботов его нет
   const conf = await conn.exec(`test -e '/etc/nginx/sites-available/${name}.conf'`);
   if (conf.code === 0) {
-    log("→ Удаляю конфиг nginx…");
+    log(t("removingNginxConf"));
     await run(
       conn,
       `rm -f '/etc/nginx/sites-enabled/${name}.conf' '/etc/nginx/sites-available/${name}.conf'`,
@@ -280,7 +288,7 @@ export async function removeDeployedProject(
     await run(conn, "systemctl reload nginx", log);
   }
 
-  log(`✓ Проект «${name}» удалён с сервера`);
+  log(t("projectRemoved", { name }));
 }
 
 export interface DeployResult {
@@ -334,7 +342,7 @@ ${rootLines}
     ${location}
 }`;
 
-  log(`→ Настраиваю nginx (${confPath})…`);
+  log(t("configuringNginx", { path: confPath }));
   await run(conn, `cat > '${confPath}' <<'PLANTAR_EOF'\n${conf}\nPLANTAR_EOF`, log);
 
   if (!config.domain) {
@@ -349,10 +357,10 @@ ${rootLines}
 
   const check = await conn.exec("nginx -t");
   if (check.code !== 0) {
-    throw new Error(`Конфигурация nginx не прошла проверку:\n${check.stderr}`);
+    throw new Error(t("nginxCheckFailed", { stderr: check.stderr }));
   }
   await run(conn, "systemctl reload nginx", log);
-  log("✓ nginx настроен и перезагружен");
+  log(t("nginxConfigured"));
 }
 
 async function setupSsl(
@@ -361,7 +369,7 @@ async function setupSsl(
   log: (line: string) => void,
   email?: string,
 ): Promise<void> {
-  log(`→ Настраиваю HTTPS для ${domain}…`);
+  log(t("configuringHttps", { domain }));
   // С email Let's Encrypt предупредит о проблемах с продлением сертификата
   const account = email ? `--email '${email}' --no-eff-email` : "--register-unsafely-without-email";
   // --keep-until-expiring: при повторном деплое сертификат не перевыпускается.
@@ -371,7 +379,7 @@ async function setupSsl(
     `certbot --nginx -d '${domain}' --non-interactive --agree-tos ${account} --redirect --keep-until-expiring`,
     log,
   );
-  log(`✓ HTTPS настроен, сертификат будет продлеваться автоматически`);
+  log(t("httpsConfigured"));
 }
 
 export interface DeployOptions {
@@ -406,9 +414,9 @@ async function deployStatic(
   // Переменные проекта хранятся на сервере; при сборке они приоритетнее локальных .env
   const envVars = parseEnv(await readProjectEnv(conn, config.name));
   const varCount = Object.keys(envVars).length;
-  if (varCount > 0) log(`✓ Переменные окружения с сервера: ${varCount} шт.`);
+  if (varCount > 0) log(t("serverEnvVars", { count: varCount }));
 
-  log(`→ Собираю проект: ${config.buildCommand}`);
+  log(t("building", { command: config.buildCommand }));
   try {
     await execAsync(config.buildCommand, {
       cwd: projectDir,
@@ -421,26 +429,24 @@ async function deployStatic(
       .filter(Boolean)
       .join("\n")
       .slice(-3000);
-    throw new Error(`Сборка не удалась (${config.buildCommand}):\n${output}`);
+    throw new Error(t("buildFailed", { command: config.buildCommand, output }));
   }
 
   const localDist = path.join(projectDir, config.buildDir);
   if (!existsSync(localDist)) {
-    throw new Error(
-      `После сборки не найдена папка «${config.buildDir}» в ${projectDir}. Проверь buildDir в plantar.json.`,
-    );
+    throw new Error(t("buildDirMissing", { dir: config.buildDir, projectDir }));
   }
 
   const target = `/var/www/${config.name}`;
   const staging = `/var/www/.${config.name}.uploading`;
 
   await run(conn, `rm -rf '${staging}'`, log);
-  log(`→ Загружаю файлы…`);
+  log(t("uploadingFiles"));
   const fileCount = await conn.uploadDirectory(localDist, staging, (file) =>
     log(`  ↑ ${file}`),
   );
   await run(conn, `rm -rf '${target}' && mv '${staging}' '${target}'`, log);
-  log(`✓ Задеплоено файлов: ${fileCount} → ${target}`);
+  log(t("deployedFiles", { count: fileCount, target }));
 
   await configureNginx(conn, config, log);
 
@@ -451,7 +457,7 @@ async function deployStatic(
   } else {
     url = `http://${conn.host}/`;
   }
-  log(`✓ Сайт доступен: ${url}`);
+  log(t("siteAvailable", { url }));
   return { target, fileCount, url };
 }
 
@@ -478,7 +484,7 @@ async function pickFreePort(conn: SshConnection): Promise<number> {
     if (!used.has(port)) return port;
   }
   throw new Error(
-    `Не нашлось свободного порта в диапазоне ${APP_PORT_RANGE.from}–${APP_PORT_RANGE.to}.`,
+    t("noFreePort", { from: APP_PORT_RANGE.from, to: APP_PORT_RANGE.to }),
   );
 }
 
@@ -489,7 +495,7 @@ async function waitForApp(
   port: number,
   log: (line: string) => void,
 ): Promise<void> {
-  log(`→ Проверяю, что приложение отвечает на порту ${port}…`);
+  log(t("checkingAppPort", { port }));
   const check = await conn.exec(
     `for i in $(seq 1 30); do ` +
       `code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://127.0.0.1:${port}/); ` +
@@ -498,10 +504,10 @@ async function waitForApp(
   if (check.code !== 0) {
     const logs = await conn.exec(`pm2 logs '${name}' --nostream --lines 30 2>&1`);
     throw new Error(
-      `Приложение не отвечает на порту ${port}. Последние строки логов:\n${logs.stdout.slice(-3000)}`,
+      t("appNotResponding", { port, logs: logs.stdout.slice(-3000) }),
     );
   }
-  log("✓ Приложение отвечает");
+  log(t("appResponding"));
 }
 
 /** Общее для node и bot: загрузка проекта, установка зависимостей, подмена целевой папки */
@@ -513,14 +519,14 @@ async function uploadApp(
 ): Promise<{ target: string; fileCount: number }> {
   const python = config.runtime === "python";
   if (python && !existsSync(path.join(projectDir, "requirements.txt"))) {
-    throw new Error(`Не найден requirements.txt в ${projectDir} — он нужен python-боту.`);
+    throw new Error(t("requirementsMissing", { dir: projectDir }));
   }
 
   const target = `/var/www/${config.name}`;
   const staging = `/var/www/.${config.name}.uploading`;
 
   await run(conn, `rm -rf '${staging}'`, log);
-  log("→ Загружаю файлы…");
+  log(t("uploadingFiles"));
   // Локальные .env-файлы не загружаются: переменные проекта хранятся на сервере
   const fileCount = await conn.uploadDirectory(
     projectDir,
@@ -528,29 +534,29 @@ async function uploadApp(
     (file) => log(`  ↑ ${file}`),
     python ? [".venv", "__pycache__", ".git", ENV_FILE_RE] : ["node_modules", ".git", ENV_FILE_RE],
   );
-  log(`✓ Загружено файлов: ${fileCount}`);
+  log(t("uploadedFiles", { count: fileCount }));
 
   if (python) {
-    log("→ Создаю виртуальное окружение и ставлю зависимости: pip install -r requirements.txt");
+    log(t("installingPythonDeps"));
     await run(
       conn,
       `cd '${staging}' && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`,
       log,
     );
   } else {
-    log(`→ Устанавливаю зависимости: ${config.packageManager} install`);
+    log(t("installingDeps", { packageManager: config.packageManager }));
     await run(conn, `cd '${staging}' && ${config.packageManager} install`, log);
   }
 
   await run(conn, `rm -rf '${target}' && mv '${staging}' '${target}'`, log);
-  log(`✓ Задеплоено файлов: ${fileCount} → ${target}`);
+  log(t("deployedFiles", { count: fileCount, target }));
 
   // Env-файл проекта хранится вне папки релиза — кладём копию рядом с кодом,
   // чтобы приложение нашло его как обычный .env
   const envFile = envStorePath(config.name);
   const hasEnv = await conn.exec(`test -f '${envFile}'`);
   if (hasEnv.code === 0) {
-    log("→ Подставляю переменные окружения с сервера…");
+    log(t("applyingServerEnv"));
     await run(conn, `cp '${envFile}' '${target}/.env' && chmod 600 '${target}/.env'`, log);
   }
   return { target, fileCount };
@@ -572,7 +578,7 @@ async function startWithPm2(
   const tokens = startCommand.trim().split(/\s+/);
   if (["node", "python", "python3"].includes(tokens[0])) tokens.shift();
   const [script, ...scriptArgs] = tokens;
-  if (!script) throw new Error("Команда запуска пуста — укажите startCommand в plantar.json.");
+  if (!script) throw new Error(t("emptyStartCommand"));
 
   // Python-процесс запускается интерпретатором из venv, созданного при деплое
   const interpreterLine = python
@@ -592,7 +598,7 @@ async function startWithPm2(
 };`;
   await run(conn, `cat > '${ecosystemPath}' <<'PLANTAR_EOF'\n${ecosystem}\nPLANTAR_EOF`, log);
 
-  log(`→ Запускаю через pm2: ${startCommand}`);
+  log(t("startingPm2", { command: startCommand }));
   await run(conn, `pm2 startOrRestart '${ecosystemPath}' --update-env`, log);
   // pm2 startup + save: процесс переживёт перезагрузку сервера
   await run(conn, `pm2 startup systemd -u "$(whoami)" --hp "$HOME"`, log);
@@ -609,7 +615,7 @@ async function deployNode(
   const { target, fileCount } = await uploadApp(conn, projectDir, config, log);
 
   const port = config.port ?? (await pickFreePort(conn));
-  if (port !== config.port) log(`✓ Приложению назначен порт ${port}`);
+  if (port !== config.port) log(t("portAssigned", { port }));
 
   await startWithPm2(conn, target, config, { PORT: port, NODE_ENV: "production" }, log);
 
@@ -624,7 +630,7 @@ async function deployNode(
   } else {
     url = `http://${conn.host}/`;
   }
-  log(`✓ Приложение доступно: ${url}`);
+  log(t("appAvailable", { url }));
   return { target, fileCount, url, port };
 }
 
@@ -640,7 +646,7 @@ async function waitForStableProcess(
   name: string,
   log: (line: string) => void,
 ): Promise<void> {
-  log("→ Проверяю, что процесс работает…");
+  log(t("checkingProcess"));
   const result = await conn.exec(`sleep 5; echo "NOW:$(date +%s%3N)"; pm2 jlist 2>/dev/null`);
   const now = Number(result.stdout.match(/^NOW:(\d+)$/m)?.[1]);
 
@@ -660,10 +666,10 @@ async function waitForStableProcess(
   if (!stable) {
     const logs = await conn.exec(`pm2 logs '${name}' --nostream --lines 30 2>&1`);
     throw new Error(
-      `Процесс «${name}» не запустился или падает сразу после старта. Последние строки логов:\n${logs.stdout.slice(-3000)}`,
+      t("processUnstable", { name, logs: logs.stdout.slice(-3000) }),
     );
   }
-  log("✓ Процесс работает стабильно");
+  log(t("processStable"));
 }
 
 async function deployBot(
@@ -678,6 +684,6 @@ async function deployBot(
 
   await waitForStableProcess(conn, config.name, log);
 
-  log("✓ Бот запущен. pm2 перезапустит его после падения и после перезагрузки сервера.");
+  log(t("botDeployed"));
   return { target, fileCount };
 }

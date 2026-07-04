@@ -1,5 +1,5 @@
 {
-  "name": "@plantar/storage",
+  "name": "@plantar/i18n",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,10 +7,6 @@
     ".": "./src/index.ts"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
     "typescript": "^5.6.0"
-  },
-  "dependencies": {
-    "@plantar/i18n": "workspace:*"
   }
 }
