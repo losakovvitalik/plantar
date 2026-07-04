@@ -88,11 +88,14 @@ export interface AppSettings {
   saveServerLogCopies: boolean;
   /** Email для Let's Encrypt (уведомления о проблемах с сертификатами); пусто — без email */
   letsEncryptEmail: string;
+  /** Показывать системное уведомление об успешном деплое (об ошибке — всегда) */
+  notifyOnDeploySuccess: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   saveServerLogCopies: true,
   letsEncryptEmail: "",
+  notifyOnDeploySuccess: true,
 };
 
 export function readSettings(): AppSettings {

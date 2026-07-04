@@ -46,6 +46,13 @@ export default function App() {
     void refresh();
   }, [refresh]);
 
+  // Клик по системному уведомлению о деплое открывает соответствующий проект
+  useEffect(() => {
+    return window.plantar.onOpenProject(({ projectId }) => {
+      setSelection({ kind: "project", id: projectId });
+    });
+  }, []);
+
   const showError = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(null), 6000);

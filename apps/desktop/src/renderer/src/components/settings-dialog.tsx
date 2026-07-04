@@ -70,6 +70,25 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
               />
             </div>
 
+            <div className="flex items-start justify-between gap-6">
+              <div>
+                <Label htmlFor="notify-success" className="text-[13.5px] font-semibold">
+                  Уведомлять об успешных деплоях
+                </Label>
+                <p className="mt-1 text-[12.5px] leading-snug text-ink-soft">
+                  Системное уведомление, когда деплой завершился успешно. Об ошибках
+                  уведомления приходят всегда.
+                </p>
+              </div>
+              <Switch
+                id="notify-success"
+                checked={settings.notifyOnDeploySuccess}
+                onCheckedChange={(checked) =>
+                  setSettings({ ...settings, notifyOnDeploySuccess: checked })
+                }
+              />
+            </div>
+
             <div>
               <Label htmlFor="le-email" className="text-[13.5px] font-semibold">
                 Email для SSL-сертификатов

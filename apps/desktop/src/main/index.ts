@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { BrowserWindow, app, dialog, ipcMain, shell } from "electron";
+import { BrowserWindow, Notification, app, dialog, ipcMain, shell } from "electron";
 import { SshConnection } from "@plantar/ssh";
 import { deployProject, getServerInfo, getSiteLogs } from "@plantar/core";
 import {
@@ -190,6 +190,29 @@ function addProject(input: AddProjectInput): ProjectRecord {
   return record;
 }
 
+/** Системное уведомление о результате деплоя; клик открывает окно на проекте */
+function notifyDeployResult(
+  win: BrowserWindow,
+  projectId: string,
+  projectName: string,
+  success: boolean,
+): void {
+  if (!Notification.isSupported()) return;
+  const notification = new Notification(
+    success
+      ? { title: "Деплой завершён", body: `Проект «${projectName}» опубликован.` }
+      : { title: "Деплой не удался", body: `Проект «${projectName}» — произошла ошибка.` },
+  );
+  notification.on("click", () => {
+    if (win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    win.webContents.send("deploy:open-project", { projectId });
+  });
+  notification.show();
+}
+
 async function runDeploy(
   projectId: string,
   password: string | undefined,
@@ -221,6 +244,9 @@ async function runDeploy(
       url: result.url,
       logFile: logWriter.file,
     });
+    if (settings.notifyOnDeploySuccess) {
+      notifyDeployResult(win, projectId, config.name, true);
+    }
     return { url: result.url };
   } catch (err) {
     const message = (err as Error).message;
@@ -234,6 +260,7 @@ async function runDeploy(
       error: message,
       logFile: logWriter.file,
     });
+    notifyDeployResult(win, projectId, config.name, false);
     throw err;
   } finally {
     conn.close();
@@ -261,6 +288,9 @@ function createWindow(): BrowserWindow {
   }
   return win;
 }
+
+// Без AppUserModelId уведомления на Windows не показываются; должен совпадать с appId сборки
+if (process.platform === "win32") app.setAppUserModelId("com.plantar.desktop");
 
 app.whenReady().then(() => {
   migratePlainKeys();

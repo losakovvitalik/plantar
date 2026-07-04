@@ -73,6 +73,8 @@ declare global {
       onDeployLog: (
         callback: (event: { projectId: string; line: string }) => void,
       ) => () => void;
+
+      onOpenProject: (callback: (event: { projectId: string }) => void) => () => void;
     };
   }
 }

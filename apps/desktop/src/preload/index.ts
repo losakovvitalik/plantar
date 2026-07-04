@@ -38,6 +38,12 @@ const api = {
     ipcRenderer.on("deploy:log", handler);
     return () => ipcRenderer.removeListener("deploy:log", handler);
   },
+
+  onOpenProject: (callback: (event: { projectId: string }) => void) => {
+    const handler = (_e: unknown, data: { projectId: string }) => callback(data);
+    ipcRenderer.on("deploy:open-project", handler);
+    return () => ipcRenderer.removeListener("deploy:open-project", handler);
+  },
 };
 
 contextBridge.exposeInMainWorld("plantar", api);
