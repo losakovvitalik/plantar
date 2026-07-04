@@ -41,6 +41,7 @@ import {
   migratePlainKeys,
   storePrivateKey,
 } from "./ssh-setup";
+import { dropConnection, isConnected, withPooledConnection } from "./ssh-pool";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -76,6 +77,13 @@ async function connect(server: ServerRecord, password?: string): Promise<SshConn
     privateKey: server.auth === "key" ? loadPrivateKey(server.keyPath!) : undefined,
   });
 }
+
+/** Операция на соединении из пула: живое переиспользуется, пароль нужен только для нового */
+const withServer = <T>(
+  server: ServerRecord,
+  password: string | undefined,
+  fn: (conn: SshConnection) => Promise<T>,
+): Promise<T> => withPooledConnection(server.id, () => connect(server, password), fn);
 
 interface AddServerInput {
   name: string;
@@ -237,45 +245,44 @@ async function runDeploy(
   const startedAt = new Date().toISOString();
 
   const settings = readSettings();
-  const conn = await connect(server, password);
-  try {
-    const result = await deployProject(conn, project.path, config, log, {
-      letsEncryptEmail: settings.letsEncryptEmail || undefined,
-    });
-    // Порт выбирается на сервере при первом деплое — закрепляем его в конфиге
-    if (result.port && result.port !== config.port) {
-      writeProjectConfig(project.path, { ...config, port: result.port });
+  return withServer(server, password, async (conn) => {
+    try {
+      const result = await deployProject(conn, project.path, config, log, {
+        letsEncryptEmail: settings.letsEncryptEmail || undefined,
+      });
+      // Порт выбирается на сервере при первом деплое — закрепляем его в конфиге
+      if (result.port && result.port !== config.port) {
+        writeProjectConfig(project.path, { ...config, port: result.port });
+      }
+      appendHistory({
+        project: config.name,
+        host: server.host,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        status: "success",
+        url: result.url,
+        logFile: logWriter.file,
+      });
+      if (settings.notifyOnDeploySuccess) {
+        notifyDeployResult(win, projectId, config.name, true);
+      }
+      return { url: result.url };
+    } catch (err) {
+      const message = (err as Error).message;
+      logWriter.write(`\nОШИБКА: ${message}`);
+      appendHistory({
+        project: config.name,
+        host: server.host,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        status: "error",
+        error: message,
+        logFile: logWriter.file,
+      });
+      notifyDeployResult(win, projectId, config.name, false);
+      throw err;
     }
-    appendHistory({
-      project: config.name,
-      host: server.host,
-      startedAt,
-      finishedAt: new Date().toISOString(),
-      status: "success",
-      url: result.url,
-      logFile: logWriter.file,
-    });
-    if (settings.notifyOnDeploySuccess) {
-      notifyDeployResult(win, projectId, config.name, true);
-    }
-    return { url: result.url };
-  } catch (err) {
-    const message = (err as Error).message;
-    logWriter.write(`\nОШИБКА: ${message}`);
-    appendHistory({
-      project: config.name,
-      host: server.host,
-      startedAt,
-      finishedAt: new Date().toISOString(),
-      status: "error",
-      error: message,
-      logFile: logWriter.file,
-    });
-    notifyDeployResult(win, projectId, config.name, false);
-    throw err;
-  } finally {
-    conn.close();
-  }
+  });
 }
 
 function createWindow(): BrowserWindow {
@@ -318,6 +325,7 @@ app.whenReady().then(() => {
   ipcMain.handle("servers:add", (_e, input: AddServerInput) => toResult(() => addServer(input)));
   ipcMain.handle("servers:remove", (_e, id: string) =>
     toResult(async () => {
+      dropConnection(id);
       writeServers(readServers().filter((s) => s.id !== id));
       writeProjects(readProjects().filter((p) => p.serverId !== id));
     }),
@@ -346,12 +354,7 @@ app.whenReady().then(() => {
         } catch {
           /* plantar.json недоступен — используем имя на момент добавления */
         }
-        const conn = await connect(server, args.password);
-        try {
-          await removeDeployedProject(conn, name);
-        } finally {
-          conn.close();
-        }
+        await withServer(server, args.password, (conn) => removeDeployedProject(conn, name));
       }),
   );
   ipcMain.handle("projects:readConfig", (_e, projectId: string) =>
@@ -376,12 +379,9 @@ app.whenReady().then(() => {
     toResult(async () => {
       const project = getProject(args.projectId);
       const config = loadProjectConfig(project.path);
-      const conn = await connect(getServer(project.serverId), args.password);
-      try {
-        return await readProjectEnv(conn, config.name);
-      } finally {
-        conn.close();
-      }
+      return withServer(getServer(project.serverId), args.password, (conn) =>
+        readProjectEnv(conn, config.name),
+      );
     }),
   );
   ipcMain.handle(
@@ -390,12 +390,9 @@ app.whenReady().then(() => {
       toResult(async () => {
         const project = getProject(args.projectId);
         const config = loadProjectConfig(project.path);
-        const conn = await connect(getServer(project.serverId), args.password);
-        try {
-          await writeProjectEnv(conn, config.name, args.content);
-        } finally {
-          conn.close();
-        }
+        await withServer(getServer(project.serverId), args.password, (conn) =>
+          writeProjectEnv(conn, config.name, args.content),
+        );
       }),
   );
 
@@ -444,14 +441,12 @@ app.whenReady().then(() => {
   );
 
   ipcMain.handle("server:info", (_e, args: { serverId: string; password?: string }) =>
-    toResult(async () => {
-      const conn = await connect(getServer(args.serverId), args.password);
-      try {
-        return await getServerInfo(conn);
-      } finally {
-        conn.close();
-      }
-    }),
+    toResult(async () =>
+      withServer(getServer(args.serverId), args.password, (conn) => getServerInfo(conn)),
+    ),
+  );
+  ipcMain.handle("server:isConnected", (_e, serverId: string) =>
+    toResult(async () => isConnected(serverId)),
   );
 
   ipcMain.handle("deploy:run", (_e, args: { projectId: string; password?: string }) =>
@@ -461,17 +456,14 @@ app.whenReady().then(() => {
   ipcMain.handle("logs:get", (_e, args: { projectId: string; password?: string }) =>
     toResult(async () => {
       const project = getProject(args.projectId);
-      const conn = await connect(getServer(project.serverId), args.password);
-      try {
+      return withServer(getServer(project.serverId), args.password, async (conn) => {
         const logs = await getSiteLogs(conn, project.name, 200);
         if (readSettings().saveServerLogCopies) {
           saveServerLogSnapshot(project.name, "access", logs.access);
           saveServerLogSnapshot(project.name, "error", logs.error);
         }
         return logs;
-      } finally {
-        conn.close();
-      }
+      });
     }),
   );
 

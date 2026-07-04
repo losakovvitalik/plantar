@@ -1,6 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ProjectRecord, ServerRecord, SiteLogs } from "../../../preload/index.d";
+import { passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 
@@ -21,12 +22,8 @@ export function LogsTab({ project, server, askPassword }: Props) {
   }, [project.id]);
 
   async function load() {
-    let password: string | undefined;
-    if (server.auth === "password") {
-      const entered = await askPassword(server);
-      if (entered === null) return;
-      password = entered;
-    }
+    const password = await passwordFor(server, askPassword);
+    if (password === null) return;
     setLoading(true);
     setError(null);
     const result = await window.plantar.getLogs(project.id, password);

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ProjectRecord, ServerRecord } from "../../../preload/index.d";
+import { passwordFor } from "../lib/server-auth";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -50,12 +51,8 @@ export function RemoveProjectDialog({
 
   async function removeFromServer() {
     if (!project || !server) return;
-    let password: string | undefined;
-    if (server.auth === "password") {
-      const entered = await askPassword(server);
-      if (entered === null) return;
-      password = entered;
-    }
+    const password = await passwordFor(server, askPassword);
+    if (password === null) return;
     setBusy(true);
     setError(null);
     const result = await window.plantar.removeProjectFromServer(project.id, password);

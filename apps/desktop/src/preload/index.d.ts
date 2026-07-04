@@ -70,6 +70,8 @@ declare global {
       readLocalEnvFile: (projectId: string, file: string) => Promise<IpcResult<string>>;
 
       getServerInfo: (serverId: string, password?: string) => Promise<IpcResult<ServerInfo>>;
+      /** Есть ли живое соединение с сервером — тогда пароль не понадобится */
+      isServerConnected: (serverId: string) => Promise<IpcResult<boolean>>;
       deploy: (projectId: string, password?: string) => Promise<IpcResult<{ url?: string }>>;
       getLogs: (projectId: string, password?: string) => Promise<IpcResult<SiteLogs>>;
 

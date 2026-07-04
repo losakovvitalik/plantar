@@ -5,6 +5,7 @@ import type {
   ProjectRecord,
   ServerRecord,
 } from "../../../preload/index.d";
+import { passwordFor } from "../lib/server-auth";
 import { Button } from "./ui/button";
 import { Switch } from "./ui/switch";
 
@@ -58,12 +59,8 @@ export function DeployTab({
   }
 
   async function deploy() {
-    let password: string | undefined;
-    if (server.auth === "password") {
-      const entered = await askPassword(server);
-      if (entered === null) return;
-      password = entered;
-    }
+    const password = await passwordFor(server, askPassword);
+    if (password === null) return;
     setRunning(true);
     setLines([]);
     setUrl(null);

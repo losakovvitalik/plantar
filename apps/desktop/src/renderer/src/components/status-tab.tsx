@@ -1,6 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { ServerInfo, ServerRecord } from "../../../preload/index.d";
+import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 
@@ -29,20 +30,19 @@ export function StatusTab({ server, askPassword }: Props) {
     [server.id],
   );
 
-  // С ключом можно проверять сразу; с паролем — только по кнопке
+  // Без запроса пароля (ключ или живое соединение) — проверяем сразу, иначе по кнопке
   useEffect(() => {
     setInfo(null);
     setError(null);
-    if (server.auth === "key") void load();
+    void canConnectSilently(server).then((ok) => {
+      if (ok) void load();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [server.id, server.auth, load]);
 
   async function refresh() {
-    let password: string | undefined;
-    if (server.auth === "password") {
-      const entered = await askPassword(server);
-      if (entered === null) return;
-      password = entered;
-    }
+    const password = await passwordFor(server, askPassword);
+    if (password === null) return;
     await load(password);
   }
 

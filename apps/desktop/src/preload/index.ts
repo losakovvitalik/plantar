@@ -32,6 +32,7 @@ const api = {
 
   getServerInfo: (serverId: string, password?: string) =>
     invoke("server:info", { serverId, password }),
+  isServerConnected: (serverId: string) => invoke("server:isConnected", serverId),
   deploy: (projectId: string, password?: string) => invoke("deploy:run", { projectId, password }),
   getLogs: (projectId: string, password?: string) => invoke("logs:get", { projectId, password }),
 

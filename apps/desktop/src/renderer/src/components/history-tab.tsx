@@ -1,4 +1,10 @@
-import { CheckCircle2, ChevronRight, ExternalLink, History, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronRight,
+  ExternalLink,
+  History,
+  XCircle,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import type { DeployRecord, ProjectRecord } from "@plantar/storage";
 import { Button } from "./ui/button";
@@ -14,7 +20,9 @@ function formatWhen(iso: string): string {
 
 function formatDuration(record: DeployRecord): string {
   const seconds = Math.round(
-    (new Date(record.finishedAt).getTime() - new Date(record.startedAt).getTime()) / 1000,
+    (new Date(record.finishedAt).getTime() -
+      new Date(record.startedAt).getTime()) /
+      1000,
   );
   if (seconds < 60) return `${seconds} с`;
   return `${Math.floor(seconds / 60)} мин ${seconds % 60} с`;
@@ -67,10 +75,14 @@ export function HistoryTab({ project }: Props) {
   }, [project.id]);
 
   if (error) {
-    return <p className="rounded-lg bg-clay/10 px-3 py-2 text-[12.5px] text-clay">{error}</p>;
+    return (
+      <p className="rounded-lg bg-clay/10 px-3 py-2 text-[12.5px] text-clay">
+        {error}
+      </p>
+    );
   }
   if (records === null) {
-    return <p className="text-[13px] text-ink-soft">Загружаю историю…</p>;
+    return <p className="text-[13px] text-ink-soft">Загрузка историю…</p>;
   }
   if (records.length === 0) {
     return (
@@ -79,8 +91,8 @@ export function HistoryTab({ project }: Props) {
           <History className="mx-auto size-8 text-[#b8bfb8]" />
           <h3 className="mt-3 text-[15px] font-bold">Пока ни одного деплоя</h3>
           <p className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">
-            Здесь появится каждая попытка деплоя этого проекта — со статусом, временем и полным
-            логом.
+            Здесь появится каждая попытка деплоя этого проекта — со статусом,
+            временем и полным логом.
           </p>
         </div>
       </div>
@@ -92,7 +104,10 @@ export function HistoryTab({ project }: Props) {
       {records.map((record) => {
         const isOpen = openLog === record.logFile;
         return (
-          <div key={record.logFile} className="rounded-xl border border-line bg-card">
+          <div
+            key={record.logFile}
+            className="rounded-xl border border-line bg-card"
+          >
             <div className="flex items-center gap-1 pr-2">
               <button
                 onClick={() => setOpenLog(isOpen ? null : record.logFile)}

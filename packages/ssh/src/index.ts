@@ -19,16 +19,29 @@ export interface ExecResult {
 }
 
 export class SshConnection {
+  private closed = false;
+
   private constructor(
     private client: Client,
     readonly host: string,
   ) {}
 
+  /** false после close() или разрыва — такое соединение нельзя переиспользовать */
+  get alive(): boolean {
+    return !this.closed;
+  }
+
   static connect(options: ConnectOptions): Promise<SshConnection> {
     return new Promise((resolve, reject) => {
       const client = new Client();
       client
-        .on("ready", () => resolve(new SshConnection(client, options.host)))
+        .on("ready", () => {
+          const conn = new SshConnection(client, options.host);
+          client.on("close", () => {
+            conn.closed = true;
+          });
+          resolve(conn);
+        })
         .on("error", reject)
         .connect({
           host: options.host,
@@ -38,6 +51,9 @@ export class SshConnection {
           privateKey:
             options.privateKey ??
             (options.privateKeyPath ? readFileSync(options.privateKeyPath) : undefined),
+          // Пинг раз в 15 секунд держит соединение живым за NAT
+          // и позволяет заметить обрыв простаивающего соединения
+          keepaliveInterval: 15_000,
         });
     });
   }
@@ -135,6 +151,7 @@ export class SshConnection {
   }
 
   close(): void {
+    this.closed = true;
     this.client.end();
   }
 }

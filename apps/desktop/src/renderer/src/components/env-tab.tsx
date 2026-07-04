@@ -1,6 +1,15 @@
-import { Eye, EyeOff, FileKey2, Import, Plus, RefreshCw, Trash2 } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  FileKey2,
+  Import,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ProjectRecord, ServerRecord } from "../../../preload/index.d";
+import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -53,13 +62,13 @@ export function EnvTab({ project, server, askPassword }: Props) {
   const [localFiles, setLocalFiles] = useState<string[]>([]);
 
   async function load() {
-    if (dirty && !window.confirm("Несохранённые изменения будут потеряны. Продолжить?")) return;
-    let password: string | undefined;
-    if (server.auth === "password") {
-      const entered = await askPassword(server);
-      if (entered === null) return;
-      password = entered;
-    }
+    if (
+      dirty &&
+      !window.confirm("Несохранённые изменения будут потеряны. Продолжить?")
+    )
+      return;
+    const password = await passwordFor(server, askPassword);
+    if (password === null) return;
     setLoading(true);
     setError(null);
     const result = await window.plantar.readEnv(project.id, password);
@@ -77,21 +86,23 @@ export function EnvTab({ project, server, askPassword }: Props) {
     void window.plantar.listLocalEnvFiles(project.id).then((result) => {
       if (result.ok) setLocalFiles(result.data);
     });
-    // Серверы с ключом не требуют пароля — грузим сразу; с паролем — по кнопке
-    if (server.auth === "key") void load();
+    // Без запроса пароля (ключ или живое соединение) — грузим сразу, иначе по кнопке
+    void canConnectSilently(server).then((ok) => {
+      if (ok) void load();
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function save() {
-    let password: string | undefined;
-    if (server.auth === "password") {
-      const entered = await askPassword(server);
-      if (entered === null) return;
-      password = entered;
-    }
+    const password = await passwordFor(server, askPassword);
+    if (password === null) return;
     setSaving(true);
     setError(null);
-    const result = await window.plantar.writeEnv(project.id, serializeEnv(lines!), password);
+    const result = await window.plantar.writeEnv(
+      project.id,
+      serializeEnv(lines!),
+      password,
+    );
     setSaving(false);
     if (!result.ok) {
       setError(result.error);
@@ -102,9 +113,14 @@ export function EnvTab({ project, server, askPassword }: Props) {
     window.setTimeout(() => setSavedFlash(false), 3000);
   }
 
-  function update(index: number, patch: Partial<{ key: string; value: string }>) {
+  function update(
+    index: number,
+    patch: Partial<{ key: string; value: string }>,
+  ) {
     setLines((prev) =>
-      prev!.map((l, i) => (i === index && l.type === "var" ? { ...l, ...patch } : l)),
+      prev!.map((l, i) =>
+        i === index && l.type === "var" ? { ...l, ...patch } : l,
+      ),
     );
     setDirty(true);
   }
@@ -114,7 +130,11 @@ export function EnvTab({ project, server, askPassword }: Props) {
     // Индексы строк после удалённой сдвигаются — пересчитываем раскрытые
     setRevealed(
       (prev) =>
-        new Set([...prev].filter((i) => i !== index).map((i) => (i > index ? i - 1 : i))),
+        new Set(
+          [...prev]
+            .filter((i) => i !== index)
+            .map((i) => (i > index ? i - 1 : i)),
+        ),
     );
     setDirty(true);
   }
@@ -153,9 +173,10 @@ export function EnvTab({ project, server, askPassword }: Props) {
   return (
     <div className="flex h-full flex-col gap-4">
       <p className="rounded-lg bg-moss/8 px-3 py-2 text-[12.5px] leading-snug text-moss-deep">
-        Переменные хранятся на сервере и применяются при следующем деплое: для React-сайтов —
-        при сборке, для Node.js и ботов файл .env кладётся рядом с приложением. Локальные
-        .env-файлы из папки проекта на сервер не загружаются.
+        Переменные хранятся на сервере и применяются при следующем деплое: для
+        React-сайтов — при сборке, для Node.js и ботов файл .env кладётся рядом
+        с приложением. Локальные .env-файлы из папки проекта на сервер не
+        загружаются.
       </p>
 
       {error && (
@@ -166,7 +187,9 @@ export function EnvTab({ project, server, askPassword }: Props) {
 
       {lines === null ? (
         loading ? (
-          <p className="text-[13px] text-ink-soft">Загружаю переменные с сервера…</p>
+          <p className="text-[13px] text-ink-soft">
+            Загрузка переменных с сервера…
+          </p>
         ) : (
           <div>
             <Button onClick={load} variant="outline" size="sm">
@@ -174,7 +197,9 @@ export function EnvTab({ project, server, askPassword }: Props) {
               Загрузить переменные
             </Button>
             {server.auth === "password" && (
-              <p className="mt-2 text-[12.5px] text-ink-soft">Понадобится пароль сервера.</p>
+              <p className="mt-2 text-[12.5px] text-ink-soft">
+                Понадобится пароль сервера.
+              </p>
             )}
           </div>
         )
@@ -183,15 +208,18 @@ export function EnvTab({ project, server, askPassword }: Props) {
           {varCount === 0 ? (
             <div className="flex flex-col items-center py-10 text-center">
               <FileKey2 className="size-8 text-[#b8bfb8]" />
-              <h3 className="mt-3 text-[15px] font-bold">Переменных пока нет</h3>
+              <h3 className="mt-3 text-[15px] font-bold">
+                Переменных пока нет
+              </h3>
               <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-ink-soft">
-                Переменные окружения — например, адрес API или токен бота — хранятся на сервере
-                и применяются при деплое.
+                Переменные окружения — например, адрес API или токен бота —
+                хранятся на сервере и применяются при деплое.
               </p>
               {localFiles.length > 0 && (
                 <div className="mt-4 flex flex-col items-center gap-2">
                   <p className="text-[12.5px] text-ink-soft">
-                    В папке проекта найдены локальные файлы — можно импортировать переменные:
+                    В папке проекта найдены локальные файлы — можно
+                    импортировать переменные:
                   </p>
                   <div className="flex flex-wrap justify-center gap-2">
                     {localFiles.map((file) => (
@@ -257,7 +285,9 @@ export function EnvTab({ project, server, askPassword }: Props) {
                     style={
                       isRevealed
                         ? undefined
-                        : ({ WebkitTextSecurity: "disc" } as React.CSSProperties)
+                        : ({
+                            WebkitTextSecurity: "disc",
+                          } as React.CSSProperties)
                     }
                   />
                   <button
@@ -266,7 +296,11 @@ export function EnvTab({ project, server, askPassword }: Props) {
                     title={isRevealed ? "Скрыть значение" : "Показать значение"}
                     className="rounded-md p-1.5 text-ink-soft/50 outline-none hover:bg-moss/10 hover:text-ink disabled:pointer-events-none disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-moss/50"
                   >
-                    {isRevealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    {isRevealed ? (
+                      <EyeOff className="size-4" />
+                    ) : (
+                      <Eye className="size-4" />
+                    )}
                   </button>
                   <button
                     onClick={() => removeLine(i)}
