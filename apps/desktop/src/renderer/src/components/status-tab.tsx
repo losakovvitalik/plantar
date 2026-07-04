@@ -1,6 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { ServerInfo, ServerRecord } from "../../../preload/index.d";
+import { useI18n } from "../i18n";
 import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function StatusTab({ server, askPassword }: Props) {
+  const { t } = useI18n();
   const [info, setInfo] = useState<ServerInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +53,7 @@ export function StatusTab({ server, askPassword }: Props) {
       <div className="flex items-center gap-3">
         <Button onClick={refresh} disabled={loading} variant="outline" size="sm">
           <RefreshCw className={cn(loading && "animate-spin")} />
-          {loading ? "Проверяю…" : "Проверить сервер"}
+          {loading ? t("status.checking") : t("status.check")}
         </Button>
         <span className="font-mono text-[12.5px] text-ink-soft">
           {server.user}@{server.host}:{server.port}
@@ -75,19 +77,19 @@ export function StatusTab({ server, askPassword }: Props) {
                   info.supported ? "bg-moss/10 text-moss" : "bg-clay/10 text-clay",
                 )}
               >
-                {info.supported ? "поддерживается" : "не поддерживается"}
+                {info.supported ? t("status.supported") : t("status.unsupported")}
               </span>
             </div>
             <div className="mt-3 flex gap-6 font-mono text-[13px] text-ink-soft">
-              <span>CPU: {info.cpuCores}</span>
-              <span>RAM: {info.memoryTotalMb} МБ</span>
-              <span>Диск: {info.diskFreeRootGb} ГБ свободно</span>
+              <span>{t("status.cpu", { count: info.cpuCores })}</span>
+              <span>{t("status.ram", { mb: info.memoryTotalMb })}</span>
+              <span>{t("status.disk", { gb: info.diskFreeRootGb })}</span>
             </div>
           </div>
 
           <div className="rounded-xl border border-line bg-card p-5">
             <h3 className="mb-3 text-[13px] font-bold tracking-wide text-ink-soft uppercase">
-              Инструменты
+              {t("status.tools")}
             </h3>
             <ul className="flex flex-col gap-1.5">
               {Object.entries(info.tools).map(([tool, version]) => (
@@ -100,7 +102,7 @@ export function StatusTab({ server, askPassword }: Props) {
                   />
                   <span className="w-16 font-semibold">{tool}</span>
                   <span className="truncate font-mono text-[12.5px] text-ink-soft">
-                    {version ?? "не установлен"}
+                    {version ?? t("status.notInstalled")}
                   </span>
                 </li>
               ))}

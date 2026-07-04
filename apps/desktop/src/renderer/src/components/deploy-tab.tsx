@@ -5,6 +5,7 @@ import type {
   ProjectRecord,
   ServerRecord,
 } from "../../../preload/index.d";
+import { useI18n } from "../i18n";
 import { passwordFor } from "../lib/server-auth";
 import { Button } from "./ui/button";
 import { Switch } from "./ui/switch";
@@ -29,6 +30,7 @@ export function DeployTab({
   autoDeploy,
   onAutoDeployHandled,
 }: Props) {
+  const { t } = useI18n();
   const [lines, setLines] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
@@ -93,7 +95,7 @@ export function DeployTab({
       <div className="flex items-center gap-3">
         <Button onClick={deploy} disabled={running || !config}>
           <Rocket />
-          {running ? "Деплою…" : "Задеплоить"}
+          {running ? t("deploy.running") : t("deploy.start")}
         </Button>
 
         {config && config.type !== "bot" && (
@@ -103,15 +105,16 @@ export function DeployTab({
               <span className="font-semibold text-ink">{config.domain}</span>
             ) : (
               <span>
-                по IP <span className="font-mono">{server.host}</span>, без
-                домена
+                {t("deploy.viaIp")}{" "}
+                <span className="font-mono">{server.host}</span>
+                {t("deploy.noDomain")}
               </span>
             )}
           </span>
         )}
 
         <label className="ml-auto flex cursor-pointer items-center gap-2 text-[12.5px] text-ink-soft select-none">
-          Показывать команды
+          {t("deploy.showCommands")}
           <Switch checked={showCommands} onCheckedChange={toggleCommands} />
         </label>
       </div>
@@ -121,13 +124,13 @@ export function DeployTab({
           onClick={() => window.plantar.openExternal(url)}
           className="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-moss outline-none hover:underline focus-visible:ring-2 focus-visible:ring-moss/50"
         >
-          Приложение задеплоено: {url}
+          {t("deploy.deployedAt", { url })}
           <ExternalLink className="size-3.5" />
         </button>
       ) : (
         deployed && (
           <p className="self-start text-sm font-semibold text-moss">
-            Бот задеплоен и запущен.
+            {t("deploy.botDeployed")}
           </p>
         )
       )}
@@ -144,7 +147,7 @@ export function DeployTab({
       >
         {visibleLines.length === 0 ? (
           <span className="text-sprout/40">
-            {running ? "Подключаюсь…" : "Здесь будет виден каждый шаг деплоя."}
+            {running ? t("common.connecting") : t("deploy.terminalEmpty")}
           </span>
         ) : (
           visibleLines.map((line, i) => (

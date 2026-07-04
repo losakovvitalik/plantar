@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { AppSettings } from "@plantar/storage";
+import type { AppSettings, Language } from "@plantar/storage";
+import { useI18n } from "../i18n";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -18,7 +19,14 @@ interface Props {
   onOpenChange: (open: boolean) => void;
 }
 
+/** Языки называются на самих себе — так переключатель читается на любом языке */
+const LANGUAGE_NAMES: Record<Language, string> = {
+  ru: "Русский",
+  en: "English",
+};
+
 export function SettingsDialog({ open, onOpenChange }: Props) {
+  const { t, setLang } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -38,27 +46,49 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
       letsEncryptEmail: settings.letsEncryptEmail.trim(),
     });
     setBusy(false);
-    if (result.ok) onOpenChange(false);
+    if (result.ok) {
+      setLang(settings.language);
+      onOpenChange(false);
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Настройки</DialogTitle>
-          <DialogDescription className="sr-only">Глобальные настройки Plantar</DialogDescription>
+          <DialogTitle>{t("settings.title")}</DialogTitle>
+          <DialogDescription className="sr-only">{t("settings.description")}</DialogDescription>
         </DialogHeader>
 
         {settings && (
           <div className="flex flex-col gap-6">
             <div className="flex items-start justify-between gap-6">
+              <Label htmlFor="app-language" className="text-[13.5px] font-semibold">
+                {t("settings.language")}
+              </Label>
+              <select
+                id="app-language"
+                value={settings.language}
+                onChange={(e) =>
+                  setSettings({ ...settings, language: e.target.value as Language })
+                }
+                className="border-input focus-visible:border-ring/60 focus-visible:ring-ring/30 h-9 w-40 rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:ring-2"
+              >
+                {(Object.keys(LANGUAGE_NAMES) as Language[]).map((lang) => (
+                  <option key={lang} value={lang}>
+                    {LANGUAGE_NAMES[lang]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-start justify-between gap-6">
               <div>
                 <Label htmlFor="log-copies" className="text-[13.5px] font-semibold">
-                  Хранить копии серверных логов
+                  {t("settings.logCopies")}
                 </Label>
                 <p className="mt-1 text-[12.5px] leading-snug text-ink-soft">
-                  При каждом просмотре логов последняя версия сохраняется на этот компьютер —
-                  они останутся доступны, даже если сервер перестанет отвечать.
+                  {t("settings.logCopiesHint")}
                 </p>
               </div>
               <Switch
@@ -73,11 +103,10 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
             <div className="flex items-start justify-between gap-6">
               <div>
                 <Label htmlFor="notify-success" className="text-[13.5px] font-semibold">
-                  Уведомлять об успешных деплоях
+                  {t("settings.notifySuccess")}
                 </Label>
                 <p className="mt-1 text-[12.5px] leading-snug text-ink-soft">
-                  Системное уведомление, когда деплой завершился успешно. Об ошибках
-                  уведомления приходят всегда.
+                  {t("settings.notifySuccessHint")}
                 </p>
               </div>
               <Switch
@@ -91,12 +120,10 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
 
             <div>
               <Label htmlFor="le-email" className="text-[13.5px] font-semibold">
-                Email для SSL-сертификатов
+                {t("settings.leEmail")}
               </Label>
               <p className="mt-1 mb-2 text-[12.5px] leading-snug text-ink-soft">
-                Let&nbsp;Encrypt пришлёт письмо, если с автопродлением сертификата что-то
-                пойдёт не так. Применяется при следующем деплое с доменом. Можно оставить
-                пустым.
+                {t("settings.leEmailHint")}
               </p>
               <Input
                 id="le-email"
@@ -112,10 +139,10 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
 
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-            Отмена
+            {t("common.cancel")}
           </Button>
           <Button onClick={() => void save()} disabled={busy || !settings}>
-            {busy ? "Сохраняю…" : "Сохранить"}
+            {busy ? t("common.saving") : t("common.save")}
           </Button>
         </DialogFooter>
       </DialogContent>

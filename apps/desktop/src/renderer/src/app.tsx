@@ -19,10 +19,12 @@ import { Sidebar } from "./components/sidebar";
 import { StatusTab } from "./components/status-tab";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
+import { useI18n } from "./i18n";
 
 export type Selection = { kind: "server" | "project"; id: string } | null;
 
 export default function App() {
+  const { t } = useI18n();
   const [servers, setServers] = useState<ServerRecord[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [selection, setSelection] = useState<Selection>(null);
@@ -70,17 +72,17 @@ export default function App() {
     const onRejection = (e: PromiseRejectionEvent) => {
       const reason =
         e.reason instanceof Error ? e.reason.message : String(e.reason);
-      showError(`Непредвиденная ошибка: ${reason}`);
+      showError(t("app.unexpectedError", { message: reason }));
     };
     const onError = (e: ErrorEvent) =>
-      showError(`Непредвиденная ошибка: ${e.message}`);
+      showError(t("app.unexpectedError", { message: e.message }));
     window.addEventListener("unhandledrejection", onRejection);
     window.addEventListener("error", onError);
     return () => {
       window.removeEventListener("unhandledrejection", onRejection);
       window.removeEventListener("error", onError);
     };
-  }, [showError]);
+  }, [showError, t]);
 
   // Папка выбрана — показываем экран подтверждения настроек перед добавлением
   const [newProject, setNewProject] = useState<{
@@ -104,17 +106,17 @@ export default function App() {
       path,
       initial: config ?? detected.config,
       note: config
-        ? "Настройки взяты из plantar.json в папке проекта."
-        : `${detected.framework ? `Определён фреймворк: ${detected.framework}. ` : "Настройки определены автоматически. "}Проверьте внимательно значения и добавьте проект.`,
+        ? t("app.settingsFromConfig")
+        : `${
+            detected.framework
+              ? t("app.frameworkDetected", { framework: detected.framework })
+              : t("app.settingsAutoDetected")
+          }${t("app.checkAndAdd")}`,
     });
   }
 
   async function removeServer(server: ServerRecord) {
-    if (
-      !window.confirm(
-        `Удалить сервер «${server.name}» и его проекты из списка?`,
-      )
-    )
+    if (!window.confirm(t("app.confirmRemoveServer", { name: server.name })))
       return;
     await window.plantar.removeServer(server.id);
     if (selection?.id === server.id) setSelection(null);
@@ -200,19 +202,19 @@ export default function App() {
               <div className="mt-3 flex items-center">
                 <TabsList>
                   <TabsTrigger className="px-4" value="deploy">
-                    Деплой
+                    {t("app.tabDeploy")}
                   </TabsTrigger>
                   <TabsTrigger className="px-4" value="env">
-                    Переменные
+                    {t("app.tabEnv")}
                   </TabsTrigger>
                   <TabsTrigger className="px-4" value="status">
-                    Статус
+                    {t("app.tabStatus")}
                   </TabsTrigger>
                   <TabsTrigger className="px-4" value="logs">
-                    Логи
+                    {t("app.tabLogs")}
                   </TabsTrigger>
                   <TabsTrigger className="px-4" value="history">
-                    История
+                    {t("app.tabHistory")}
                   </TabsTrigger>
                 </TabsList>
                 <Button
@@ -223,7 +225,7 @@ export default function App() {
                   disabled={!projectConfig}
                 >
                   <Settings2 className="size-3.5" />
-                  Настройки проекта
+                  {t("app.projectSettings")}
                 </Button>
               </div>
             </header>
@@ -266,7 +268,7 @@ export default function App() {
             <header className="px-6 pt-5">
               <h1 className="text-lg font-bold">{selectedServer.name}</h1>
               <p className="mt-0.5 text-[13px] text-ink-soft">
-                Сервер. Добавь проект через «+» в списке слева, чтобы деплоить.
+                {t("app.serverHint")}
               </p>
             </header>
             <div className="min-h-0 flex-1 px-6 py-5">
@@ -279,13 +281,13 @@ export default function App() {
               <Sprout className="mx-auto size-9 text-sage" />
               <h2 className="mt-3 text-[16px] font-bold">
                 {servers.length === 0
-                  ? "Добавь первый сервер"
-                  : "Выбери сервер или проект"}
+                  ? t("app.emptyAddServer")
+                  : t("app.emptySelect")}
               </h2>
               <p className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">
                 {servers.length === 0
-                  ? "Понадобятся IP-адрес и пароль — их выдаёт хостинг. Дальше Plantar настроит всё сам."
-                  : "Слева — твои серверы и проекты на них."}
+                  ? t("app.emptyAddServerHint")
+                  : t("app.emptySelectHint")}
               </p>
             </div>
           </div>
@@ -299,15 +301,11 @@ export default function App() {
             setProjectSettingsOpen(open);
             if (!open) setSettingsSaved(false);
           }}
-          title="Настройки проекта"
+          title={t("app.projectSettings")}
           folderPath={selectedProject.path}
           initial={projectConfig ?? {}}
-          submitLabel="Сохранить"
-          savedMessage={
-            settingsSaved
-              ? "Настройки сохранены. Они применятся к приложению при следующем деплое."
-              : undefined
-          }
+          submitLabel={t("common.save")}
+          savedMessage={settingsSaved ? t("app.settingsSaved") : undefined}
           onDeploy={() => {
             setProjectSettingsOpen(false);
             setSettingsSaved(false);
@@ -344,11 +342,11 @@ export default function App() {
       <ProjectSettingsDialog
         open={newProject !== null}
         onOpenChange={(open) => !open && setNewProject(null)}
-        title="Новый проект"
+        title={t("app.newProject")}
         folderPath={newProject?.path ?? ""}
         initial={newProject?.initial ?? {}}
         note={newProject?.note}
-        submitLabel="Добавить проект"
+        submitLabel={t("app.addProject")}
         onSubmit={async (config) => {
           if (!newProject) return null;
           const result = await window.plantar.addProject({

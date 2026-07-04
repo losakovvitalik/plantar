@@ -68,3 +68,17 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## Important files
+
+README.md - general info about project
+docs/cli.md - docs for cli
+docs/features.md - core features of project
+
+## i18n
+
+Все пользовательские строки desktop-приложения живут в словарях, в компонентах только `t("ключ")`:
+
+- Renderer: `apps/desktop/src/renderer/src/i18n/` (`ru.ts` — эталон ключей, `en.ts` — перевод), хук `useI18n()`.
+- Main-процесс: `apps/desktop/src/main/i18n.ts` (свой маленький словарь, `t()` без React).
+- Новые строки добавляются сразу в оба языка; хардкод пользовательского текста в компонентах запрещён.

@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { safeStorage } from "electron";
 import { SshConnection, shellQuote } from "@plantar/ssh";
 import { keysDir, readServers, writeServers } from "@plantar/storage";
+import { t } from "./i18n";
 
 const execFileAsync = promisify(execFile);
 
@@ -99,6 +100,6 @@ export async function installPublicKey(conn: SshConnection, publicKey: string): 
     `mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && { grep -qxF ${quotedKey} ~/.ssh/authorized_keys || echo ${quotedKey} >> ~/.ssh/authorized_keys; }`,
   );
   if (result.code !== 0) {
-    throw new Error(`Не удалось установить ключ на сервер:\n${result.stderr}`);
+    throw new Error(t("installKeyFailed", { stderr: result.stderr }));
   }
 }

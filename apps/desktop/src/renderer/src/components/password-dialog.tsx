@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "../i18n";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -17,6 +18,7 @@ interface Props {
 
 /** Запрос пароля для серверов без ключа — перед каждым подключением */
 export function PasswordDialog({ serverName, onSubmit }: Props) {
+  const { t } = useI18n();
   const [password, setPassword] = useState("");
 
   function close(value: string | null) {
@@ -28,10 +30,10 @@ export function PasswordDialog({ serverName, onSubmit }: Props) {
     <Dialog open={serverName !== null} onOpenChange={(open) => !open && close(null)}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Пароль для «{serverName}»</DialogTitle>
-          <DialogDescription>
-            Этот сервер добавлен без ключа, поэтому пароль нужен при каждом подключении.
-          </DialogDescription>
+          <DialogTitle>
+            {t("password.title", { name: serverName ?? "" })}
+          </DialogTitle>
+          <DialogDescription>{t("password.description")}</DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
@@ -49,10 +51,10 @@ export function PasswordDialog({ serverName, onSubmit }: Props) {
           />
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => close(null)}>
-              Отмена
+              {t("common.cancel")}
             </Button>
             <Button type="submit" disabled={!password}>
-              Подключиться
+              {t("common.connect")}
             </Button>
           </DialogFooter>
         </form>

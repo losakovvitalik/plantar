@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ProjectRecord, ServerRecord } from "../../../preload/index.d";
+import { useI18n } from "../i18n";
 import { passwordFor } from "../lib/server-auth";
 import { Button } from "./ui/button";
 import {
@@ -29,6 +30,7 @@ export function RemoveProjectDialog({
   onClose,
   onRemoved,
 }: Props) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,21 +72,24 @@ export function RemoveProjectDialog({
     <Dialog open={project !== null} onOpenChange={(open) => !open && close()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Удалить проект «{project?.name}»?</DialogTitle>
-          <DialogDescription>
-            Локальная папка проекта в любом случае останется на месте.
-          </DialogDescription>
+          <DialogTitle>
+            {t("removeProject.title", { name: project?.name ?? "" })}
+          </DialogTitle>
+          <DialogDescription>{t("removeProject.description")}</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-2 text-[13px] leading-relaxed text-ink-soft">
           <p>
-            <span className="font-semibold text-ink">Убрать из списка</span> —
-            проект исчезнет из Plantar, но продолжит работать на сервере.
+            <span className="font-semibold text-ink">
+              {t("removeProject.fromList")}
+            </span>
+            {t("removeProject.fromListHint")}
           </p>
           <p>
-            <span className="font-semibold text-ink">Удалить с сервера</span> —
-            остановит процесс, уберёт его из автозапуска и удалит файлы проекта
-            с сервера (у сайтов — и конфиг nginx).
+            <span className="font-semibold text-ink">
+              {t("removeProject.fromServer")}
+            </span>
+            {t("removeProject.fromServerHint")}
           </p>
         </div>
 
@@ -96,13 +101,13 @@ export function RemoveProjectDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={close} disabled={busy}>
-            Отмена
+            {t("common.cancel")}
           </Button>
           <Button variant="outline" onClick={removeFromList} disabled={busy}>
-            Убрать из списка
+            {t("removeProject.fromList")}
           </Button>
           <Button variant="destructive" onClick={removeFromServer} disabled={busy}>
-            {busy ? "Удаляю…" : "Удалить с сервера"}
+            {busy ? t("removeProject.removing") : t("removeProject.fromServer")}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -6,11 +6,14 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { DeployRecord, ProjectRecord } from "@plantar/storage";
+import type { DeployRecord, Language, ProjectRecord } from "@plantar/storage";
+import { type Translate, useI18n } from "../i18n";
 import { Button } from "./ui/button";
 
-function formatWhen(iso: string): string {
-  return new Date(iso).toLocaleString("ru-RU", {
+const DATE_LOCALES: Record<Language, string> = { ru: "ru-RU", en: "en-US" };
+
+function formatWhen(iso: string, lang: Language): string {
+  return new Date(iso).toLocaleString(DATE_LOCALES[lang], {
     day: "numeric",
     month: "long",
     hour: "2-digit",
@@ -18,18 +21,22 @@ function formatWhen(iso: string): string {
   });
 }
 
-function formatDuration(record: DeployRecord): string {
+function formatDuration(record: DeployRecord, t: Translate): string {
   const seconds = Math.round(
     (new Date(record.finishedAt).getTime() -
       new Date(record.startedAt).getTime()) /
       1000,
   );
-  if (seconds < 60) return `${seconds} с`;
-  return `${Math.floor(seconds / 60)} мин ${seconds % 60} с`;
+  if (seconds < 60) return t("history.seconds", { seconds });
+  return t("history.minutesSeconds", {
+    minutes: Math.floor(seconds / 60),
+    seconds: seconds % 60,
+  });
 }
 
 /** Раскрытая запись: лениво подгружает и показывает лог деплоя */
 function DeployLogView({ logFile }: { logFile: string }) {
+  const { t } = useI18n();
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,13 +51,13 @@ function DeployLogView({ logFile }: { logFile: string }) {
   if (error) {
     return (
       <p className="border-t border-line px-4 py-3 text-[12.5px] text-clay">
-        Не удалось открыть лог: {error}
+        {t("history.loadLogError", { error })}
       </p>
     );
   }
   return (
     <pre className="thin-scroll max-h-72 overflow-y-auto rounded-b-xl bg-soil p-4 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-sprout">
-      {content ?? "Читаю лог…"}
+      {content ?? t("history.readingLog")}
     </pre>
   );
 }
@@ -60,6 +67,7 @@ interface Props {
 }
 
 export function HistoryTab({ project }: Props) {
+  const { t, lang } = useI18n();
   const [records, setRecords] = useState<DeployRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openLog, setOpenLog] = useState<string | null>(null);
@@ -82,17 +90,18 @@ export function HistoryTab({ project }: Props) {
     );
   }
   if (records === null) {
-    return <p className="text-[13px] text-ink-soft">Загрузка историю…</p>;
+    return <p className="text-[13px] text-ink-soft">{t("history.loading")}</p>;
   }
   if (records.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="max-w-sm text-center">
           <History className="mx-auto size-8 text-[#b8bfb8]" />
-          <h3 className="mt-3 text-[15px] font-bold">Пока ни одного деплоя</h3>
+          <h3 className="mt-3 text-[15px] font-bold">
+            {t("history.emptyTitle")}
+          </h3>
           <p className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">
-            Здесь появится каждая попытка деплоя этого проекта — со статусом,
-            временем и полным логом.
+            {t("history.emptyHint")}
           </p>
         </div>
       </div>
@@ -123,9 +132,11 @@ export function HistoryTab({ project }: Props) {
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="text-[13.5px] font-semibold">
-                    {formatWhen(record.startedAt)}
+                    {formatWhen(record.startedAt, lang)}
                     <span className="ml-2 font-normal text-ink-soft">
-                      за {formatDuration(record)}
+                      {t("history.duration", {
+                        duration: formatDuration(record, t),
+                      })}
                     </span>
                   </div>
                   {record.status === "error" && (
@@ -142,7 +153,7 @@ export function HistoryTab({ project }: Props) {
                   onClick={() => void window.plantar.openExternal(record.url!)}
                   className="shrink-0"
                 >
-                  Открыть сайт
+                  {t("history.openSite")}
                   <ExternalLink />
                 </Button>
               )}

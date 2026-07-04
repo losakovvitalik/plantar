@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ServerRecord } from "../../../preload/index.d";
+import { useI18n } from "../i18n";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
+  const { t } = useI18n();
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
   const [port, setPort] = useState("22");
@@ -59,16 +61,14 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Добавить сервер</DialogTitle>
-          <DialogDescription>
-            Понадобятся адрес сервера и данные для входа — их выдаёт хостинг.
-          </DialogDescription>
+          <DialogTitle>{t("addServer.title")}</DialogTitle>
+          <DialogDescription>{t("addServer.description")}</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div className="grid grid-cols-[1fr_88px] gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="srv-host">Адрес (IP)</Label>
+              <Label htmlFor="srv-host">{t("addServer.host")}</Label>
               <Input
                 id="srv-host"
                 value={host}
@@ -79,29 +79,29 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="srv-port">Порт</Label>
+              <Label htmlFor="srv-port">{t("addServer.port")}</Label>
               <Input id="srv-port" value={port} onChange={(e) => setPort(e.target.value)} />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="srv-user">Пользователь</Label>
+              <Label htmlFor="srv-user">{t("addServer.user")}</Label>
               <Input id="srv-user" value={user} onChange={(e) => setUser(e.target.value)} required />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="srv-name">Название (необязательно)</Label>
+              <Label htmlFor="srv-name">{t("addServer.name")}</Label>
               <Input
                 id="srv-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Мой сервер"
+                placeholder={t("addServer.namePlaceholder")}
               />
             </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label>Способ входа</Label>
+            <Label>{t("addServer.authMethod")}</Label>
             <RadioGroup
               value={auth}
               onValueChange={(v) => setAuth(v as "key" | "password")}
@@ -109,30 +109,32 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
             >
               <RadioCard
                 value="key"
-                title="SSH-ключ"
-                description="Plantar создаст ключ и настроит его на сервере сам. Рекомендуем."
+                title={t("addServer.keyTitle")}
+                description={t("addServer.keyDescription")}
               />
               <RadioCard
                 value="password"
-                title="Пароль"
-                description="Без ключа. Пароль будет запрашиваться при каждом подключении."
+                title={t("addServer.passwordTitle")}
+                description={t("addServer.passwordDescription")}
               />
             </RadioGroup>
           </div>
 
           {auth === "key" ? (
             <p className="rounded-lg bg-moss/8 px-3 py-2 text-[12.5px] leading-snug text-moss-deep">
-              Пароль нужен один раз — чтобы установить ключ на сервер. Plantar его не сохраняет.
+              {t("addServer.keyNote")}
             </p>
           ) : (
             <p className="rounded-lg bg-amber-bg px-3 py-2 text-[12.5px] leading-snug text-amber">
-              Пароль нигде не сохраняется. Его придётся вводить при каждом подключении к серверу.
+              {t("addServer.passwordNote")}
             </p>
           )}
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="srv-password">
-              {auth === "key" ? "Пароль сервера (нужен один раз)" : "Пароль сервера"}
+              {auth === "key"
+                ? t("addServer.serverPasswordOnce")
+                : t("addServer.serverPassword")}
             </Label>
             <Input
               id="srv-password"
@@ -151,10 +153,10 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
 
           <DialogFooter className="mt-1">
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Отмена
+              {t("common.cancel")}
             </Button>
             <Button type="submit" disabled={busy || !host || !user || !password}>
-              {busy ? "Подключаюсь…" : "Добавить сервер"}
+              {busy ? t("common.connecting") : t("addServer.submit")}
             </Button>
           </DialogFooter>
         </form>

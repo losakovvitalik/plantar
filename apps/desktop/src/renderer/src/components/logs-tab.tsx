@@ -6,6 +6,7 @@ import type {
   ProjectRecord,
   ServerRecord,
 } from "../../../preload/index.d";
+import { type Translate, useI18n } from "../i18n";
 import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
@@ -24,16 +25,19 @@ type StreamState = "idle" | "connecting" | "live" | "ended";
 /** Больше строк держать в DOM нет смысла — старые вытесняются */
 const MAX_LINES = 5000;
 
-const SOURCE_LABELS: Record<LogStreamSource, string> = {
-  app: "Приложение",
-  nginx: "nginx",
-};
+function sourceLabels(t: Translate): Record<LogStreamSource, string> {
+  return { app: t("logs.sourceApp"), nginx: "nginx" };
+}
 
 /** Подписи каналов без жаргона: технически это stdout/stderr и access/error */
-const CHANNEL_LABELS: Record<LogStreamSource, Record<Channel, string>> = {
-  app: { out: "Вывод", err: "Ошибки" },
-  nginx: { out: "Запросы", err: "Ошибки" },
-};
+function channelLabelsFor(
+  t: Translate,
+): Record<LogStreamSource, Record<Channel, string>> {
+  return {
+    app: { out: t("logs.channelOutput"), err: t("logs.channelErrors") },
+    nginx: { out: t("logs.channelRequests"), err: t("logs.channelErrors") },
+  };
+}
 
 /** Доступные источники: у статики нет pm2-процесса, у бота — nginx */
 function sourcesFor(config: ProjectConfig | null): LogStreamSource[] {
@@ -43,6 +47,7 @@ function sourcesFor(config: ProjectConfig | null): LogStreamSource[] {
 }
 
 export function LogsTab({ project, server, config, askPassword }: Props) {
+  const { t } = useI18n();
   const sources = sourcesFor(config);
   const [source, setSource] = useState<LogStreamSource>(sources[0]);
   const [lines, setLines] = useState<LogLine[]>([]);
@@ -180,21 +185,21 @@ export function LogsTab({ project, server, config, askPassword }: Props) {
   }
 
   const visibleLines = filter === "all" ? lines : lines.filter((l) => l.channel === filter);
-  const channelLabels = CHANNEL_LABELS[source];
+  const channelLabels = channelLabelsFor(t)[source];
 
   return (
     <div className="flex h-full flex-col gap-4">
       <div className="flex items-center gap-3">
         {sources.length > 1 && (
           <Segmented
-            options={sources.map((s) => ({ value: s, label: SOURCE_LABELS[s] }))}
+            options={sources.map((s) => ({ value: s, label: sourceLabels(t)[s] }))}
             value={source}
             onChange={(value) => setSource(value as LogStreamSource)}
           />
         )}
         <Segmented
           options={[
-            { value: "all", label: "Всё" },
+            { value: "all", label: t("logs.filterAll") },
             { value: "out", label: channelLabels.out },
             { value: "err", label: channelLabels.err },
           ]}
@@ -211,7 +216,7 @@ export function LogsTab({ project, server, config, askPassword }: Props) {
             size="sm"
           >
             {paused ? <Play /> : <Pause />}
-            {paused ? "Продолжить" : "Пауза"}
+            {paused ? t("logs.resume") : t("logs.pause")}
           </Button>
           <Button
             onClick={clear}
@@ -220,7 +225,7 @@ export function LogsTab({ project, server, config, askPassword }: Props) {
             size="sm"
           >
             <Eraser />
-            Очистить
+            {t("logs.clear")}
           </Button>
         </div>
       </div>
@@ -235,10 +240,10 @@ export function LogsTab({ project, server, config, askPassword }: Props) {
         <div className="flex items-center gap-3">
           <Button onClick={connect} variant="outline" size="sm">
             <Plug />
-            Подключиться
+            {t("common.connect")}
           </Button>
           <span className="text-[13px] text-ink-soft">
-            Живые логи с сервера — без терминала. Понадобится пароль сервера.
+            {t("logs.connectHint")}
           </span>
         </div>
       )}
@@ -246,10 +251,10 @@ export function LogsTab({ project, server, config, askPassword }: Props) {
         <div className="flex items-center gap-3">
           <Button onClick={connect} variant="outline" size="sm">
             <Plug />
-            Переподключиться
+            {t("logs.reconnect")}
           </Button>
           <span className="text-[13px] text-ink-soft">
-            Соединение с сервером прервалось.
+            {t("logs.disconnected")}
           </span>
         </div>
       )}
@@ -266,10 +271,10 @@ export function LogsTab({ project, server, config, askPassword }: Props) {
         {visibleLines.length === 0 ? (
           <span className="text-sprout/40">
             {state === "live"
-              ? "Поток подключён — новые записи появятся здесь."
+              ? t("logs.streamConnected")
               : state === "connecting"
-                ? "Подключаюсь…"
-                : "Здесь будут логи в реальном времени."}
+                ? t("common.connecting")
+                : t("logs.terminalEmpty")}
           </span>
         ) : (
           visibleLines.map((line, i) => (
@@ -319,16 +324,17 @@ function Segmented({
 }
 
 function StreamStatus({ state, paused }: { state: StreamState; paused: boolean }) {
+  const { t } = useI18n();
   const [label, dotClass] =
     state === "live"
       ? paused
-        ? ["на паузе", "bg-amber"]
-        : ["в эфире", "bg-moss animate-pulse"]
+        ? [t("logs.statusPaused"), "bg-amber"]
+        : [t("logs.statusLive"), "bg-moss animate-pulse"]
       : state === "connecting"
-        ? ["подключение…", "bg-sage"]
+        ? [t("logs.statusConnecting"), "bg-sage"]
         : state === "ended"
-          ? ["прервано", "bg-clay"]
-          : ["не подключено", "bg-line"];
+          ? [t("logs.statusEnded"), "bg-clay"]
+          : [t("logs.statusIdle"), "bg-line"];
   return (
     <span className="inline-flex items-center gap-1.5 text-[12px] text-ink-soft">
       <span className={cn("size-2 rounded-full", dotClass)} />

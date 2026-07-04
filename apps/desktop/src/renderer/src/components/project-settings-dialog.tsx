@@ -1,6 +1,8 @@
 import { Rocket } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ProjectConfigInput } from "../../../preload/index.d";
+import { useI18n } from "../i18n";
+import type { MessageKey } from "../i18n/ru";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -20,26 +22,26 @@ type ProjectType = "static" | "node" | "bot";
 
 const PROJECT_TYPES: Array<{
   value: ProjectType;
-  label: string;
-  hint: string;
+  labelKey: MessageKey;
+  hintKey: MessageKey;
   Logo: (props: { className?: string }) => React.JSX.Element;
 }> = [
   {
     value: "static",
-    label: "React",
-    hint: "Статический сайт: React, Vite и другие",
+    labelKey: "projectSettings.typeStaticLabel",
+    hintKey: "projectSettings.typeStaticHint",
     Logo: ReactLogo,
   },
   {
     value: "node",
-    label: "Node.js",
-    hint: "Серверное приложение: Express и другие",
+    labelKey: "projectSettings.typeNodeLabel",
+    hintKey: "projectSettings.typeNodeHint",
     Logo: NodeLogo,
   },
   {
     value: "bot",
-    label: "Telegram-бот",
-    hint: "Бот на long polling: grammY, aiogram и другие",
+    labelKey: "projectSettings.typeBotLabel",
+    hintKey: "projectSettings.typeBotHint",
     Logo: TelegramLogo,
   },
 ];
@@ -73,6 +75,7 @@ export function ProjectSettingsDialog({
   savedMessage,
   onDeploy,
 }: Props) {
+  const { t } = useI18n();
   const [type, setType] = useState<ProjectType>("static");
   const [runtime, setRuntime] = useState<"node" | "python">("node");
   const [name, setName] = useState("");
@@ -105,12 +108,12 @@ export function ProjectSettingsDialog({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
-      setError("Название: только строчные латинские буквы, цифры и дефис.");
+      setError(t("projectSettings.nameError"));
       return;
     }
     const portValue = port.trim() ? Number(port.trim()) : undefined;
     if (port.trim() && (!/^\d+$/.test(port.trim()) || portValue! < 1 || portValue! > 65535)) {
-      setError("Порт: целое число от 1 до 65535.");
+      setError(t("projectSettings.portError"));
       return;
     }
     setBusy(true);
@@ -150,9 +153,9 @@ export function ProjectSettingsDialog({
           )}
 
           <div className="flex flex-col gap-1.5">
-            <Label>Тип проекта</Label>
+            <Label>{t("projectSettings.type")}</Label>
             <div className="grid grid-cols-2 gap-3">
-              {PROJECT_TYPES.map(({ value, label, hint, Logo }) => (
+              {PROJECT_TYPES.map(({ value, labelKey, hintKey, Logo }) => (
                 <button
                   key={value}
                   type="button"
@@ -166,9 +169,9 @@ export function ProjectSettingsDialog({
                 >
                   <Logo className="size-7 shrink-0" />
                   <span className="flex flex-col">
-                    <span className="text-sm font-semibold">{label}</span>
+                    <span className="text-sm font-semibold">{t(labelKey)}</span>
                     <span className="text-[11.5px] leading-snug text-ink-soft">
-                      {hint}
+                      {t(hintKey)}
                     </span>
                   </span>
                 </button>
@@ -177,7 +180,7 @@ export function ProjectSettingsDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="prj-name">Название</Label>
+            <Label htmlFor="prj-name">{t("projectSettings.name")}</Label>
             <Input
               id="prj-name"
               value={name}
@@ -187,23 +190,21 @@ export function ProjectSettingsDialog({
               autoFocus
             />
             <p className="text-[12px] leading-snug text-ink-soft/80">
-              Строчные латинские буквы, цифры и дефис. Так будет называться
-              папка сайта на сервере.
+              {t("projectSettings.nameHint")}
             </p>
           </div>
 
           {type !== "bot" && (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="prj-domain">Домен</Label>
+              <Label htmlFor="prj-domain">{t("projectSettings.domain")}</Label>
               <Input
                 id="prj-domain"
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
-                placeholder="app.mysite.ru"
+                placeholder={t("projectSettings.domainPlaceholder")}
               />
               <p className="text-[12px] leading-snug text-ink-soft/80">
-                С доменом сайт получит HTTPS-сертификат автоматически. Если
-                оставить пустым, сайт будет открываться по IP сервера.
+                {t("projectSettings.domainHint")}
               </p>
             </div>
           )}
@@ -211,7 +212,7 @@ export function ProjectSettingsDialog({
           <div className="grid grid-cols-2 gap-3">
             {type === "bot" && (
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="prj-runtime">Рантайм</Label>
+                <Label htmlFor="prj-runtime">{t("projectSettings.runtime")}</Label>
                 <select
                   id="prj-runtime"
                   value={runtime}
@@ -225,7 +226,7 @@ export function ProjectSettingsDialog({
             )}
             {!(type === "bot" && runtime === "python") && (
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="prj-pm">Менеджер пакетов</Label>
+                <Label htmlFor="prj-pm">{t("projectSettings.packageManager")}</Label>
                 <select
                   id="prj-pm"
                   value={packageManager}
@@ -246,7 +247,7 @@ export function ProjectSettingsDialog({
             )}
             {type === "static" && (
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="prj-dist">Папка сборки</Label>
+                <Label htmlFor="prj-dist">{t("projectSettings.buildDir")}</Label>
                 <Input
                   id="prj-dist"
                   value={buildDir}
@@ -256,12 +257,12 @@ export function ProjectSettingsDialog({
             )}
             {type === "node" && (
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="prj-port">Порт</Label>
+                <Label htmlFor="prj-port">{t("projectSettings.port")}</Label>
                 <Input
                   id="prj-port"
                   value={port}
                   onChange={(e) => setPort(e.target.value)}
-                  placeholder="автоматически"
+                  placeholder={t("projectSettings.portPlaceholder")}
                   inputMode="numeric"
                 />
               </div>
@@ -270,15 +271,14 @@ export function ProjectSettingsDialog({
 
           {type === "static" ? (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="prj-build">Команда сборки</Label>
+              <Label htmlFor="prj-build">{t("projectSettings.buildCommand")}</Label>
               <Input
                 id="prj-build"
                 value={buildCommand}
                 onChange={(e) => setBuildCommand(e.target.value)}
               />
               <p className="text-[12px] leading-snug text-ink-soft/80">
-                Выполняется в папке проекта перед деплоем. Сюда можно вписать
-                любую команду и флаги, например{" "}
+                {t("projectSettings.buildCommandHint")}{" "}
                 <span className="font-mono">
                   npm run build -- --mode staging
                 </span>
@@ -287,7 +287,7 @@ export function ProjectSettingsDialog({
             </div>
           ) : (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="prj-start">Команда запуска</Label>
+              <Label htmlFor="prj-start">{t("projectSettings.startCommand")}</Label>
               <Input
                 id="prj-start"
                 value={startCommand}
@@ -300,15 +300,13 @@ export function ProjectSettingsDialog({
               />
               {type === "bot" ? (
                 <p className="text-[12px] leading-snug text-ink-soft/80">
-                  Так бот запускается на сервере (через pm2). Токен и другие
-                  секреты задаются на вкладке «Переменные».
+                  {t("projectSettings.botStartHint")}
                 </p>
               ) : (
                 <p className="text-[12px] leading-snug text-ink-soft/80">
-                  Так приложение запускается на сервере (через pm2). Порт
-                  передаётся приложению в переменной{" "}
-                  <span className="font-mono">PORT</span>; если поле «Порт»
-                  пустое, свободный порт подберётся при первом деплое.
+                  {t("projectSettings.nodeStartHintBefore")}{" "}
+                  <span className="font-mono">PORT</span>
+                  {t("projectSettings.nodeStartHintAfter")}
                 </p>
               )}
             </div>
@@ -326,7 +324,7 @@ export function ProjectSettingsDialog({
               {onDeploy && (
                 <Button type="button" size="sm" className="shrink-0" onClick={onDeploy}>
                   <Rocket className="size-3.5" />
-                  Деплой
+                  {t("projectSettings.deploy")}
                 </Button>
               )}
             </div>
@@ -338,10 +336,10 @@ export function ProjectSettingsDialog({
               variant="ghost"
               onClick={() => onOpenChange(false)}
             >
-              {savedMessage ? "Закрыть" : "Отмена"}
+              {savedMessage ? t("common.close") : t("common.cancel")}
             </Button>
             <Button type="submit" disabled={busy || !name}>
-              {busy ? "Сохраняю…" : submitLabel}
+              {busy ? t("common.saving") : submitLabel}
             </Button>
           </DialogFooter>
         </form>

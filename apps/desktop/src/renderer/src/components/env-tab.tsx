@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ProjectRecord, ServerRecord } from "../../../preload/index.d";
+import { useI18n } from "../i18n";
 import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
@@ -49,6 +50,7 @@ interface Props {
 }
 
 export function EnvTab({ project, server, askPassword }: Props) {
+  const { t } = useI18n();
   const [lines, setLines] = useState<EnvLine[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -62,11 +64,7 @@ export function EnvTab({ project, server, askPassword }: Props) {
   const [localFiles, setLocalFiles] = useState<string[]>([]);
 
   async function load() {
-    if (
-      dirty &&
-      !window.confirm("Несохранённые изменения будут потеряны. Продолжить?")
-    )
-      return;
+    if (dirty && !window.confirm(t("env.confirmDiscard"))) return;
     const password = await passwordFor(server, askPassword);
     if (password === null) return;
     setLoading(true);
@@ -161,7 +159,7 @@ export function EnvTab({ project, server, askPassword }: Props) {
     }
     const imported = parseEnv(result.data).filter((l) => l.type === "var");
     if (imported.length === 0) {
-      setError(`В файле ${file} нет переменных.`);
+      setError(t("env.noVarsInFile", { file }));
       return;
     }
     setLines((prev) => [...(prev ?? []), ...imported]);
@@ -173,10 +171,7 @@ export function EnvTab({ project, server, askPassword }: Props) {
   return (
     <div className="flex h-full flex-col gap-4">
       <p className="rounded-lg bg-moss/8 px-3 py-2 text-[12.5px] leading-snug text-moss-deep">
-        Переменные хранятся на сервере и применяются при следующем деплое: для
-        React-сайтов — при сборке, для Node.js и ботов файл .env кладётся рядом
-        с приложением. Локальные .env-файлы из папки проекта на сервер не
-        загружаются.
+        {t("env.banner")}
       </p>
 
       {error && (
@@ -187,18 +182,16 @@ export function EnvTab({ project, server, askPassword }: Props) {
 
       {lines === null ? (
         loading ? (
-          <p className="text-[13px] text-ink-soft">
-            Загрузка переменных с сервера…
-          </p>
+          <p className="text-[13px] text-ink-soft">{t("env.loading")}</p>
         ) : (
           <div>
             <Button onClick={load} variant="outline" size="sm">
               <RefreshCw />
-              Загрузить переменные
+              {t("env.load")}
             </Button>
             {server.auth === "password" && (
               <p className="mt-2 text-[12.5px] text-ink-soft">
-                Понадобится пароль сервера.
+                {t("env.passwordNeeded")}
               </p>
             )}
           </div>
@@ -209,17 +202,15 @@ export function EnvTab({ project, server, askPassword }: Props) {
             <div className="flex flex-col items-center py-10 text-center">
               <FileKey2 className="size-8 text-[#b8bfb8]" />
               <h3 className="mt-3 text-[15px] font-bold">
-                Переменных пока нет
+                {t("env.emptyTitle")}
               </h3>
               <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-ink-soft">
-                Переменные окружения — например, адрес API или токен бота —
-                хранятся на сервере и применяются при деплое.
+                {t("env.emptyHint")}
               </p>
               {localFiles.length > 0 && (
                 <div className="mt-4 flex flex-col items-center gap-2">
                   <p className="text-[12.5px] text-ink-soft">
-                    В папке проекта найдены локальные файлы — можно
-                    импортировать переменные:
+                    {t("env.importHint")}
                   </p>
                   <div className="flex flex-wrap justify-center gap-2">
                     {localFiles.map((file) => (
@@ -246,10 +237,10 @@ export function EnvTab({ project, server, askPassword }: Props) {
                 onClick={load}
                 disabled={loading}
                 className="text-ink-soft"
-                title="Перечитать переменные с сервера"
+                title={t("env.refreshTitle")}
               >
                 <RefreshCw className={cn(loading && "animate-spin")} />
-                Обновить
+                {t("env.refresh")}
               </Button>
               <Button
                 variant="ghost"
@@ -258,7 +249,7 @@ export function EnvTab({ project, server, askPassword }: Props) {
                 className="text-ink-soft"
               >
                 {showAll ? <EyeOff /> : <Eye />}
-                {showAll ? "Скрыть все" : "Показать все"}
+                {showAll ? t("env.hideAll") : t("env.showAll")}
               </Button>
             </div>
           )}
@@ -272,14 +263,14 @@ export function EnvTab({ project, server, askPassword }: Props) {
                   <Input
                     value={line.key}
                     onChange={(e) => update(i, { key: e.target.value })}
-                    placeholder="ИМЯ_ПЕРЕМЕННОЙ"
+                    placeholder={t("env.keyPlaceholder")}
                     className="w-64 font-mono text-[12.5px]"
                   />
                   <span className="text-ink-soft/50">=</span>
                   <Input
                     value={line.value}
                     onChange={(e) => update(i, { value: e.target.value })}
-                    placeholder="значение"
+                    placeholder={t("env.valuePlaceholder")}
                     className="flex-1 font-mono text-[12.5px]"
                     autoComplete="off"
                     style={
@@ -293,7 +284,7 @@ export function EnvTab({ project, server, askPassword }: Props) {
                   <button
                     onClick={() => toggleReveal(i)}
                     disabled={showAll}
-                    title={isRevealed ? "Скрыть значение" : "Показать значение"}
+                    title={isRevealed ? t("env.hideValue") : t("env.showValue")}
                     className="rounded-md p-1.5 text-ink-soft/50 outline-none hover:bg-moss/10 hover:text-ink disabled:pointer-events-none disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-moss/50"
                   >
                     {isRevealed ? (
@@ -304,7 +295,7 @@ export function EnvTab({ project, server, askPassword }: Props) {
                   </button>
                   <button
                     onClick={() => removeLine(i)}
-                    title="Удалить переменную"
+                    title={t("env.removeVar")}
                     className="rounded-md p-1.5 text-ink-soft/50 opacity-0 outline-none group-hover:opacity-100 hover:bg-clay/10 hover:text-clay focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-moss/50"
                   >
                     <Trash2 className="size-4" />
@@ -317,18 +308,20 @@ export function EnvTab({ project, server, askPassword }: Props) {
           <div className="mt-3 flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={addVar}>
               <Plus />
-              Добавить переменную
+              {t("env.addVar")}
             </Button>
             <Button size="sm" onClick={save} disabled={!dirty || saving}>
-              {saving ? "Сохраняю…" : "Сохранить"}
+              {saving ? t("common.saving") : t("common.save")}
             </Button>
             {savedFlash && (
               <span className="text-[12.5px] font-semibold text-moss">
-                Сохранено ✓ — применится при следующем деплое
+                {t("env.savedFlash")}
               </span>
             )}
             {dirty && !savedFlash && (
-              <span className="text-[12.5px] text-ink-soft">не сохранено</span>
+              <span className="text-[12.5px] text-ink-soft">
+                {t("env.unsaved")}
+              </span>
             )}
           </div>
         </div>

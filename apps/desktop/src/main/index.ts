@@ -43,6 +43,7 @@ import {
   storePrivateKey,
 } from "./ssh-setup";
 import { dropConnection, isConnected, withPooledConnection } from "./ssh-pool";
+import { setLanguage, t } from "./i18n";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -56,19 +57,19 @@ async function toResult<T>(fn: () => Promise<T>): Promise<IpcResult<T>> {
 
 function getServer(id: string): ServerRecord {
   const server = readServers().find((s) => s.id === id);
-  if (!server) throw new Error("Сервер не найден. Обнови список.");
+  if (!server) throw new Error(t("serverNotFound"));
   return server;
 }
 
 function getProject(id: string): ProjectRecord {
   const project = readProjects().find((p) => p.id === id);
-  if (!project) throw new Error("Проект не найден. Обнови список.");
+  if (!project) throw new Error(t("projectNotFound"));
   return project;
 }
 
 async function connect(server: ServerRecord, password?: string): Promise<SshConnection> {
   if (server.auth === "password" && !password) {
-    throw new Error("Для этого сервера нужен пароль.");
+    throw new Error(t("passwordRequired"));
   }
   return SshConnection.connect({
     host: server.host,
@@ -139,7 +140,7 @@ function connectWithPassword(
   base: { host: string; port: number; user: string },
   password: string,
 ): Promise<SshConnection> {
-  if (!password) throw new Error("Введи пароль сервера.");
+  if (!password) throw new Error(t("enterPassword"));
   return SshConnection.connect({
     host: base.host,
     port: base.port,
@@ -151,7 +152,7 @@ function connectWithPassword(
 /** Выбор папки проекта: возвращает путь, конфиг (если plantar.json уже есть) и автоопределённые настройки */
 async function pickProjectFolder(win: BrowserWindow) {
   const picked = await dialog.showOpenDialog(win, {
-    title: "Выбери папку проекта",
+    title: t("pickProjectFolder"),
     properties: ["openDirectory"],
   });
   if (picked.canceled || picked.filePaths.length === 0) return null;
@@ -184,10 +185,7 @@ function assertNameFreeOnServer(serverId: string, name: string, excludeProjectId
     return existingName === name;
   });
   if (clash) {
-    throw new Error(
-      `Имя «${name}» уже занято проектом на этом сервере (${clash.path}). ` +
-        `Проекты с одинаковым именем деплоятся в одну папку и перетирают друг друга — укажи другое имя.`,
-    );
+    throw new Error(t("nameTaken", { name, path: clash.path }));
   }
 }
 
@@ -216,8 +214,14 @@ function notifyDeployResult(
   if (!Notification.isSupported()) return;
   const notification = new Notification(
     success
-      ? { title: "Деплой завершён", body: `Проект «${projectName}» опубликован.` }
-      : { title: "Деплой не удался", body: `Проект «${projectName}» — произошла ошибка.` },
+      ? {
+          title: t("notifySuccessTitle"),
+          body: t("notifySuccessBody", { name: projectName }),
+        }
+      : {
+          title: t("notifyErrorTitle"),
+          body: t("notifyErrorBody", { name: projectName }),
+        },
   );
   notification.on("click", () => {
     if (win.isDestroyed()) return;
@@ -270,7 +274,7 @@ async function runDeploy(
       return { url: result.url };
     } catch (err) {
       const message = (err as Error).message;
-      logWriter.write(`\nОШИБКА: ${message}`);
+      logWriter.write(`\n${t("deployLogError")}: ${message}`);
       appendHistory({
         project: config.name,
         host: server.host,
@@ -319,6 +323,7 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:set", (_e, settings: AppSettings) =>
     toResult(async () => {
       writeSettings(settings);
+      setLanguage(settings.language);
     }),
   );
 
@@ -408,7 +413,7 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("env:readLocal", (_e, args: { projectId: string; file: string }) =>
     toResult(async () => {
-      if (!ENV_FILE_RE.test(args.file)) throw new Error("Недопустимое имя env-файла.");
+      if (!ENV_FILE_RE.test(args.file)) throw new Error(t("invalidEnvFileName"));
       return readFileSync(path.join(getProject(args.projectId).path, args.file), "utf8");
     }),
   );
@@ -435,7 +440,7 @@ app.whenReady().then(() => {
       const logsRoot = path.join(dataDir(), "logs") + path.sep;
       const resolved = path.resolve(logFile);
       if (!resolved.startsWith(logsRoot)) {
-        throw new Error("Недопустимый путь к файлу лога.");
+        throw new Error(t("invalidLogPath"));
       }
       return readFileSync(resolved, "utf8");
     }),

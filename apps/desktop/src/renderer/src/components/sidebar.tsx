@@ -1,6 +1,7 @@
 import { FolderPlus, Package, Plus, Server, Settings, Sprout, Trash2 } from "lucide-react";
 import type { ProjectRecord, ServerRecord } from "../../../preload/index.d";
 import type { Selection } from "../app";
+import { useI18n } from "../i18n";
 import { cn } from "../lib/utils";
 
 interface Props {
@@ -26,6 +27,7 @@ export function Sidebar({
   onRemoveProject,
   onOpenSettings,
 }: Props) {
+  const { t } = useI18n();
   return (
     <aside className="flex w-60 shrink-0 flex-col bg-pine text-sage">
       {/* Отступ под кнопки-светофоры macOS; зона перетаскивания — общая полоса в app.tsx */}
@@ -38,11 +40,11 @@ export function Sidebar({
 
       <div className="flex items-center justify-between px-4 pb-1">
         <span className="text-[11px] font-bold tracking-[0.14em] text-sage/60 uppercase">
-          Серверы
+          {t("sidebar.servers")}
         </span>
         <button
           onClick={onAddServer}
-          title="Добавить сервер"
+          title={t("sidebar.addServer")}
           className="rounded-md p-1 text-sage/70 outline-none hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-sprout/50"
         >
           <Plus className="size-4" />
@@ -52,7 +54,7 @@ export function Sidebar({
       <nav className="thin-scroll flex-1 overflow-y-auto px-2 pb-2">
         {servers.length === 0 && (
           <p className="px-2 py-3 text-[12.5px] leading-relaxed text-sage/60">
-            Пока пусто. Добавь первый сервер — понадобятся IP и пароль от хостинга.
+            {t("sidebar.empty")}
           </p>
         )}
 
@@ -76,14 +78,14 @@ export function Sidebar({
                 </button>
                 <button
                   onClick={() => onAddProject(server.id)}
-                  title="Добавить проект"
+                  title={t("sidebar.addProject")}
                   className="hidden rounded p-0.5 text-sage/70 group-hover:block hover:text-white"
                 >
                   <FolderPlus className="size-3.5" />
                 </button>
                 <button
                   onClick={() => onRemoveServer(server)}
-                  title="Удалить сервер"
+                  title={t("sidebar.removeServer")}
                   className="hidden rounded p-0.5 text-sage/70 group-hover:block hover:text-clay"
                 >
                   <Trash2 className="size-3.5" />
@@ -111,7 +113,7 @@ export function Sidebar({
                     </button>
                     <button
                       onClick={() => onRemoveProject(project)}
-                      title="Убрать проект из списка"
+                      title={t("sidebar.removeProject")}
                       className="hidden rounded p-0.5 text-sage/70 group-hover:block hover:text-clay"
                     >
                       <Trash2 className="size-3.5" />
@@ -130,7 +132,7 @@ export function Sidebar({
           className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-sage/80 outline-none hover:bg-pine-edge/50 hover:text-sage focus-visible:ring-2 focus-visible:ring-sprout/50"
         >
           <Settings className="size-4" />
-          Настройки
+          {t("sidebar.settings")}
         </button>
       </div>
     </aside>

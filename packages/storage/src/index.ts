@@ -83,6 +83,14 @@ function writeJsonList<T>(file: string, list: T[]): void {
   writeFileSync(path.join(dataDir(), file), JSON.stringify(list, null, 2));
 }
 
+export type Language = "ru" | "en";
+
+/** Язык по умолчанию — из локали системы; для всех, кроме русскоязычных, — английский */
+function systemLanguage(): Language {
+  const locale = Intl.DateTimeFormat().resolvedOptions().locale ?? "";
+  return locale.toLowerCase().startsWith("ru") ? "ru" : "en";
+}
+
 export interface AppSettings {
   /** Сохранять локальные копии серверных логов при каждом просмотре */
   saveServerLogCopies: boolean;
@@ -90,12 +98,15 @@ export interface AppSettings {
   letsEncryptEmail: string;
   /** Показывать системное уведомление об успешном деплое (об ошибке — всегда) */
   notifyOnDeploySuccess: boolean;
+  /** Язык интерфейса */
+  language: Language;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   saveServerLogCopies: true,
   letsEncryptEmail: "",
   notifyOnDeploySuccess: true,
+  language: systemLanguage(),
 };
 
 export function readSettings(): AppSettings {
