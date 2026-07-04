@@ -84,20 +84,25 @@ export class SshConnection {
 
   /**
    * Рекурсивно загружает содержимое localDir в remoteDir.
-   * Папки из excludeDirs (по имени, на любом уровне) пропускаются.
+   * Папки и файлы, чьё имя (на любом уровне) совпадает со строкой
+   * или подходит под RegExp из exclude, пропускаются.
    * Возвращает количество загруженных файлов.
    */
   async uploadDirectory(
     localDir: string,
     remoteDir: string,
     onFile?: (relativePath: string) => void,
-    excludeDirs: string[] = [],
+    exclude: (string | RegExp)[] = [],
   ): Promise<number> {
     const entries = readdirSync(localDir, { recursive: true, withFileTypes: true });
 
     const toPosix = (p: string) => p.split(path.sep).join(path.posix.sep);
     const excluded = (relativePath: string) =>
-      relativePath.split(path.posix.sep).some((part) => excludeDirs.includes(part));
+      relativePath
+        .split(path.posix.sep)
+        .some((part) =>
+          exclude.some((e) => (typeof e === "string" ? e === part : e.test(part))),
+        );
     const dirs = entries
       .filter((e) => e.isDirectory())
       .map((e) => toPosix(path.join(path.relative(localDir, e.parentPath), e.name)))

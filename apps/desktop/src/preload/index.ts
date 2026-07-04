@@ -23,10 +23,12 @@ const api = {
   listHistory: (projectId: string) => invoke("history:list", projectId),
   readDeployLog: (logFile: string) => invoke("history:readLog", logFile),
 
-  listEnvFiles: (projectId: string) => invoke("env:list", projectId),
-  readEnvFile: (projectId: string, file: string) => invoke("env:read", { projectId, file }),
-  writeEnvFile: (projectId: string, file: string, content: string) =>
-    invoke("env:write", { projectId, file, content }),
+  readEnv: (projectId: string, password?: string) => invoke("env:read", { projectId, password }),
+  writeEnv: (projectId: string, content: string, password?: string) =>
+    invoke("env:write", { projectId, content, password }),
+  listLocalEnvFiles: (projectId: string) => invoke("env:listLocal", projectId),
+  readLocalEnvFile: (projectId: string, file: string) =>
+    invoke("env:readLocal", { projectId, file }),
 
   getServerInfo: (serverId: string, password?: string) =>
     invoke("server:info", { serverId, password }),

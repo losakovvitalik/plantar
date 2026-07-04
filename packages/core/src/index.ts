@@ -153,6 +153,52 @@ export async function setupServer(
   return results;
 }
 
+/** Env-файлы проектов живут на сервере вне папок релизов — деплой их не затирает */
+const ENV_STORE_DIR = "/var/www/.plantar/env";
+const envStorePath = (name: string) => `${ENV_STORE_DIR}/${name}.env`;
+
+/** Имена локальных env-файлов, которые не должны попадать на сервер при загрузке кода */
+export const ENV_FILE_RE = /^\.env[\w.-]*$/;
+
+/** Содержимое env-файла проекта на сервере; отсутствие файла — пустая строка */
+export async function readProjectEnv(conn: SshConnection, name: string): Promise<string> {
+  const result = await conn.exec(`cat '${envStorePath(name)}' 2>/dev/null`);
+  return result.code === 0 ? result.stdout : "";
+}
+
+export async function writeProjectEnv(
+  conn: SshConnection,
+  name: string,
+  content: string,
+): Promise<void> {
+  // base64 избавляет от экранирования произвольных значений; 600 — файл с секретами
+  const encoded = Buffer.from(content, "utf8").toString("base64");
+  const file = envStorePath(name);
+  const result = await conn.exec(
+    `mkdir -p '${ENV_STORE_DIR}' && chmod 700 '${ENV_STORE_DIR}' && ` +
+      `echo '${encoded}' | base64 -d > '${file}' && chmod 600 '${file}'`,
+  );
+  if (result.code !== 0) {
+    throw new Error(`Не удалось сохранить переменные на сервере:\n${result.stderr.slice(-2000)}`);
+  }
+}
+
+/** KEY=VALUE-строки env-файла; комментарии и мусор пропускаются, кавычки вокруг значения снимаются */
+function parseEnv(content: string): Record<string, string> {
+  const vars: Record<string, string> = {};
+  for (const line of content.split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z_][A-Za-z0-9_.]*)\s*=(.*)$/);
+    if (!match || line.trim().startsWith("#")) continue;
+    let value = match[2].trim();
+    const quote = value[0];
+    if ((quote === '"' || quote === "'") && value.endsWith(quote) && value.length >= 2) {
+      value = value.slice(1, -1);
+    }
+    vars[match[1]] = value;
+  }
+  return vars;
+}
+
 export interface SiteLogs {
   access: string;
   error: string;
@@ -189,7 +235,11 @@ export async function removeDeployedProject(
   }
 
   log("→ Удаляю файлы проекта…");
-  await run(conn, `rm -rf '/var/www/${name}' '/var/www/.${name}.uploading'`, log);
+  await run(
+    conn,
+    `rm -rf '/var/www/${name}' '/var/www/.${name}.uploading' '${envStorePath(name)}'`,
+    log,
+  );
 
   // Конфиг nginx есть только у сайтов; у ботов его нет
   const conf = await conn.exec(`test -e '/etc/nginx/sites-available/${name}.conf'`);
@@ -326,9 +376,18 @@ async function deployStatic(
   log: (line: string) => void,
   options: DeployOptions,
 ): Promise<DeployResult> {
+  // Переменные проекта хранятся на сервере; при сборке они приоритетнее локальных .env
+  const envVars = parseEnv(await readProjectEnv(conn, config.name));
+  const varCount = Object.keys(envVars).length;
+  if (varCount > 0) log(`✓ Переменные окружения с сервера: ${varCount} шт.`);
+
   log(`→ Собираю проект: ${config.buildCommand}`);
   try {
-    await execAsync(config.buildCommand, { cwd: projectDir, maxBuffer: 50 * 1024 * 1024 });
+    await execAsync(config.buildCommand, {
+      cwd: projectDir,
+      maxBuffer: 50 * 1024 * 1024,
+      env: { ...process.env, ...envVars },
+    });
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };
     const output = [e.stdout, e.stderr]
@@ -435,11 +494,12 @@ async function uploadApp(
 
   await run(conn, `rm -rf '${staging}'`, log);
   log("→ Загружаю файлы…");
+  // Локальные .env-файлы не загружаются: переменные проекта хранятся на сервере
   const fileCount = await conn.uploadDirectory(
     projectDir,
     staging,
     (file) => log(`  ↑ ${file}`),
-    python ? [".venv", "__pycache__", ".git"] : ["node_modules", ".git"],
+    python ? [".venv", "__pycache__", ".git", ENV_FILE_RE] : ["node_modules", ".git", ENV_FILE_RE],
   );
   log(`✓ Загружено файлов: ${fileCount}`);
 
@@ -457,6 +517,15 @@ async function uploadApp(
 
   await run(conn, `rm -rf '${target}' && mv '${staging}' '${target}'`, log);
   log(`✓ Задеплоено файлов: ${fileCount} → ${target}`);
+
+  // Env-файл проекта хранится вне папки релиза — кладём копию рядом с кодом,
+  // чтобы приложение нашло его как обычный .env
+  const envFile = envStorePath(config.name);
+  const hasEnv = await conn.exec(`test -f '${envFile}'`);
+  if (hasEnv.code === 0) {
+    log("→ Подставляю переменные окружения с сервера…");
+    await run(conn, `cp '${envFile}' '${target}/.env' && chmod 600 '${target}/.env'`, log);
+  }
   return { target, fileCount };
 }
 

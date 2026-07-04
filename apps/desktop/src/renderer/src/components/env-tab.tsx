@@ -1,11 +1,12 @@
-import { ChevronRight, Eye, EyeOff, FileKey2, Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import type { ProjectRecord } from "../../../preload/index.d";
+import { Eye, EyeOff, FileKey2, Import, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import type { ProjectRecord, ServerRecord } from "../../../preload/index.d";
+import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
 /**
- * Построчная модель .env: переменные редактируются,
+ * Построчная модель env-файла: переменные редактируются,
  * комментарии и пустые строки сохраняются как есть.
  */
 type EnvLine =
@@ -13,7 +14,6 @@ type EnvLine =
   | { type: "raw"; text: string };
 
 const VAR_RE = /^([A-Za-z_][A-Za-z0-9_.]*)\s*=(.*)$/;
-const ENV_FILE_RE = /^\.env[\w.-]*$/;
 
 function parseEnv(content: string): EnvLine[] {
   const lines = content.split(/\r?\n/);
@@ -33,46 +33,73 @@ function serializeEnv(lines: EnvLine[]): string {
   return out ? out + "\n" : "";
 }
 
-/** Редактор одного .env-файла (тело раскрытой секции) */
-function EnvFileEditor({
-  project,
-  file,
-  showAll,
-  onDirtyChange,
-}: {
+interface Props {
   project: ProjectRecord;
-  file: string;
-  /** Показать значения всех переменных (общий переключатель вкладки) */
-  showAll: boolean;
-  onDirtyChange: (dirty: boolean) => void;
-}) {
+  server: ServerRecord;
+  askPassword: (server: ServerRecord) => Promise<string | null>;
+}
+
+export function EnvTab({ project, server, askPassword }: Props) {
   const [lines, setLines] = useState<EnvLine[] | null>(null);
-  const [dirty, setDirtyState] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Индексы строк, значения которых раскрыты вручную */
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
+  const [showAll, setShowAll] = useState(false);
+  /** Локальные .env-файлы в папке проекта — предлагаются для импорта */
+  const [localFiles, setLocalFiles] = useState<string[]>([]);
 
-  const setDirty = (value: boolean) => {
-    setDirtyState(value);
-    onDirtyChange(value);
-  };
+  async function load() {
+    if (dirty && !window.confirm("Несохранённые изменения будут потеряны. Продолжить?")) return;
+    let password: string | undefined;
+    if (server.auth === "password") {
+      const entered = await askPassword(server);
+      if (entered === null) return;
+      password = entered;
+    }
+    setLoading(true);
+    setError(null);
+    const result = await window.plantar.readEnv(project.id, password);
+    setLoading(false);
+    if (result.ok) {
+      setLines(parseEnv(result.data));
+      setDirty(false);
+      setRevealed(new Set());
+    } else {
+      setError(result.error);
+    }
+  }
 
   useEffect(() => {
-    void (async () => {
-      const result = await window.plantar.readEnvFile(project.id, file);
-      if (result.ok) setLines(parseEnv(result.data));
-      else setError(result.error);
-    })();
-    // загружаем один раз при монтировании секции
+    void window.plantar.listLocalEnvFiles(project.id).then((result) => {
+      if (result.ok) setLocalFiles(result.data);
+    });
+    // Серверы с ключом не требуют пароля — грузим сразу; с паролем — по кнопке
+    if (server.auth === "key") void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (error) {
-    return <p className="px-4 py-3 text-[12.5px] text-clay">{error}</p>;
-  }
-  if (lines === null) {
-    return <p className="px-4 py-3 text-[12.5px] text-ink-soft">Читаю файл…</p>;
+  async function save() {
+    let password: string | undefined;
+    if (server.auth === "password") {
+      const entered = await askPassword(server);
+      if (entered === null) return;
+      password = entered;
+    }
+    setSaving(true);
+    setError(null);
+    const result = await window.plantar.writeEnv(project.id, serializeEnv(lines!), password);
+    setSaving(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setDirty(false);
+    setSavedFlash(true);
+    window.setTimeout(() => setSavedFlash(false), 3000);
   }
 
   function update(index: number, patch: Partial<{ key: string; value: string }>) {
@@ -102,180 +129,33 @@ function EnvFileEditor({
   }
 
   function addVar() {
-    setLines((prev) => [...prev!, { type: "var", key: "", value: "" }]);
+    setLines((prev) => [...(prev ?? []), { type: "var", key: "", value: "" }]);
     setDirty(true);
   }
 
-  async function save() {
-    const result = await window.plantar.writeEnvFile(project.id, file, serializeEnv(lines!));
+  async function importLocal(file: string) {
+    const result = await window.plantar.readLocalEnvFile(project.id, file);
     if (!result.ok) {
       setError(result.error);
       return;
     }
-    setDirty(false);
-    setSavedFlash(true);
-    window.setTimeout(() => setSavedFlash(false), 2000);
-  }
-
-  const varCount = lines.filter((l) => l.type === "var").length;
-
-  return (
-    <div className="flex flex-col gap-2 border-t border-line px-4 py-3">
-      {varCount === 0 && (
-        <p className="text-[13px] text-ink-soft">Файл пуст — добавь первую переменную.</p>
-      )}
-      {lines.map((line, i) => {
-        if (line.type !== "var") return null;
-        const isRevealed = showAll || revealed.has(i);
-        return (
-          <div key={i} className="group flex items-center gap-2">
-            <Input
-              value={line.key}
-              onChange={(e) => update(i, { key: e.target.value })}
-              placeholder="ИМЯ_ПЕРЕМЕННОЙ"
-              className="w-64 font-mono text-[12.5px]"
-            />
-            <span className="text-ink-soft/50">=</span>
-            <Input
-              value={line.value}
-              onChange={(e) => update(i, { value: e.target.value })}
-              placeholder="значение"
-              className="flex-1 font-mono text-[12.5px]"
-              autoComplete="off"
-              style={
-                isRevealed
-                  ? undefined
-                  : ({ WebkitTextSecurity: "disc" } as React.CSSProperties)
-              }
-            />
-            <button
-              onClick={() => toggleReveal(i)}
-              disabled={showAll}
-              title={isRevealed ? "Скрыть значение" : "Показать значение"}
-              className="rounded-md p-1.5 text-ink-soft/50 outline-none hover:bg-moss/10 hover:text-ink disabled:pointer-events-none disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-moss/50"
-            >
-              {isRevealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-            </button>
-            <button
-              onClick={() => removeLine(i)}
-              title="Удалить переменную"
-              className="rounded-md p-1.5 text-ink-soft/50 opacity-0 outline-none group-hover:opacity-100 hover:bg-clay/10 hover:text-clay focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-moss/50"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          </div>
-        );
-      })}
-
-      <div className="mt-1 flex items-center gap-3">
-        <Button variant="ghost" size="sm" onClick={addVar}>
-          <Plus />
-          Добавить переменную
-        </Button>
-        <Button size="sm" onClick={save} disabled={!dirty}>
-          Сохранить
-        </Button>
-        {savedFlash && <span className="text-[12.5px] font-semibold text-moss">Сохранено ✓</span>}
-        {dirty && !savedFlash && (
-          <span className="text-[12.5px] text-ink-soft">не сохранено</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface Props {
-  project: ProjectRecord;
-}
-
-export function EnvTab({ project }: Props) {
-  const [files, setFiles] = useState<string[] | null>(null);
-  /** Раскрытые секции; однажды открытая остаётся смонтированной, чтобы не терять правки */
-  const [open, setOpen] = useState<Set<string>>(new Set());
-  const [mounted, setMounted] = useState<Set<string>>(new Set());
-  const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
-  const [adding, setAdding] = useState(false);
-  const [newName, setNewName] = useState(".env");
-  /** Файлы, у которых раскрыты все значения */
-  const [shownFiles, setShownFiles] = useState<Set<string>>(new Set());
-  const [error, setError] = useState<string | null>(null);
-
-  const loadFiles = useCallback(async () => {
-    const result = await window.plantar.listEnvFiles(project.id);
-    if (!result.ok) {
-      setError(result.error);
+    const imported = parseEnv(result.data).filter((l) => l.type === "var");
+    if (imported.length === 0) {
+      setError(`В файле ${file} нет переменных.`);
       return;
     }
-    setFiles(result.data);
-  }, [project.id]);
-
-  useEffect(() => {
-    setFiles(null);
-    setOpen(new Set());
-    setMounted(new Set());
-    setDirtyFiles(new Set());
-    setAdding(false);
-    setShownFiles(new Set());
-    setError(null);
-    void loadFiles();
-  }, [loadFiles]);
-
-  function toggle(file: string) {
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(file)) next.delete(file);
-      else next.add(file);
-      return next;
-    });
-    setMounted((prev) => new Set(prev).add(file));
+    setLines((prev) => [...(prev ?? []), ...imported]);
+    setDirty(true);
   }
 
-  function toggleShown(file: string) {
-    const showing = !shownFiles.has(file);
-    setShownFiles((prev) => {
-      const next = new Set(prev);
-      if (showing) next.add(file);
-      else next.delete(file);
-      return next;
-    });
-    // «Показать все» на свёрнутом файле заодно раскрывает секцию
-    if (showing && !open.has(file)) toggle(file);
-  }
-
-  function setFileDirty(file: string, dirty: boolean) {
-    setDirtyFiles((prev) => {
-      const next = new Set(prev);
-      if (dirty) next.add(file);
-      else next.delete(file);
-      return next;
-    });
-  }
-
-  const newNameValid = ENV_FILE_RE.test(newName) && !(files ?? []).includes(newName);
-
-  async function createFile() {
-    if (!newNameValid) return;
-    const result = await window.plantar.writeEnvFile(project.id, newName, "");
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    setAdding(false);
-    const created = newName;
-    setNewName(".env");
-    await loadFiles();
-    toggle(created);
-  }
-
-  if (files === null && !error) {
-    return <p className="text-[13px] text-ink-soft">Ищу env-файлы…</p>;
-  }
+  const varCount = (lines ?? []).filter((l) => l.type === "var").length;
 
   return (
     <div className="flex h-full flex-col gap-4">
       <p className="rounded-lg bg-moss/8 px-3 py-2 text-[12.5px] leading-snug text-moss-deep">
-        Переменные подставляются при сборке. Чтобы изменения попали на сайт — сохрани и задеплой
-        проект заново. Файлы остаются на этом компьютере.
+        Переменные хранятся на сервере и применяются при следующем деплое: для React-сайтов —
+        при сборке, для Node.js и ботов файл .env кладётся рядом с приложением. Локальные
+        .env-файлы из папки проекта на сервер не загружаются.
       </p>
 
       {error && (
@@ -284,96 +164,141 @@ export function EnvTab({ project }: Props) {
         </p>
       )}
 
-      <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
-        {files && files.length === 0 && !adding && (
-          <div className="flex flex-col items-center py-10 text-center">
-            <FileKey2 className="size-8 text-[#b8bfb8]" />
-            <h3 className="mt-3 text-[15px] font-bold">В проекте нет .env-файлов</h3>
-            <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-ink-soft">
-              Переменные окружения подставляются в приложение при сборке — например, адрес API
-              или публичные ключи сервисов.
-            </p>
-          </div>
-        )}
-
-        <div className="flex flex-col gap-2">
-          {(files ?? []).map((file) => {
-            const isOpen = open.has(file);
-            const isShown = shownFiles.has(file);
-            return (
-              <div key={file} className="rounded-xl border border-line bg-card">
-                <div className="flex items-center rounded-xl pr-2">
-                  <button
-                    onClick={() => toggle(file)}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-4 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-moss/50"
-                  >
-                    <ChevronRight
-                      className={`size-4 shrink-0 text-ink-soft/60 transition-transform ${isOpen ? "rotate-90" : ""}`}
-                    />
-                    <span className="font-mono text-[13px] font-medium">{file}</span>
-                    {dirtyFiles.has(file) && (
-                      <span
-                        className="size-1.5 rounded-full bg-amber"
-                        title="Есть несохранённые изменения"
-                      />
-                    )}
-                  </button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => toggleShown(file)}
-                    className="shrink-0 text-ink-soft"
-                  >
-                    {isShown ? <EyeOff /> : <Eye />}
-                    {isShown ? "Скрыть все" : "Показать все"}
-                  </Button>
-                </div>
-                {mounted.has(file) && (
-                  <div className={isOpen ? "" : "hidden"}>
-                    <EnvFileEditor
-                      project={project}
-                      file={file}
-                      showAll={isShown}
-                      onDirtyChange={(d) => setFileDirty(file, d)}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {adding ? (
-          <div className="mt-3 flex items-center gap-2">
-            <Input
-              autoFocus
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && createFile()}
-              placeholder=".env.production"
-              className="w-64 font-mono text-[12.5px]"
-            />
-            <Button size="sm" onClick={createFile} disabled={!newNameValid}>
-              Создать
+      {lines === null ? (
+        loading ? (
+          <p className="text-[13px] text-ink-soft">Загружаю переменные с сервера…</p>
+        ) : (
+          <div>
+            <Button onClick={load} variant="outline" size="sm">
+              <RefreshCw />
+              Загрузить переменные
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setAdding(false)}>
-              Отмена
-            </Button>
-            {!newNameValid && newName && (
-              <span className="text-[12.5px] text-ink-soft">
-                {(files ?? []).includes(newName)
-                  ? "такой файл уже есть"
-                  : "имя должно начинаться с .env"}
-              </span>
+            {server.auth === "password" && (
+              <p className="mt-2 text-[12.5px] text-ink-soft">Понадобится пароль сервера.</p>
             )}
           </div>
-        ) : (
-          <Button variant="ghost" size="sm" onClick={() => setAdding(true)} className="mt-3">
-            <Plus />
-            Добавить файл
-          </Button>
-        )}
-      </div>
+        )
+      ) : (
+        <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
+          {varCount === 0 ? (
+            <div className="flex flex-col items-center py-10 text-center">
+              <FileKey2 className="size-8 text-[#b8bfb8]" />
+              <h3 className="mt-3 text-[15px] font-bold">Переменных пока нет</h3>
+              <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-ink-soft">
+                Переменные окружения — например, адрес API или токен бота — хранятся на сервере
+                и применяются при деплое.
+              </p>
+              {localFiles.length > 0 && (
+                <div className="mt-4 flex flex-col items-center gap-2">
+                  <p className="text-[12.5px] text-ink-soft">
+                    В папке проекта найдены локальные файлы — можно импортировать переменные:
+                  </p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {localFiles.map((file) => (
+                      <Button
+                        key={file}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => importLocal(file)}
+                        className="font-mono text-[12.5px]"
+                      >
+                        <Import />
+                        {file}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mb-2 flex justify-end gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={load}
+                disabled={loading}
+                className="text-ink-soft"
+                title="Перечитать переменные с сервера"
+              >
+                <RefreshCw className={cn(loading && "animate-spin")} />
+                Обновить
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAll((v) => !v)}
+                className="text-ink-soft"
+              >
+                {showAll ? <EyeOff /> : <Eye />}
+                {showAll ? "Скрыть все" : "Показать все"}
+              </Button>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2">
+            {(lines ?? []).map((line, i) => {
+              if (line.type !== "var") return null;
+              const isRevealed = showAll || revealed.has(i);
+              return (
+                <div key={i} className="group flex items-center gap-2">
+                  <Input
+                    value={line.key}
+                    onChange={(e) => update(i, { key: e.target.value })}
+                    placeholder="ИМЯ_ПЕРЕМЕННОЙ"
+                    className="w-64 font-mono text-[12.5px]"
+                  />
+                  <span className="text-ink-soft/50">=</span>
+                  <Input
+                    value={line.value}
+                    onChange={(e) => update(i, { value: e.target.value })}
+                    placeholder="значение"
+                    className="flex-1 font-mono text-[12.5px]"
+                    autoComplete="off"
+                    style={
+                      isRevealed
+                        ? undefined
+                        : ({ WebkitTextSecurity: "disc" } as React.CSSProperties)
+                    }
+                  />
+                  <button
+                    onClick={() => toggleReveal(i)}
+                    disabled={showAll}
+                    title={isRevealed ? "Скрыть значение" : "Показать значение"}
+                    className="rounded-md p-1.5 text-ink-soft/50 outline-none hover:bg-moss/10 hover:text-ink disabled:pointer-events-none disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-moss/50"
+                  >
+                    {isRevealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                  <button
+                    onClick={() => removeLine(i)}
+                    title="Удалить переменную"
+                    className="rounded-md p-1.5 text-ink-soft/50 opacity-0 outline-none group-hover:opacity-100 hover:bg-clay/10 hover:text-clay focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-moss/50"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={addVar}>
+              <Plus />
+              Добавить переменную
+            </Button>
+            <Button size="sm" onClick={save} disabled={!dirty || saving}>
+              {saving ? "Сохраняю…" : "Сохранить"}
+            </Button>
+            {savedFlash && (
+              <span className="text-[12.5px] font-semibold text-moss">
+                Сохранено ✓ — применится при следующем деплое
+              </span>
+            )}
+            {dirty && !savedFlash && (
+              <span className="text-[12.5px] text-ink-soft">не сохранено</span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

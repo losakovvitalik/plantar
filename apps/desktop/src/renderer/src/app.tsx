@@ -239,7 +239,11 @@ export default function App() {
                 />
               </TabsContent>
               <TabsContent value="env" className="h-full">
-                <EnvTab project={selectedProject} />
+                <EnvTab
+                  project={selectedProject}
+                  server={projectServer}
+                  askPassword={askPassword}
+                />
               </TabsContent>
               <TabsContent value="status" className="h-full">
                 <StatusTab server={projectServer} askPassword={askPassword} />

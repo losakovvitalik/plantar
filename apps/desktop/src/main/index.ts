@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { BrowserWindow, Notification, app, dialog, ipcMain, shell } from "electron";
 import { SshConnection } from "@plantar/ssh";
@@ -7,7 +7,9 @@ import {
   deployProject,
   getServerInfo,
   getSiteLogs,
+  readProjectEnv,
   removeDeployedProject,
+  writeProjectEnv,
 } from "@plantar/core";
 import {
   type ProjectConfigInput,
@@ -369,26 +371,47 @@ app.whenReady().then(() => {
     }),
   );
 
-  // .env-файлы читаются и пишутся только локально — принцип «env не покидает устройство»
-  const ENV_FILE_RE = /^\.env[\w.-]*$/;
-  const envFilePath = (projectId: string, file: string) => {
-    if (!ENV_FILE_RE.test(file)) throw new Error("Недопустимое имя env-файла.");
-    return path.join(getProject(projectId).path, file);
-  };
+  // Переменные проекта хранятся на сервере (вне папки релиза) и применяются при деплое
+  ipcMain.handle("env:read", (_e, args: { projectId: string; password?: string }) =>
+    toResult(async () => {
+      const project = getProject(args.projectId);
+      const config = loadProjectConfig(project.path);
+      const conn = await connect(getServer(project.serverId), args.password);
+      try {
+        return await readProjectEnv(conn, config.name);
+      } finally {
+        conn.close();
+      }
+    }),
+  );
+  ipcMain.handle(
+    "env:write",
+    (_e, args: { projectId: string; content: string; password?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        const config = loadProjectConfig(project.path);
+        const conn = await connect(getServer(project.serverId), args.password);
+        try {
+          await writeProjectEnv(conn, config.name, args.content);
+        } finally {
+          conn.close();
+        }
+      }),
+  );
 
-  ipcMain.handle("env:list", (_e, projectId: string) =>
+  // Локальные .env-файлы из папки проекта — только на чтение, для импорта на сервер
+  const ENV_FILE_RE = /^\.env[\w.-]*$/;
+  ipcMain.handle("env:listLocal", (_e, projectId: string) =>
     toResult(async () =>
       readdirSync(getProject(projectId).path)
         .filter((f) => ENV_FILE_RE.test(f))
         .sort(),
     ),
   );
-  ipcMain.handle("env:read", (_e, args: { projectId: string; file: string }) =>
-    toResult(async () => readFileSync(envFilePath(args.projectId, args.file), "utf8")),
-  );
-  ipcMain.handle("env:write", (_e, args: { projectId: string; file: string; content: string }) =>
+  ipcMain.handle("env:readLocal", (_e, args: { projectId: string; file: string }) =>
     toResult(async () => {
-      writeFileSync(envFilePath(args.projectId, args.file), args.content);
+      if (!ENV_FILE_RE.test(args.file)) throw new Error("Недопустимое имя env-файла.");
+      return readFileSync(path.join(getProject(args.projectId).path, args.file), "utf8");
     }),
   );
 

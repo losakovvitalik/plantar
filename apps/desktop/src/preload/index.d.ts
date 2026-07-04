@@ -60,13 +60,14 @@ declare global {
       listHistory: (projectId: string) => Promise<IpcResult<DeployRecord[]>>;
       readDeployLog: (logFile: string) => Promise<IpcResult<string>>;
 
-      listEnvFiles: (projectId: string) => Promise<IpcResult<string[]>>;
-      readEnvFile: (projectId: string, file: string) => Promise<IpcResult<string>>;
-      writeEnvFile: (
+      readEnv: (projectId: string, password?: string) => Promise<IpcResult<string>>;
+      writeEnv: (
         projectId: string,
-        file: string,
         content: string,
+        password?: string,
       ) => Promise<IpcResult<void>>;
+      listLocalEnvFiles: (projectId: string) => Promise<IpcResult<string[]>>;
+      readLocalEnvFile: (projectId: string, file: string) => Promise<IpcResult<string>>;
 
       getServerInfo: (serverId: string, password?: string) => Promise<IpcResult<ServerInfo>>;
       deploy: (projectId: string, password?: string) => Promise<IpcResult<{ url?: string }>>;
