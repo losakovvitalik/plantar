@@ -1,48 +1,43 @@
-import { ExternalLink, Globe, Rocket, Settings2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ProjectConfig, ProjectRecord, ServerRecord } from "../../../preload/index.d";
-import { ProjectSettingsDialog } from "./project-settings-dialog";
+import { ExternalLink, Globe, Rocket } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type {
+  ProjectConfig,
+  ProjectRecord,
+  ServerRecord,
+} from "../../../preload/index.d";
 import { Button } from "./ui/button";
 import { Switch } from "./ui/switch";
 
 interface Props {
   project: ProjectRecord;
   server: ServerRecord;
+  config: ProjectConfig | null;
   askPassword: (server: ServerRecord) => Promise<string | null>;
-  onProjectChanged: () => Promise<void>;
+  /** Запустить деплой сразу — кнопка «Деплой» в настройках проекта */
+  autoDeploy: boolean;
+  onAutoDeployHandled: () => void;
 }
 
 const SHOW_COMMANDS_KEY = "plantar:showCommands";
 
-export function DeployTab({ project, server, askPassword, onProjectChanged }: Props) {
-  const [config, setConfig] = useState<ProjectConfig | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+export function DeployTab({
+  project,
+  server,
+  config,
+  askPassword,
+  autoDeploy,
+  onAutoDeployHandled,
+}: Props) {
   const [lines, setLines] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
   // Успешный деплой без адреса (боты) — показываем текст вместо ссылки
   const [deployed, setDeployed] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Настройки сохранены, но ещё не применены к серверу деплоем
-  const [pendingSettings, setPendingSettings] = useState(false);
   const [showCommands, setShowCommands] = useState(
     () => localStorage.getItem(SHOW_COMMANDS_KEY) !== "0",
   );
   const terminalRef = useRef<HTMLDivElement>(null);
-
-  const loadConfig = useCallback(async () => {
-    const result = await window.plantar.readProjectConfig(project.id);
-    if (result.ok) {
-      setConfig(result.data);
-    } else {
-      setError(result.error);
-    }
-  }, [project.id]);
-
-  useEffect(() => {
-    setError(null);
-    void loadConfig();
-  }, [loadConfig]);
 
   useEffect(() => {
     const unsubscribe = window.plantar.onDeployLog((event) => {
@@ -70,7 +65,6 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
       password = entered;
     }
     setRunning(true);
-    setPendingSettings(false);
     setLines([]);
     setUrl(null);
     setDeployed(false);
@@ -85,7 +79,17 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
     }
   }
 
-  const visibleLines = showCommands ? lines : lines.filter((line) => !line.startsWith("$"));
+  useEffect(() => {
+    if (autoDeploy) {
+      onAutoDeployHandled();
+      void deploy();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoDeploy]);
+
+  const visibleLines = showCommands
+    ? lines
+    : lines.filter((line) => !line.startsWith("$"));
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -102,41 +106,25 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
               <span className="font-semibold text-ink">{config.domain}</span>
             ) : (
               <span>
-                по IP <span className="font-mono">{server.host}</span>, без домена
+                по IP <span className="font-mono">{server.host}</span>, без
+                домена
               </span>
             )}
           </span>
         )}
 
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-auto text-ink-soft"
-          onClick={() => setSettingsOpen(true)}
-          disabled={!config}
-        >
-          <Settings2 className="size-3.5" />
-          Настройки проекта
-        </Button>
-
-        <label className="flex cursor-pointer items-center gap-2 text-[12.5px] text-ink-soft select-none">
+        <label className="ml-auto flex cursor-pointer items-center gap-2 text-[12.5px] text-ink-soft select-none">
           Показывать команды
           <Switch checked={showCommands} onCheckedChange={toggleCommands} />
         </label>
       </div>
-
-      {pendingSettings && !running && (
-        <p className="rounded-lg bg-moss/10 px-3 py-2 text-[12.5px] leading-snug text-moss">
-          Настройки сохранены. Они применятся к сайту при следующем деплое.
-        </p>
-      )}
 
       {url ? (
         <button
           onClick={() => window.plantar.openExternal(url)}
           className="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-moss outline-none hover:underline focus-visible:ring-2 focus-visible:ring-moss/50"
         >
-          Сайт задеплоен: {url}
+          Приложение задеплоено: {url}
           <ExternalLink className="size-3.5" />
         </button>
       ) : (
@@ -169,26 +157,6 @@ export function DeployTab({ project, server, askPassword, onProjectChanged }: Pr
           ))
         )}
       </div>
-
-      <ProjectSettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        title="Настройки проекта"
-        folderPath={project.path}
-        initial={config ?? {}}
-        submitLabel="Сохранить"
-        onSubmit={async (input) => {
-          const result = await window.plantar.writeProjectConfig(project.id, input);
-          if (!result.ok) return result.error;
-          if (JSON.stringify(result.data) !== JSON.stringify(config)) {
-            setPendingSettings(true);
-          }
-          setConfig(result.data);
-          setSettingsOpen(false);
-          await onProjectChanged();
-          return null;
-        }}
-      />
     </div>
   );
 }

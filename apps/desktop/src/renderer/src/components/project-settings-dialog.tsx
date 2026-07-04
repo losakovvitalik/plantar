@@ -1,3 +1,4 @@
+import { Rocket } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ProjectConfigInput } from "../../../preload/index.d";
 import { Button } from "./ui/button";
@@ -54,6 +55,10 @@ interface Props {
   submitLabel: string;
   /** Возвращает текст ошибки или null при успехе */
   onSubmit: (config: ProjectConfigInput) => Promise<string | null>;
+  /** Сообщение об успешном сохранении — показывается внутри диалога */
+  savedMessage?: string;
+  /** Обработчик кнопки «Деплой» рядом с сообщением о сохранении */
+  onDeploy?: () => void;
 }
 
 export function ProjectSettingsDialog({
@@ -65,6 +70,8 @@ export function ProjectSettingsDialog({
   note,
   submitLabel,
   onSubmit,
+  savedMessage,
+  onDeploy,
 }: Props) {
   const [type, setType] = useState<ProjectType>("static");
   const [runtime, setRuntime] = useState<"node" | "python">("node");
@@ -313,13 +320,25 @@ export function ProjectSettingsDialog({
             </p>
           )}
 
+          {savedMessage && !error && (
+            <div className="flex items-center justify-between gap-3 rounded-lg bg-moss/10 px-3 py-2">
+              <p className="text-[12.5px] leading-snug text-moss">{savedMessage}</p>
+              {onDeploy && (
+                <Button type="button" size="sm" className="shrink-0" onClick={onDeploy}>
+                  <Rocket className="size-3.5" />
+                  Деплой
+                </Button>
+              )}
+            </div>
+          )}
+
           <DialogFooter className="mt-1">
             <Button
               type="button"
               variant="ghost"
               onClick={() => onOpenChange(false)}
             >
-              Отмена
+              {savedMessage ? "Закрыть" : "Отмена"}
             </Button>
             <Button type="submit" disabled={busy || !name}>
               {busy ? "Сохраняю…" : submitLabel}

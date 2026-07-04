@@ -1,10 +1,11 @@
 {
   "name": "node-demo-app",
   "type": "node",
+  "runtime": "node",
   "packageManager": "npm",
   "buildCommand": "npm run build",
   "buildDir": "dist",
   "startCommand": "npm start",
-  "port": 3006,
+  "port": 3008,
   "domain": "node.timestock.pro"
 }
