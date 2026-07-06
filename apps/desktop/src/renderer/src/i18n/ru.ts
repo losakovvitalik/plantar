@@ -10,6 +10,9 @@ export const ru = {
   "common.close": "Закрыть",
   "common.connect": "Подключиться",
   "common.connecting": "Подключаюсь…",
+  "common.back": "Назад",
+  "common.next": "Далее",
+  "common.loading": "Загружаю…",
 
   "app.unexpectedError": "Непредвиденная ошибка: {message}",
   "app.settingsFromConfig": "Настройки взяты из plantar.json в папке проекта.",
@@ -74,6 +77,28 @@ export const ru = {
   "deploy.deployedAt": "Приложение задеплоено: {url}",
   "deploy.botDeployed": "Бот задеплоен и запущен.",
   "deploy.terminalEmpty": "Здесь будет виден каждый шаг деплоя.",
+  "deploy.updateAndDeploy": "Обновить и задеплоить",
+  "deploy.notDeployedYet": "Ещё не деплоился",
+
+  "addProjectDialog.title": "Новый проект",
+  "addProjectDialog.description": "Откуда взять код проекта?",
+  "addProjectDialog.gitDescription": "Вставьте ссылку на репозиторий GitHub.",
+  "addProjectDialog.localTitle": "Папка на компьютере",
+  "addProjectDialog.localHint": "Выбрать папку с проектом на этом компьютере.",
+  "addProjectDialog.gitTitle": "Репозиторий GitHub",
+  "addProjectDialog.gitHint": "Скачать проект по ссылке на репозиторий.",
+  "addProjectDialog.repoUrl": "Ссылка на репозиторий",
+  "addProjectDialog.privateHint":
+    "Для приватных репозиториев сначала войдите в GitHub в настройках.",
+  "addProjectDialog.branch": "Ветка",
+  "addProjectDialog.clone": "Скачать и продолжить",
+  "addProjectDialog.cloning": "Скачиваю…",
+
+  "github.loginTitle": "Вход через GitHub",
+  "github.loginDescription": "Подтвердите вход на сайте GitHub.",
+  "github.enterCode": "Введите этот код на открывшейся странице GitHub:",
+  "github.openGithub": "Открыть GitHub ещё раз",
+  "github.waiting": "Ожидаю подтверждения…",
 
   "env.banner":
     "Переменные хранятся на сервере и применяются при следующем деплое: для React-сайтов — при сборке, для Node.js и ботов файл .env кладётся рядом с приложением. Локальные .env-файлы из папки проекта на сервер не загружаются.",
@@ -168,6 +193,11 @@ export const ru = {
   "projectSettings.nodeStartHintAfter":
     "; если поле «Порт» пустое, свободный порт подберётся при первом деплое.",
   "projectSettings.deploy": "Деплой",
+  "projectSettings.subdir": "Папка проекта в репозитории",
+  "projectSettings.subdirRoot": "Корень репозитория",
+  "projectSettings.subdirPick": "Выбрать папку",
+  "projectSettings.subdirHint":
+    "Укажите папку, если проект лежит не в корне репозитория (например, в монорепозитории). По умолчанию — корень.",
 
   "removeProject.title": "Удалить проект «{name}»?",
   "removeProject.description":
@@ -202,6 +232,12 @@ export const ru = {
   "settings.leEmail": "Email для SSL-сертификатов",
   "settings.leEmailHint":
     "Let's Encrypt пришлёт письмо, если с автопродлением сертификата что-то пойдёт не так. Применяется при следующем деплое с доменом. Можно оставить пустым.",
+
+  "settings.github": "Аккаунт GitHub",
+  "settings.githubHint": "Войдите, чтобы деплоить приватные репозитории по ссылке.",
+  "settings.githubConnected": "Подключён аккаунт @{login}.",
+  "settings.githubConnect": "Войти через GitHub",
+  "settings.githubSignOut": "Выйти",
 } as const;
 
 export type MessageKey = keyof typeof ru;

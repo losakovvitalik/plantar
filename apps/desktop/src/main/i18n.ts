@@ -56,6 +56,62 @@ const MESSAGES = {
     ru: "Не удалось установить ключ на сервер:\n{stderr}",
     en: "Failed to install the key on the server:\n{stderr}",
   },
+  deployUpdatingRepo: {
+    ru: "Обновляю проект из репозитория…",
+    en: "Updating the project from the repository…",
+  },
+  invalidRepoUrl: {
+    ru: "Ссылка на репозиторий должна начинаться с https://",
+    en: "The repository link must start with https://",
+  },
+  invalidBranch: {
+    ru: "Недопустимое имя ветки.",
+    en: "Invalid branch name.",
+  },
+  gitNotAvailable: {
+    ru: "Не найден git. Установите его, чтобы работать с репозиториями.",
+    en: "git was not found. Install it to work with repositories.",
+  },
+  lsRemoteFailed: {
+    ru: "Не удалось получить ветки репозитория:\n{message}",
+    en: "Failed to read the repository branches:\n{message}",
+  },
+  cloneFailed: {
+    ru: "Не удалось скачать репозиторий:\n{message}",
+    en: "Failed to download the repository:\n{message}",
+  },
+  updateFailed: {
+    ru: "Не удалось обновить проект из репозитория:\n{message}",
+    en: "Failed to update the project from the repository:\n{message}",
+  },
+  keychainUnavailable: {
+    ru: "Системное хранилище недоступно — токен нельзя сохранить безопасно.",
+    en: "The system keychain is unavailable — the token cannot be stored securely.",
+  },
+  githubRequestFailed: {
+    ru: "GitHub ответил ошибкой (код {status}).",
+    en: "GitHub responded with an error (status {status}).",
+  },
+  githubDeviceFailed: {
+    ru: "Не удалось начать вход через GitHub. Попробуйте ещё раз.",
+    en: "Failed to start GitHub sign-in. Please try again.",
+  },
+  githubAccessDenied: {
+    ru: "Вход отклонён на стороне GitHub.",
+    en: "Sign-in was denied on the GitHub side.",
+  },
+  githubDeviceExpired: {
+    ru: "Время на подтверждение входа истекло. Попробуйте ещё раз.",
+    en: "The sign-in confirmation window expired. Please try again.",
+  },
+  subdirOutside: {
+    ru: "Папка должна находиться внутри репозитория.",
+    en: "The folder must be inside the repository.",
+  },
+  subdirMissing: {
+    ru: "Папка «{subdir}» не найдена в репозитории.",
+    en: "The folder “{subdir}” was not found in the repository.",
+  },
 } satisfies Messages<string>;
 
 export const t = createT(MESSAGES);

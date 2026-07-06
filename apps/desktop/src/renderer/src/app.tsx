@@ -6,6 +6,7 @@ import type {
   ProjectRecord,
   ServerRecord,
 } from "../../preload/index.d";
+import { AddProjectDialog } from "./components/add-project-dialog";
 import { AddServerDialog } from "./components/add-server-dialog";
 import { ProjectSettingsDialog } from "./components/project-settings-dialog";
 import { DeployTab } from "./components/deploy-tab";
@@ -84,15 +85,31 @@ export default function App() {
     };
   }, [showError, t]);
 
-  // Папка выбрана — показываем экран подтверждения настроек перед добавлением
+  // Клик по «+» у сервера — выбор источника проекта (папка или репозиторий)
+  const [addingForServer, setAddingForServer] = useState<string | null>(null);
+
+  // Источник выбран — показываем экран подтверждения настроек перед добавлением
   const [newProject, setNewProject] = useState<{
     serverId: string;
     path: string;
     initial: Partial<ProjectConfigInput>;
     note: string;
+    source: "local" | "git";
+    repoUrl?: string;
+    branch?: string;
   } | null>(null);
 
-  async function addProject(serverId: string) {
+  function noteFor(config: unknown, framework: string | null): string {
+    return config
+      ? t("app.settingsFromConfig")
+      : `${
+          framework
+            ? t("app.frameworkDetected", { framework })
+            : t("app.settingsAutoDetected")
+        }${t("app.checkAndAdd")}`;
+  }
+
+  async function pickLocalProject(serverId: string) {
     const picked = await window.plantar.pickProject();
     if (!picked.ok) {
       showError(picked.error);
@@ -104,14 +121,9 @@ export default function App() {
     setNewProject({
       serverId,
       path,
+      source: "local",
       initial: config ?? detected.config,
-      note: config
-        ? t("app.settingsFromConfig")
-        : `${
-            detected.framework
-              ? t("app.frameworkDetected", { framework: detected.framework })
-              : t("app.settingsAutoDetected")
-          }${t("app.checkAndAdd")}`,
+      note: noteFor(config, detected.framework),
     });
   }
 
@@ -179,7 +191,7 @@ export default function App() {
         onSelect={setSelection}
         onAddServer={() => setAddServerOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
-        onAddProject={addProject}
+        onAddProject={setAddingForServer}
         onRemoveServer={removeServer}
         onRemoveProject={setRemovingProject}
       />
@@ -193,10 +205,13 @@ export default function App() {
             className="flex h-full flex-col"
           >
             <header className="px-6 pt-5">
-              <div className="flex items-baseline gap-3">
-                <h1 className="text-lg font-bold">{selectedProject.name}</h1>
-                <span className="font-mono text-[12px] text-ink-soft">
-                  {projectServer.name} · {selectedProject.path}
+              <div className="flex min-w-0 items-baseline gap-3">
+                <h1 className="shrink-0 text-lg font-bold">{selectedProject.name}</h1>
+                <span className="truncate font-mono text-[12px] text-ink-soft">
+                  {projectServer.name} ·{" "}
+                  {selectedProject.source === "git"
+                    ? (selectedProject.repoUrl ?? selectedProject.path)
+                    : selectedProject.path}
                 </span>
               </div>
               <div className="mt-3 flex items-center">
@@ -238,6 +253,7 @@ export default function App() {
                   askPassword={askPassword}
                   autoDeploy={autoDeploy}
                   onAutoDeployHandled={() => setAutoDeploy(false)}
+                  onDeployed={refresh}
                 />
               </TabsContent>
               <TabsContent value="env" className="h-full">
@@ -302,8 +318,16 @@ export default function App() {
             if (!open) setSettingsSaved(false);
           }}
           title={t("app.projectSettings")}
-          folderPath={selectedProject.path}
+          folderPath={
+            selectedProject.source === "git"
+              ? (selectedProject.repoUrl ?? selectedProject.path)
+              : selectedProject.path
+          }
           initial={projectConfig ?? {}}
+          repoRoot={
+            selectedProject.source === "git" ? selectedProject.path : undefined
+          }
+          initialSubdir={selectedProject.subdir}
           submitLabel={t("common.save")}
           savedMessage={settingsSaved ? t("app.settingsSaved") : undefined}
           onDeploy={() => {
@@ -312,10 +336,11 @@ export default function App() {
             setTab("deploy");
             setAutoDeploy(true);
           }}
-          onSubmit={async (input) => {
+          onSubmit={async (input, subdir) => {
             const result = await window.plantar.writeProjectConfig(
               selectedProject.id,
               input,
+              subdir,
             );
             if (!result.ok) return result.error;
             const changed =
@@ -339,20 +364,63 @@ export default function App() {
         }}
       />
 
+      <AddProjectDialog
+        open={addingForServer !== null}
+        onOpenChange={(open) => !open && setAddingForServer(null)}
+        onPickLocal={() => {
+          const serverId = addingForServer;
+          setAddingForServer(null);
+          if (serverId) void pickLocalProject(serverId);
+        }}
+        onCloned={(result, repoUrl, branch) => {
+          const serverId = addingForServer;
+          setAddingForServer(null);
+          if (!serverId) return;
+          const { path, config, detected } = result;
+          setNewProject({
+            serverId,
+            path,
+            source: "git",
+            repoUrl,
+            branch,
+            initial: config ?? detected.config,
+            note: noteFor(config, detected.framework),
+          });
+        }}
+      />
+
       <ProjectSettingsDialog
         open={newProject !== null}
-        onOpenChange={(open) => !open && setNewProject(null)}
+        onOpenChange={(open) => {
+          if (open) return;
+          // Форму закрыли без добавления — убираем осиротевший клон репозитория
+          if (newProject?.source === "git") {
+            void window.plantar.cancelClone(newProject.path);
+          }
+          setNewProject(null);
+        }}
         title={t("app.newProject")}
-        folderPath={newProject?.path ?? ""}
+        folderPath={
+          newProject
+            ? (newProject.source === "git"
+                ? (newProject.repoUrl ?? newProject.path)
+                : newProject.path)
+            : ""
+        }
         initial={newProject?.initial ?? {}}
         note={newProject?.note}
+        repoRoot={newProject?.source === "git" ? newProject.path : undefined}
         submitLabel={t("app.addProject")}
-        onSubmit={async (config) => {
+        onSubmit={async (config, subdir) => {
           if (!newProject) return null;
           const result = await window.plantar.addProject({
             serverId: newProject.serverId,
             path: newProject.path,
             config,
+            subdir,
+            source: newProject.source,
+            repoUrl: newProject.repoUrl,
+            branch: newProject.branch,
           });
           if (!result.ok) return result.error;
           setNewProject(null);

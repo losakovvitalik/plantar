@@ -1,6 +1,9 @@
+import { Github, LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AppSettings, Language } from "@plantar/storage";
+import type { GithubAccount } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
+import { GithubLoginDialog } from "./github-login-dialog";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -29,14 +32,23 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
   const { t, setLang } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [busy, setBusy] = useState(false);
+  const [account, setAccount] = useState<GithubAccount | null>(null);
+  const [loginOpen, setLoginOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     void (async () => {
       const result = await window.plantar.getSettings();
       if (result.ok) setSettings(result.data);
+      const acc = await window.plantar.githubAccount();
+      if (acc.ok) setAccount(acc.data);
     })();
   }, [open]);
+
+  async function signOutGithub() {
+    await window.plantar.githubSignOut();
+    setAccount(null);
+  }
 
   async function save() {
     if (!settings) return;
@@ -53,6 +65,7 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
@@ -62,6 +75,41 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
 
         {settings && (
           <div className="flex flex-col gap-6">
+            <div className="flex items-start justify-between gap-6">
+              <div>
+                <Label className="text-[13.5px] font-semibold">
+                  {t("settings.github")}
+                </Label>
+                <p className="mt-1 text-[12.5px] leading-snug text-ink-soft">
+                  {account
+                    ? t("settings.githubConnected", { login: account.login })
+                    : t("settings.githubHint")}
+                </p>
+              </div>
+              {account ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => void signOutGithub()}
+                >
+                  <LogOut className="size-3.5" />
+                  {t("settings.githubSignOut")}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setLoginOpen(true)}
+                >
+                  <Github className="size-3.5" />
+                  {t("settings.githubConnect")}
+                </Button>
+              )}
+            </div>
+
             <div className="flex items-start justify-between gap-6">
               <Label htmlFor="app-language" className="text-[13.5px] font-semibold">
                 {t("settings.language")}
@@ -147,5 +195,15 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <GithubLoginDialog
+      open={loginOpen}
+      onOpenChange={setLoginOpen}
+      onLoggedIn={(acc) => {
+        setAccount(acc);
+        setLoginOpen(false);
+      }}
+    />
+    </>
   );
 }

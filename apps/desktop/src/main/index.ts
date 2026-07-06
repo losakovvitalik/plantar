@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { BrowserWindow, Notification, app, dialog, ipcMain, shell } from "electron";
 import { SshConnection } from "@plantar/ssh";
@@ -30,6 +30,7 @@ import {
   readProjects,
   readServers,
   readSettings,
+  reposDir,
   saveServerLogSnapshot,
   writeProjects,
   writeServers,
@@ -43,6 +44,14 @@ import {
   storePrivateKey,
 } from "./ssh-setup";
 import { dropConnection, isConnected, withPooledConnection } from "./ssh-pool";
+import { cloneRepo, headCommit, listRemoteBranches, updateRepo } from "./git";
+import {
+  getAccount,
+  getToken,
+  pollDeviceLogin,
+  signOut,
+  startDeviceLogin,
+} from "./github";
 import { setLanguage, t } from "./i18n";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -65,6 +74,28 @@ function getProject(id: string): ProjectRecord {
   const project = readProjects().find((p) => p.id === id);
   if (!project) throw new Error(t("projectNotFound"));
   return project;
+}
+
+/** Эффективная папка проекта: клон/папка + подпапка (для монорепозиториев) */
+function projectDir(project: Pick<ProjectRecord, "path" | "subdir">): string {
+  return project.subdir ? path.join(project.path, project.subdir) : project.path;
+}
+
+/**
+ * Нормализует подпапку в repo-относительный POSIX-путь и проверяет, что она
+ * существует внутри root и является директорией. Возвращает "" для корня.
+ */
+function resolveSubdir(root: string, subdir: string | undefined): string {
+  const clean = (subdir ?? "").trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  if (!clean || clean === ".") return "";
+  const full = path.resolve(root, clean);
+  if (full !== root && !full.startsWith(root + path.sep)) {
+    throw new Error(t("subdirOutside"));
+  }
+  if (!existsSync(full) || !statSync(full).isDirectory()) {
+    throw new Error(t("subdirMissing", { subdir: clean }));
+  }
+  return clean;
 }
 
 async function connect(server: ServerRecord, password?: string): Promise<SshConnection> {
@@ -170,6 +201,12 @@ interface AddProjectInput {
   path: string;
   /** Если передан — GUI создаёт plantar.json в папке проекта */
   config?: ProjectConfigInput;
+  /** Подпапка внутри path, где лежит проект (монорепозитории); пусто — корень */
+  subdir?: string;
+  /** git — path указывает на клон в reposDir(); local — обычная папка */
+  source?: "local" | "git";
+  repoUrl?: string;
+  branch?: string;
 }
 
 /** Два проекта с одним name на одном сервере деплоились бы в один /var/www/<name> */
@@ -178,7 +215,7 @@ function assertNameFreeOnServer(serverId: string, name: string, excludeProjectId
     if (p.serverId !== serverId || p.id === excludeProjectId) return false;
     let existingName = p.name;
     try {
-      existingName = loadProjectConfig(p.path).name;
+      existingName = loadProjectConfig(projectDir(p)).name;
     } catch {
       /* plantar.json недоступен — используем имя на момент добавления */
     }
@@ -191,17 +228,66 @@ function assertNameFreeOnServer(serverId: string, name: string, excludeProjectId
 
 function addProject(input: AddProjectInput): ProjectRecord {
   getServer(input.serverId);
-  const parsedConfig = input.config ? null : loadProjectConfig(input.path);
+  const subdir = resolveSubdir(input.path, input.subdir);
+  const dir = subdir ? path.join(input.path, subdir) : input.path;
+  const parsedConfig = input.config ? null : loadProjectConfig(dir);
   assertNameFreeOnServer(input.serverId, (input.config ?? parsedConfig!).name);
-  const config = input.config ? writeProjectConfig(input.path, input.config) : parsedConfig!;
+  const config = input.config ? writeProjectConfig(dir, input.config) : parsedConfig!;
   const record: ProjectRecord = {
     id: randomUUID(),
     serverId: input.serverId,
     name: config.name,
     path: input.path,
+    ...(subdir ? { subdir } : {}),
+    ...(input.source === "git"
+      ? { source: "git" as const, repoUrl: input.repoUrl, branch: input.branch }
+      : {}),
   };
   writeProjects([...readProjects(), record]);
   return record;
+}
+
+/** Клонирует репозиторий в reposDir() и предзаполняет настройки — как выбор папки */
+async function cloneRepoForProject(repoUrl: string, branch: string) {
+  const dir = path.join(reposDir(), randomUUID());
+  await cloneRepo(repoUrl, branch || undefined, dir, getToken() ?? undefined);
+  return {
+    path: dir,
+    config: hasProjectConfig(dir) ? loadProjectConfig(dir) : null,
+    detected: detectProjectConfig(dir),
+  };
+}
+
+/**
+ * Выбор подпапки проекта внутри клона: открывает диалог в корне клона,
+ * возвращает repo-относительный путь и настройки, определённые в этой папке.
+ */
+async function pickSubdir(win: BrowserWindow, root: string) {
+  const reposRoot = reposDir() + path.sep;
+  if (!path.resolve(root).startsWith(reposRoot)) throw new Error(t("subdirOutside"));
+
+  const picked = await dialog.showOpenDialog(win, {
+    title: t("pickProjectFolder"),
+    defaultPath: root,
+    properties: ["openDirectory"],
+  });
+  if (picked.canceled || picked.filePaths.length === 0) return null;
+
+  const subdir = resolveSubdir(root, path.relative(root, picked.filePaths[0]));
+  const dir = subdir ? path.join(root, subdir) : root;
+  return {
+    subdir,
+    config: hasProjectConfig(dir) ? loadProjectConfig(dir) : null,
+    detected: detectProjectConfig(dir),
+  };
+}
+
+/** Удаляет клон git-проекта; трогает только папки внутри reposDir() */
+function removeCloneDir(projectPath: string): void {
+  const root = reposDir() + path.sep;
+  if (path.resolve(projectPath).startsWith(root)) {
+    rmSync(projectPath, { recursive: true, force: true });
+  }
 }
 
 /** Системное уведомление о результате деплоя; клик открывает окно на проекте */
@@ -240,7 +326,8 @@ async function runDeploy(
 ): Promise<{ url?: string }> {
   const project = getProject(projectId);
   const server = getServer(project.serverId);
-  const config = loadProjectConfig(project.path);
+  const dir = projectDir(project);
+  let config = loadProjectConfig(dir);
 
   const logWriter = new DeployLogWriter(config.name);
   const log = (line: string) => {
@@ -249,15 +336,23 @@ async function runDeploy(
   };
   const startedAt = new Date().toISOString();
 
+  // git-проект: обновляем клон до свежего коммита ветки перед деплоем
+  if (project.source === "git") {
+    log(t("deployUpdatingRepo"));
+    await updateRepo(project.path, project.branch!, getToken() ?? undefined);
+    // plantar.json лежит untracked и переживает reset; на всякий случай восстанавливаем конфиг
+    config = writeProjectConfig(dir, config);
+  }
+
   const settings = readSettings();
   return withServer(server, password, async (conn) => {
     try {
-      const result = await deployProject(conn, project.path, config, log, {
+      const result = await deployProject(conn, dir, config, log, {
         letsEncryptEmail: settings.letsEncryptEmail || undefined,
       });
       // Порт выбирается на сервере при первом деплое — закрепляем его в конфиге
       if (result.port && result.port !== config.port) {
-        writeProjectConfig(project.path, { ...config, port: result.port });
+        writeProjectConfig(dir, { ...config, port: result.port });
       }
       appendHistory({
         project: config.name,
@@ -268,6 +363,19 @@ async function runDeploy(
         url: result.url,
         logFile: logWriter.file,
       });
+      // git-проект: запоминаем задеплоенный коммит для показа в карточке проекта
+      if (project.source === "git") {
+        try {
+          const commit = await headCommit(project.path);
+          writeProjects(
+            readProjects().map((p) =>
+              p.id === project.id ? { ...p, deployedCommit: commit } : p,
+            ),
+          );
+        } catch {
+          /* не смогли прочитать коммит — не критично для деплоя */
+        }
+      }
       if (settings.notifyOnDeploySuccess) {
         notifyDeployResult(win, projectId, config.name, true);
       }
@@ -328,6 +436,16 @@ app.whenReady().then(() => {
     }),
   );
 
+  // GitHub Device Flow: вход без backend, токен шифруется safeStorage
+  ipcMain.handle("github:account", () => toResult(async () => getAccount()));
+  ipcMain.handle("github:startLogin", () => toResult(() => startDeviceLogin()));
+  ipcMain.handle(
+    "github:pollLogin",
+    (_e, args: { deviceCode: string; interval: number; expiresIn: number }) =>
+      toResult(() => pollDeviceLogin(args.deviceCode, args.interval, args.expiresIn)),
+  );
+  ipcMain.handle("github:signOut", () => toResult(async () => signOut()));
+
   ipcMain.handle("servers:list", () => toResult(async () => readServers()));
   ipcMain.handle("servers:add", (_e, input: AddServerInput) => toResult(() => addServer(input)));
   ipcMain.handle("servers:remove", (_e, id: string) =>
@@ -340,11 +458,25 @@ app.whenReady().then(() => {
 
   ipcMain.handle("projects:list", () => toResult(async () => readProjects()));
   ipcMain.handle("projects:pick", () => toResult(() => pickProjectFolder(win)));
+  // Список веток репозитория для выпадающего списка в форме добавления
+  ipcMain.handle("repo:branches", (_e, repoUrl: string) =>
+    toResult(() => listRemoteBranches(repoUrl, getToken() ?? undefined)),
+  );
+  // Клонирует репозиторий локально и возвращает предзаполненные настройки
+  ipcMain.handle("projects:cloneRepo", (_e, args: { repoUrl: string; branch: string }) =>
+    toResult(() => cloneRepoForProject(args.repoUrl, args.branch)),
+  );
+  // Пользователь закрыл форму, не добавив проект — убираем осиротевший клон
+  ipcMain.handle("projects:cancelClone", (_e, clonePath: string) =>
+    toResult(async () => removeCloneDir(clonePath)),
+  );
   ipcMain.handle("projects:add", (_e, input: AddProjectInput) =>
     toResult(async () => addProject(input)),
   );
   ipcMain.handle("projects:remove", (_e, id: string) =>
     toResult(async () => {
+      const project = readProjects().find((p) => p.id === id);
+      if (project?.source === "git") removeCloneDir(project.path);
       writeProjects(readProjects().filter((p) => p.id !== id));
     }),
   );
@@ -357,7 +489,7 @@ app.whenReady().then(() => {
         // Имя могли поменять в plantar.json — берём актуальное, с фолбэком
         let name = project.name;
         try {
-          name = loadProjectConfig(project.path).name;
+          name = loadProjectConfig(projectDir(project)).name;
         } catch {
           /* plantar.json недоступен — используем имя на момент добавления */
         }
@@ -365,27 +497,43 @@ app.whenReady().then(() => {
       }),
   );
   ipcMain.handle("projects:readConfig", (_e, projectId: string) =>
-    toResult(async () => loadProjectConfig(getProject(projectId).path)),
+    toResult(async () => loadProjectConfig(projectDir(getProject(projectId)))),
   );
-  ipcMain.handle("projects:writeConfig", (_e, args: { projectId: string; config: ProjectConfigInput }) =>
-    toResult(async () => {
-      const project = getProject(args.projectId);
-      assertNameFreeOnServer(project.serverId, args.config.name, project.id);
-      const config = writeProjectConfig(project.path, args.config);
-      if (config.name !== project.name) {
-        writeProjects(
-          readProjects().map((p) => (p.id === project.id ? { ...p, name: config.name } : p)),
-        );
-      }
-      return config;
-    }),
+  // Открывает выбор подпапки внутри клона и определяет настройки в ней
+  ipcMain.handle("projects:pickSubdir", (_e, root: string) =>
+    toResult(() => pickSubdir(win, root)),
+  );
+  ipcMain.handle(
+    "projects:writeConfig",
+    (_e, args: { projectId: string; config: ProjectConfigInput; subdir?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        // subdir применим только к git-проектам; для локальных остаётся как был
+        const subdir =
+          project.source === "git"
+            ? resolveSubdir(project.path, args.subdir ?? project.subdir)
+            : (project.subdir ?? "");
+        const dir = subdir ? path.join(project.path, subdir) : project.path;
+        assertNameFreeOnServer(project.serverId, args.config.name, project.id);
+        const config = writeProjectConfig(dir, args.config);
+        if (config.name !== project.name || subdir !== (project.subdir ?? "")) {
+          writeProjects(
+            readProjects().map((p) =>
+              p.id === project.id
+                ? { ...p, name: config.name, subdir: subdir || undefined }
+                : p,
+            ),
+          );
+        }
+        return config;
+      }),
   );
 
   // Переменные проекта хранятся на сервере (вне папки релиза) и применяются при деплое
   ipcMain.handle("env:read", (_e, args: { projectId: string; password?: string }) =>
     toResult(async () => {
       const project = getProject(args.projectId);
-      const config = loadProjectConfig(project.path);
+      const config = loadProjectConfig(projectDir(project));
       return withServer(getServer(project.serverId), args.password, (conn) =>
         readProjectEnv(conn, config.name),
       );
@@ -396,7 +544,7 @@ app.whenReady().then(() => {
     (_e, args: { projectId: string; content: string; password?: string }) =>
       toResult(async () => {
         const project = getProject(args.projectId);
-        const config = loadProjectConfig(project.path);
+        const config = loadProjectConfig(projectDir(project));
         await withServer(getServer(project.serverId), args.password, (conn) =>
           writeProjectEnv(conn, config.name, args.content),
         );
@@ -407,7 +555,7 @@ app.whenReady().then(() => {
   const ENV_FILE_RE = /^\.env[\w.-]*$/;
   ipcMain.handle("env:listLocal", (_e, projectId: string) =>
     toResult(async () =>
-      readdirSync(getProject(projectId).path)
+      readdirSync(projectDir(getProject(projectId)))
         .filter((f) => ENV_FILE_RE.test(f))
         .sort(),
     ),
@@ -415,7 +563,7 @@ app.whenReady().then(() => {
   ipcMain.handle("env:readLocal", (_e, args: { projectId: string; file: string }) =>
     toResult(async () => {
       if (!ENV_FILE_RE.test(args.file)) throw new Error(t("invalidEnvFileName"));
-      return readFileSync(path.join(getProject(args.projectId).path, args.file), "utf8");
+      return readFileSync(path.join(projectDir(getProject(args.projectId)), args.file), "utf8");
     }),
   );
 
@@ -426,7 +574,7 @@ app.whenReady().then(() => {
       // Имя сайта могли поменять в plantar.json — берём актуальное, с фолбэком
       let name = project.name;
       try {
-        name = loadProjectConfig(project.path).name;
+        name = loadProjectConfig(projectDir(project)).name;
       } catch {
         /* plantar.json недоступен — используем имя на момент добавления */
       }
@@ -476,7 +624,7 @@ app.whenReady().then(() => {
         // Имя могли поменять в plantar.json — берём актуальное, с фолбэком
         let name = project.name;
         try {
-          name = loadProjectConfig(project.path).name;
+          name = loadProjectConfig(projectDir(project)).name;
         } catch {
           /* plantar.json недоступен — используем имя на момент добавления */
         }

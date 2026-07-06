@@ -70,7 +70,7 @@ export function RemoveProjectDialog({
 
   return (
     <Dialog open={project !== null} onOpenChange={(open) => !open && close()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>
             {t("removeProject.title", { name: project?.name ?? "" })}
@@ -106,7 +106,12 @@ export function RemoveProjectDialog({
           <Button variant="outline" onClick={removeFromList} disabled={busy}>
             {t("removeProject.fromList")}
           </Button>
-          <Button variant="destructive" onClick={removeFromServer} disabled={busy}>
+          <Button
+            variant="destructive"
+            className="dark:bg-destructive"
+            onClick={removeFromServer}
+            disabled={busy}
+          >
             {busy ? t("removeProject.removing") : t("removeProject.fromServer")}
           </Button>
         </DialogFooter>

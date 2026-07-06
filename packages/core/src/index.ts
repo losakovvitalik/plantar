@@ -416,6 +416,21 @@ async function deployStatic(
   const varCount = Object.keys(envVars).length;
   if (varCount > 0) log(t("serverEnvVars", { count: varCount }));
 
+  // Свежесклонированный репозиторий не содержит node_modules — ставим зависимости
+  // локально. Без серверных env: там часто NODE_ENV=production, из-за которого
+  // yarn/npm пропустят devDependencies (vite, typescript), и сборка упадёт.
+  if (!existsSync(path.join(projectDir, "node_modules"))) {
+    const installCommand = `${config.packageManager} install`;
+    log(t("installingDeps", { packageManager: config.packageManager }));
+    try {
+      await execAsync(installCommand, { cwd: projectDir, maxBuffer: 50 * 1024 * 1024 });
+    } catch (err) {
+      const e = err as { stdout?: string; stderr?: string };
+      const output = [e.stdout, e.stderr].filter(Boolean).join("\n").slice(-3000);
+      throw new Error(t("installLocalFailed", { command: installCommand, output }));
+    }
+  }
+
   log(t("building", { command: config.buildCommand }));
   try {
     await execAsync(config.buildCommand, {

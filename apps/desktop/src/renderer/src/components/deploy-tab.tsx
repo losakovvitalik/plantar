@@ -1,4 +1,4 @@
-import { ExternalLink, Globe, Rocket } from "lucide-react";
+import { ExternalLink, GitBranch, Globe, Rocket } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type {
   ProjectConfig,
@@ -18,6 +18,8 @@ interface Props {
   /** Запустить деплой сразу — кнопка «Деплой» в настройках проекта */
   autoDeploy: boolean;
   onAutoDeployHandled: () => void;
+  /** Успешный деплой — родитель обновляет список (задеплоенный коммит git) */
+  onDeployed: () => void;
 }
 
 const SHOW_COMMANDS_KEY = "plantar:showCommands";
@@ -29,8 +31,10 @@ export function DeployTab({
   askPassword,
   autoDeploy,
   onAutoDeployHandled,
+  onDeployed,
 }: Props) {
   const { t } = useI18n();
+  const isGit = project.source === "git";
   const [lines, setLines] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
@@ -73,6 +77,7 @@ export function DeployTab({
     if (result.ok) {
       setUrl(result.data.url ?? null);
       setDeployed(true);
+      onDeployed();
     } else {
       setError(result.error);
     }
@@ -95,7 +100,11 @@ export function DeployTab({
       <div className="flex items-center gap-3">
         <Button onClick={deploy} disabled={running || !config}>
           <Rocket />
-          {running ? t("deploy.running") : t("deploy.start")}
+          {running
+            ? t("deploy.running")
+            : isGit
+              ? t("deploy.updateAndDeploy")
+              : t("deploy.start")}
         </Button>
 
         {config && config.type !== "bot" && (
@@ -118,6 +127,23 @@ export function DeployTab({
           <Switch checked={showCommands} onCheckedChange={toggleCommands} />
         </label>
       </div>
+
+      {isGit && (
+        <div className="flex items-center gap-2 rounded-lg bg-moss/5 px-3 py-2 text-[12.5px] text-ink-soft">
+          <GitBranch className="size-3.5 shrink-0 text-moss" />
+          <span className="font-mono font-semibold text-ink">{project.branch}</span>
+          {project.deployedCommit ? (
+            <span className="min-w-0 truncate">
+              <span className="font-mono text-moss">
+                {project.deployedCommit.hash.slice(0, 7)}
+              </span>{" "}
+              {project.deployedCommit.message}
+            </span>
+          ) : (
+            <span>{t("deploy.notDeployedYet")}</span>
+          )}
+        </div>
+      )}
 
       {url ? (
         <button

@@ -18,6 +18,30 @@ export interface PickedProject {
   detected: DetectedProject;
 }
 
+export interface SubdirPick {
+  /** repo-относительный путь; "" — корень репозитория */
+  subdir: string;
+  config: ProjectConfig | null;
+  detected: DetectedProject;
+}
+
+export interface RemoteBranches {
+  branches: string[];
+  default: string;
+}
+
+export interface GithubAccount {
+  login: string;
+}
+
+export interface DeviceLogin {
+  userCode: string;
+  verificationUri: string;
+  deviceCode: string;
+  interval: number;
+  expiresIn: number;
+}
+
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export interface AddServerInput {
@@ -38,10 +62,17 @@ declare global {
 
       listProjects: () => Promise<IpcResult<ProjectRecord[]>>;
       pickProject: () => Promise<IpcResult<PickedProject | null>>;
+      listRepoBranches: (repoUrl: string) => Promise<IpcResult<RemoteBranches>>;
+      cloneRepo: (repoUrl: string, branch: string) => Promise<IpcResult<PickedProject>>;
+      cancelClone: (clonePath: string) => Promise<IpcResult<void>>;
       addProject: (input: {
         serverId: string;
         path: string;
         config?: ProjectConfigInput;
+        subdir?: string;
+        source?: "local" | "git";
+        repoUrl?: string;
+        branch?: string;
       }) => Promise<IpcResult<ProjectRecord>>;
       removeProject: (id: string) => Promise<IpcResult<void>>;
       removeProjectFromServer: (
@@ -52,10 +83,22 @@ declare global {
       writeProjectConfig: (
         projectId: string,
         config: ProjectConfigInput,
+        subdir?: string,
       ) => Promise<IpcResult<ProjectConfig>>;
+      /** Выбор подпапки проекта внутри клона (только git); null — отмена */
+      pickSubdir: (root: string) => Promise<IpcResult<SubdirPick | null>>;
 
       getSettings: () => Promise<IpcResult<AppSettings>>;
       setSettings: (settings: AppSettings) => Promise<IpcResult<void>>;
+
+      githubAccount: () => Promise<IpcResult<GithubAccount | null>>;
+      githubStartLogin: () => Promise<IpcResult<DeviceLogin>>;
+      githubPollLogin: (
+        deviceCode: string,
+        interval: number,
+        expiresIn: number,
+      ) => Promise<IpcResult<GithubAccount>>;
+      githubSignOut: () => Promise<IpcResult<void>>;
 
       listHistory: (projectId: string) => Promise<IpcResult<DeployRecord[]>>;
       readDeployLog: (logFile: string) => Promise<IpcResult<string>>;

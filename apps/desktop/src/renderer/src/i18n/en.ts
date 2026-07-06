@@ -7,6 +7,9 @@ export const en: Record<MessageKey, string> = {
   "common.close": "Close",
   "common.connect": "Connect",
   "common.connecting": "Connecting…",
+  "common.back": "Back",
+  "common.next": "Next",
+  "common.loading": "Loading…",
 
   "app.unexpectedError": "Unexpected error: {message}",
   "app.settingsFromConfig":
@@ -74,6 +77,28 @@ export const en: Record<MessageKey, string> = {
   "deploy.deployedAt": "App deployed: {url}",
   "deploy.botDeployed": "Bot deployed and running.",
   "deploy.terminalEmpty": "Every deploy step will show up here.",
+  "deploy.updateAndDeploy": "Update and deploy",
+  "deploy.notDeployedYet": "Not deployed yet",
+
+  "addProjectDialog.title": "New project",
+  "addProjectDialog.description": "Where should the project code come from?",
+  "addProjectDialog.gitDescription": "Paste a link to a GitHub repository.",
+  "addProjectDialog.localTitle": "Folder on this computer",
+  "addProjectDialog.localHint": "Pick a project folder on this computer.",
+  "addProjectDialog.gitTitle": "GitHub repository",
+  "addProjectDialog.gitHint": "Download the project from a repository link.",
+  "addProjectDialog.repoUrl": "Repository link",
+  "addProjectDialog.privateHint":
+    "For private repositories, sign in to GitHub in settings first.",
+  "addProjectDialog.branch": "Branch",
+  "addProjectDialog.clone": "Download and continue",
+  "addProjectDialog.cloning": "Downloading…",
+
+  "github.loginTitle": "Sign in with GitHub",
+  "github.loginDescription": "Confirm the sign-in on the GitHub website.",
+  "github.enterCode": "Enter this code on the GitHub page that opened:",
+  "github.openGithub": "Open GitHub again",
+  "github.waiting": "Waiting for confirmation…",
 
   "env.banner":
     "Variables are stored on the server and apply on the next deploy: for React sites at build time, for Node.js apps and bots a .env file is placed next to the app. Local .env files from the project folder are never uploaded to the server.",
@@ -168,6 +193,11 @@ export const en: Record<MessageKey, string> = {
   "projectSettings.nodeStartHintAfter":
     " variable; if the Port field is empty, a free port is picked on the first deploy.",
   "projectSettings.deploy": "Deploy",
+  "projectSettings.subdir": "Project folder in the repository",
+  "projectSettings.subdirRoot": "Repository root",
+  "projectSettings.subdirPick": "Choose folder",
+  "projectSettings.subdirHint":
+    "Set a folder if the project is not at the repository root (for example, in a monorepo). Defaults to the root.",
 
   "removeProject.title": "Remove project “{name}”?",
   "removeProject.description":
@@ -202,4 +232,10 @@ export const en: Record<MessageKey, string> = {
   "settings.leEmail": "Email for SSL certificates",
   "settings.leEmailHint":
     "Let's Encrypt will email you if certificate auto-renewal goes wrong. Applies on the next deploy with a domain. Can be left empty.",
+
+  "settings.github": "GitHub account",
+  "settings.githubHint": "Sign in to deploy private repositories from a link.",
+  "settings.githubConnected": "Connected as @{login}.",
+  "settings.githubConnect": "Sign in with GitHub",
+  "settings.githubSignOut": "Sign out",
 };

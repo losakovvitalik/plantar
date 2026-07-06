@@ -67,12 +67,28 @@ export interface ServerRecord {
   keyPath?: string;
 }
 
+/** Коммит, задеплоенный в последний раз (для git-проектов) */
+export interface DeployedCommit {
+  hash: string;
+  message: string;
+}
+
 export interface ProjectRecord {
   id: string;
   serverId: string;
   /** name из plantar.json на момент добавления */
   name: string;
+  /** Локальная папка проекта; для git-источника — путь к клону в reposDir() */
   path: string;
+  /** Подпапка внутри path, где лежит проект (для монорепозиториев); пусто — корень */
+  subdir?: string;
+  /** Источник кода; отсутствует у старых записей — считается "local" */
+  source?: "local" | "git";
+  /** Для source=git: ссылка на репозиторий и выбранная ветка */
+  repoUrl?: string;
+  branch?: string;
+  /** Для source=git: коммит последнего успешного деплоя */
+  deployedCommit?: DeployedCommit;
 }
 
 function readJsonList<T>(file: string): T[] {
@@ -124,6 +140,13 @@ export const writeProjects = (list: ProjectRecord[]) => writeJsonList("projects.
 export function keysDir(): string {
   const dir = path.join(dataDir(), "keys");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return dir;
+}
+
+/** Директория для локальных клонов git-репозиториев проектов */
+export function reposDir(): string {
+  const dir = path.join(dataDir(), "repos");
+  mkdirSync(dir, { recursive: true });
   return dir;
 }
 

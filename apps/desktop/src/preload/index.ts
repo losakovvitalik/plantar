@@ -9,16 +9,27 @@ const api = {
 
   listProjects: () => invoke("projects:list"),
   pickProject: () => invoke("projects:pick"),
+  listRepoBranches: (repoUrl: string) => invoke("repo:branches", repoUrl),
+  cloneRepo: (repoUrl: string, branch: string) =>
+    invoke("projects:cloneRepo", { repoUrl, branch }),
+  cancelClone: (clonePath: string) => invoke("projects:cancelClone", clonePath),
   addProject: (input: unknown) => invoke("projects:add", input),
   removeProject: (id: string) => invoke("projects:remove", id),
   removeProjectFromServer: (projectId: string, password?: string) =>
     invoke("projects:removeFromServer", { projectId, password }),
   readProjectConfig: (projectId: string) => invoke("projects:readConfig", projectId),
-  writeProjectConfig: (projectId: string, config: unknown) =>
-    invoke("projects:writeConfig", { projectId, config }),
+  writeProjectConfig: (projectId: string, config: unknown, subdir?: string) =>
+    invoke("projects:writeConfig", { projectId, config, subdir }),
+  pickSubdir: (root: string) => invoke("projects:pickSubdir", root),
 
   getSettings: () => invoke("settings:get"),
   setSettings: (settings: unknown) => invoke("settings:set", settings),
+
+  githubAccount: () => invoke("github:account"),
+  githubStartLogin: () => invoke("github:startLogin"),
+  githubPollLogin: (deviceCode: string, interval: number, expiresIn: number) =>
+    invoke("github:pollLogin", { deviceCode, interval, expiresIn }),
+  githubSignOut: () => invoke("github:signOut"),
 
   listHistory: (projectId: string) => invoke("history:list", projectId),
   readDeployLog: (logFile: string) => invoke("history:readLog", logFile),

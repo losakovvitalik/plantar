@@ -75,6 +75,10 @@ const MESSAGES = {
     ru: "Сборка не удалась ({command}):\n{output}",
     en: "The build failed ({command}):\n{output}",
   },
+  installLocalFailed: {
+    ru: "Не удалось установить зависимости ({command}):\n{output}",
+    en: "Failed to install dependencies ({command}):\n{output}",
+  },
   buildDirMissing: {
     ru: "После сборки не найдена папка «{dir}» в {projectDir}. Проверь buildDir в plantar.json.",
     en: "The “{dir}” folder was not found in {projectDir} after the build. Check buildDir in plantar.json.",

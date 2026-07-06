@@ -56,11 +56,15 @@ interface Props {
   note?: string;
   submitLabel: string;
   /** Возвращает текст ошибки или null при успехе */
-  onSubmit: (config: ProjectConfigInput) => Promise<string | null>;
+  onSubmit: (config: ProjectConfigInput, subdir?: string) => Promise<string | null>;
   /** Сообщение об успешном сохранении — показывается внутри диалога */
   savedMessage?: string;
   /** Обработчик кнопки «Деплой» рядом с сообщением о сохранении */
   onDeploy?: () => void;
+  /** Корень клона git-проекта — включает выбор подпапки проекта; пусто — выбора нет */
+  repoRoot?: string;
+  /** Текущая подпапка проекта внутри репозитория ("" — корень) */
+  initialSubdir?: string;
 }
 
 export function ProjectSettingsDialog({
@@ -74,6 +78,8 @@ export function ProjectSettingsDialog({
   onSubmit,
   savedMessage,
   onDeploy,
+  repoRoot,
+  initialSubdir,
 }: Props) {
   const { t } = useI18n();
   const [type, setType] = useState<ProjectType>("static");
@@ -86,24 +92,45 @@ export function ProjectSettingsDialog({
   const [buildDir, setBuildDir] = useState("dist");
   const [startCommand, setStartCommand] = useState("");
   const [port, setPort] = useState("");
+  const [subdir, setSubdir] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /** Заполняет поля формы значениями конфига (при открытии и при смене папки) */
+  function applyConfig(c: Partial<ProjectConfigInput>) {
+    setType(c.type ?? "static");
+    setRuntime(c.runtime ?? "node");
+    setName(c.name ?? "");
+    setDomain(c.domain ?? "");
+    setPackageManager(c.packageManager ?? "npm");
+    setBuildCommand(c.buildCommand ?? "npm run build");
+    setBuildDir(c.buildDir ?? "dist");
+    setStartCommand(c.startCommand ?? "");
+    setPort(c.port ? String(c.port) : "");
+  }
+
   useEffect(() => {
     if (open) {
-      setType(initial.type ?? "static");
-      setRuntime(initial.runtime ?? "node");
-      setName(initial.name ?? "");
-      setDomain(initial.domain ?? "");
-      setPackageManager(initial.packageManager ?? "npm");
-      setBuildCommand(initial.buildCommand ?? "npm run build");
-      setBuildDir(initial.buildDir ?? "dist");
-      setStartCommand(initial.startCommand ?? "");
-      setPort(initial.port ? String(initial.port) : "");
+      applyConfig(initial);
+      setSubdir(initialSubdir ?? "");
       setError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  /** Выбор подпапки проекта внутри репозитория с переопределением настроек по ней */
+  async function pickSubdir() {
+    if (!repoRoot) return;
+    const result = await window.plantar.pickSubdir(repoRoot);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    if (!result.data) return; // пользователь закрыл выбор
+    setSubdir(result.data.subdir);
+    applyConfig(result.data.config ?? result.data.detected.config);
+    setError(null);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -130,7 +157,7 @@ export function ProjectSettingsDialog({
       startCommand: startCommand.trim() || undefined,
       // Бот работает без домена — не тащим его из прежних настроек
       domain: type === "bot" ? undefined : domain.trim() || undefined,
-    });
+    }, repoRoot ? subdir : undefined);
     setBusy(false);
     if (result) setError(result);
   }
@@ -150,6 +177,29 @@ export function ProjectSettingsDialog({
             <p className="rounded-lg bg-moss/10 px-3 py-2 text-[12.5px] leading-snug text-moss">
               {note}
             </p>
+          )}
+
+          {repoRoot && (
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("projectSettings.subdir")}</Label>
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate rounded-md border border-input bg-moss/5 px-3 py-1.5 font-mono text-[12.5px]">
+                  {subdir || t("projectSettings.subdirRoot")}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => void pickSubdir()}
+                >
+                  {t("projectSettings.subdirPick")}
+                </Button>
+              </div>
+              <p className="text-[12px] leading-snug text-ink-soft/80">
+                {t("projectSettings.subdirHint")}
+              </p>
+            </div>
           )}
 
           <div className="flex flex-col gap-1.5">
