@@ -1,10 +1,11 @@
-import { ChevronRight, GitCommit, RefreshCw } from "lucide-react";
+import { ChevronRight, GitCommit, RefreshCw, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { DeployRecord, Language } from "@plantar/storage";
-import type { CommitsView, ProjectRecord } from "../../../preload/index.d";
+import type { CommitsView, ProjectRecord, ServerRecord } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
 import { Button } from "./ui/button";
 import { DeployLogView } from "./deploy-log-view";
+import { SetupCiDialog } from "./setup-ci-dialog";
 
 const DATE_LOCALES: Record<Language, string> = { ru: "ru-RU", en: "en-US" };
 
@@ -28,16 +29,19 @@ const BADGE_STYLE: Record<BadgeKind, string> = {
 
 interface Props {
   project: ProjectRecord;
+  server: ServerRecord;
+  askPassword: (server: ServerRecord) => Promise<string | null>;
 }
 
 /** Список коммитов ветки с бейджем статуса деплоя и переходом к логу */
-export function CommitsTab({ project }: Props) {
+export function CommitsTab({ project, server, askPassword }: Props) {
   const { t, lang } = useI18n();
   // Снимок «коммиты + статусы»: показывается устаревшим сразу, затем обновляется
   const [view, setView] = useState<CommitsView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openHash, setOpenHash] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [ciOpen, setCiOpen] = useState(false);
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -84,17 +88,8 @@ export function CommitsTab({ project }: Props) {
     return "notDeployed";
   }
 
-  if (error) {
-    return (
-      <p className="rounded-lg bg-clay/10 px-3 py-2 text-[12.5px] whitespace-pre-wrap text-clay">
-        {error}
-      </p>
-    );
-  }
-  if (commits === null) {
-    return <p className="text-[13px] text-ink-soft">{t("commits.loading")}</p>;
-  }
-
+  // Ошибка и загрузка показываются вместо списка, но не вместо шапки и диалога:
+  // иначе неудачное фоновое обновление закрыло бы открытый диалог настройки
   return (
     <div className="flex h-full flex-col gap-3">
       <div className="flex items-center gap-3">
@@ -105,6 +100,15 @@ export function CommitsTab({ project }: Props) {
           variant="ghost"
           size="sm"
           className="ml-auto text-ink-soft"
+          onClick={() => setCiOpen(true)}
+        >
+          <Zap className="size-3.5" />
+          {t("ciSetup.button")}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-ink-soft"
           onClick={() => void load()}
           disabled={refreshing}
         >
@@ -113,7 +117,21 @@ export function CommitsTab({ project }: Props) {
         </Button>
       </div>
 
-      {commits.length === 0 ? (
+      <SetupCiDialog
+        open={ciOpen}
+        onOpenChange={setCiOpen}
+        project={project}
+        server={server}
+        askPassword={askPassword}
+      />
+
+      {error ? (
+        <p className="rounded-lg bg-clay/10 px-3 py-2 text-[12.5px] whitespace-pre-wrap text-clay">
+          {error}
+        </p>
+      ) : commits === null ? (
+        <p className="text-[13px] text-ink-soft">{t("commits.loading")}</p>
+      ) : commits.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
           <div className="max-w-sm text-center">
             <GitCommit className="mx-auto size-8 text-[#b8bfb8]" />

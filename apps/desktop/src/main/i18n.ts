@@ -108,6 +108,30 @@ const MESSAGES = {
     ru: "Папка должна находиться внутри репозитория.",
     en: "The folder must be inside the repository.",
   },
+  removeKeyFailed: {
+    ru: "Не удалось убрать прежний ключ с сервера:\n{stderr}",
+    en: "Failed to remove the previous key from the server:\n{stderr}",
+  },
+  actionsGitOnly: {
+    ru: "Деплой при коммите доступен только проектам из GitHub-репозитория.",
+    en: "Deploy on commit is only available for projects added from a GitHub repository.",
+  },
+  actionsScopeMissing: {
+    ru: "Войдите в GitHub заново: приложению нужно разрешение на изменение файлов автоматизации в репозитории.",
+    en: "Sign in to GitHub again: the app needs permission to change automation files in the repository.",
+  },
+  actionsGithubOnly: {
+    ru: "Деплой при коммите работает только с репозиториями на github.com.",
+    en: "Deploy on commit only works with repositories on github.com.",
+  },
+  actionsLoginRequired: {
+    ru: "Сначала войдите в GitHub.",
+    en: "Sign in to GitHub first.",
+  },
+  actionsApiFailed: {
+    ru: "GitHub отклонил запрос (код {status}). {message}",
+    en: "GitHub rejected the request (status {status}). {message}",
+  },
   subdirMissing: {
     ru: "Папка «{subdir}» не найдена в репозитории.",
     en: "The folder “{subdir}” was not found in the repository.",

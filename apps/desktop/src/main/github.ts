@@ -36,6 +36,18 @@ export function getToken(): string | null {
 
 export interface GithubAccount {
   login: string;
+  /**
+   * Токену разрешено менять файлы автодеплоя (.github/workflows) — scope workflow.
+   * У входов, сделанных до появления «деплоя при коммите», такого права нет:
+   * права токена не меняются задним числом, нужен повторный вход.
+   */
+  canWriteWorkflows: boolean;
+}
+
+/** Как аккаунт лежит на диске: список выданных GitHub прав, а не готовый флаг */
+interface StoredAccount {
+  login: string;
+  scopes?: string[];
 }
 
 /** Подключённый аккаунт для показа в настройках; null — вход не выполнен */
@@ -43,7 +55,11 @@ export function getAccount(): GithubAccount | null {
   const file = accountFile();
   if (!existsSync(file) || !getToken()) return null;
   try {
-    return JSON.parse(readFileSync(file, "utf8")) as GithubAccount;
+    const stored = JSON.parse(readFileSync(file, "utf8")) as StoredAccount;
+    return {
+      login: stored.login,
+      canWriteWorkflows: stored.scopes?.includes("workflow") ?? false,
+    };
   } catch {
     return null;
   }
@@ -86,7 +102,9 @@ async function postJson(
 
 /** Шаг 1 Device Flow: получить код для ввода пользователем на github.com */
 export async function startDeviceLogin(): Promise<DeviceLogin> {
-  const data = await postJson(DEVICE_CODE_URL, { client_id: CLIENT_ID, scope: "repo" });
+  // repo — клонирование приватных репозиториев; workflow — коммит файла автодеплоя
+  // в .github/workflows (без этого права GitHub отклоняет запись такого файла)
+  const data = await postJson(DEVICE_CODE_URL, { client_id: CLIENT_ID, scope: "repo workflow" });
   if (!data.device_code) throw new Error(t("githubDeviceFailed"));
   return {
     userCode: data.user_code,
@@ -120,10 +138,12 @@ export async function pollDeviceLogin(
     });
 
     if (data.access_token) {
-      const account = await fetchAccount(data.access_token);
+      // GitHub возвращает выданные права строкой вида "repo,workflow"
+      const scopes = (data.scope ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+      const login = await fetchLogin(data.access_token);
       storeToken(data.access_token);
-      writeFileSync(accountFile(), JSON.stringify(account));
-      return account;
+      writeFileSync(accountFile(), JSON.stringify({ login, scopes } satisfies StoredAccount));
+      return { login, canWriteWorkflows: scopes.includes("workflow") };
     }
 
     switch (data.error) {
@@ -141,11 +161,11 @@ export async function pollDeviceLogin(
   throw new Error(t("githubDeviceExpired"));
 }
 
-async function fetchAccount(token: string): Promise<GithubAccount> {
+async function fetchLogin(token: string): Promise<string> {
   const res = await fetch(USER_URL, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
   });
   if (!res.ok) throw new Error(t("githubRequestFailed", { status: res.status }));
   const user = (await res.json()) as { login: string };
-  return { login: user.login };
+  return user.login;
 }

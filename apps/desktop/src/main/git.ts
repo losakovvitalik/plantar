@@ -26,7 +26,7 @@ export function assertValidRepoUrl(url: string): void {
 }
 
 /** Имя ветки без пробелов и ведущего дефиса — защита от подмены аргументов git */
-function assertValidBranch(branch: string): void {
+export function assertValidBranch(branch: string): void {
   if (!/^[A-Za-z0-9._/-]+$/.test(branch) || branch.startsWith("-")) {
     throw new Error(t("invalidBranch"));
   }
@@ -111,8 +111,11 @@ export async function updateRepo(
   assertValidBranch(branch);
   try {
     await git([...authArgs(token), "-C", dir, "fetch", "--prune", "origin"]);
-    // -B создаёт/сбрасывает локальную ветку на origin/<branch>; untracked-файлы (plantar.json) не трогаются
-    await git(["-C", dir, "checkout", "-B", branch, "--track", `origin/${branch}`]);
+    // -B создаёт/сбрасывает локальную ветку на origin/<branch>. -f нужен, когда в ветке
+    // появился файл, лежащий в клоне как untracked (plantar.json после настройки
+    // деплоя при коммите): без него checkout отказывается его перезаписать.
+    // Прочие untracked-файлы -f не трогает, а конфиг деплой всё равно перезапишет.
+    await git(["-C", dir, "checkout", "-f", "-B", branch, "--track", `origin/${branch}`]);
     await git(["-C", dir, "reset", "--hard", `origin/${branch}`]);
   } catch (err) {
     throw new Error(t("updateFailed", { message: (err as Error).message }));

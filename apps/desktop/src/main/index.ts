@@ -44,10 +44,18 @@ import {
   installPublicKey,
   loadPrivateKey,
   migratePlainKeys,
+  removeKeysWithComment,
   storePrivateKey,
 } from "./ssh-setup";
 import { dropConnection, isConnected, withPooledConnection } from "./ssh-pool";
-import { cloneRepo, headCommit, listCommits, listRemoteBranches, updateRepo } from "./git";
+import {
+  assertValidBranch,
+  cloneRepo,
+  headCommit,
+  listCommits,
+  listRemoteBranches,
+  updateRepo,
+} from "./git";
 import {
   getAccount,
   getToken,
@@ -55,6 +63,14 @@ import {
   signOut,
   startDeviceLogin,
 } from "./github";
+import {
+  WORKFLOW_PATH,
+  buildWorkflowYaml,
+  commitFiles,
+  fetchSecretsPublicKey,
+  parseGithubRepo,
+  putSecrets,
+} from "./github-actions";
 import { setLanguage, t } from "./i18n";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -420,6 +436,73 @@ async function runDeploy(
   });
 }
 
+/**
+ * Настраивает деплой при коммите: генерирует отдельный deploy-ключ (личный ключ
+ * пользователя не используется), устанавливает его на сервер, кладёт ключ и адрес
+ * сервера в Secrets репозитория и коммитит workflow + plantar.json в ветку проекта.
+ * Ключ и адрес уходят в GitHub Secrets — осознанное исключение из local-first (README).
+ */
+async function setupGithubActions(
+  projectId: string,
+  password: string | undefined,
+): Promise<{ branch: string; actionsUrl: string }> {
+  const project = getProject(projectId);
+  if (project.source !== "git" || !project.repoUrl || !project.branch) {
+    throw new Error(t("actionsGitOnly"));
+  }
+  const token = getToken();
+  const account = getAccount();
+  if (!token || !account) throw new Error(t("actionsLoginRequired"));
+  // Без права workflow GitHub отклонит коммит файла автодеплоя — проверяем до правок
+  if (!account.canWriteWorkflows) throw new Error(t("actionsScopeMissing"));
+  assertValidBranch(project.branch);
+  const repo = parseGithubRepo(project.repoUrl);
+  const server = getServer(project.serverId);
+  const dir = projectDir(project);
+  const config = loadProjectConfig(dir);
+
+  // Ключ шифрования секретов доступен только администратору репозитория: запрашиваем
+  // его первым, чтобы при нехватке прав не оставить на сервере лишний ключ
+  const secretsKey = await fetchSecretsPublicKey(token, repo);
+
+  // Ключ проекта опознаётся по комментарию: прежний снимаем — его приватная
+  // половина лежала в секретах репозитория и больше не должна открывать сервер
+  const comment = `plantar-ci-${config.name}`;
+  const { privateKeyPem, publicKey } = await generateKeyPair(
+    `github-actions-${project.id}`,
+    comment,
+  );
+  await withServer(server, password, async (conn) => {
+    await removeKeysWithComment(conn, comment);
+    await installPublicKey(conn, publicKey);
+  });
+
+  await putSecrets(token, repo, secretsKey, {
+    PLANTAR_SSH_KEY: privateKeyPem,
+    PLANTAR_HOST: server.host,
+    PLANTAR_PORT: String(server.port),
+    PLANTAR_USER: server.user,
+  });
+
+  // plantar.json лежит в клоне untracked — без него CI не поймёт, как деплоить
+  const configPath = project.subdir ? `${project.subdir}/plantar.json` : "plantar.json";
+  await commitFiles(
+    token,
+    repo,
+    project.branch,
+    [
+      { path: WORKFLOW_PATH, content: buildWorkflowYaml(project.branch, config, project.subdir) },
+      { path: configPath, content: readFileSync(path.join(dir, "plantar.json"), "utf8") },
+    ],
+    "ci: deploy with Plantar on push",
+  );
+
+  return {
+    branch: project.branch,
+    actionsUrl: `https://github.com/${repo.owner}/${repo.repo}/actions`,
+  };
+}
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1080,
@@ -467,6 +550,10 @@ app.whenReady().then(() => {
       toResult(() => pollDeviceLogin(args.deviceCode, args.interval, args.expiresIn)),
   );
   ipcMain.handle("github:signOut", () => toResult(async () => signOut()));
+  // Автонастройка деплоя при коммите: deploy-ключ → Secrets, workflow → в ветку
+  ipcMain.handle("github:setupActions", (_e, args: { projectId: string; password?: string }) =>
+    toResult(() => setupGithubActions(args.projectId, args.password)),
+  );
 
   ipcMain.handle("servers:list", () => toResult(async () => readServers()));
   ipcMain.handle("servers:add", (_e, input: AddServerInput) => toResult(() => addServer(input)));

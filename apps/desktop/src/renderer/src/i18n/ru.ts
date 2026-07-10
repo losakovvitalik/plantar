@@ -94,6 +94,31 @@ export const ru = {
   "commits.badge.failed": "Деплой упал",
   "commits.badge.notDeployed": "Не деплоился",
 
+  "ciSetup.button": "Настроить деплой при коммите",
+  "ciSetup.title": "Деплой при коммите",
+  "ciSetup.description":
+    "Каждый новый коммит в ветке {branch} будет автоматически деплоиться на сервер «{server}» — даже когда Plantar закрыт.",
+  "ciSetup.will1":
+    "Будет создан отдельный ключ доступа для GitHub — личный ключ останется только на этом компьютере.",
+  "ciSetup.will2":
+    "Ключ и адрес сервера сохранятся в защищённом хранилище репозитория (GitHub Secrets).",
+  "ciSetup.will3":
+    "В ветку {branch} будет добавлен коммит с файлом автодеплоя и настройками проекта (plantar.json).",
+  "ciSetup.secretsNote":
+    "Данные для подключения к серверу будут храниться не только на этом компьютере, но и на GitHub — без этого GitHub не сможет деплоить самостоятельно.",
+  "ciSetup.loginNeeded": "Чтобы настроить деплой при коммите, войдите в GitHub.",
+  "ciSetup.reloginNeeded":
+    "Нужно ещё одно разрешение GitHub — на изменение файлов автоматизации в репозитории. Войдите заново, чтобы выдать его.",
+  "ciSetup.login": "Войти через GitHub",
+  "ciSetup.relogin": "Войти заново",
+  "ciSetup.submit": "Настроить",
+  "ciSetup.working": "Настройка…",
+  "ciSetup.done":
+    "Готово. Теперь каждый коммит в ветке {branch} будет автоматически деплоиться на сервер.",
+  "ciSetup.doneHistoryNote":
+    "Такие деплои запускает GitHub, поэтому в историю и статусы коммитов в приложении они пока не попадают — следить за ними можно на странице Actions.",
+  "ciSetup.openActions": "Открыть Actions на GitHub",
+
   "addProjectDialog.title": "Новый проект",
   "addProjectDialog.description": "Откуда взять код проекта?",
   "addProjectDialog.gitDescription": "Вставьте ссылку на репозиторий GitHub.",

@@ -32,6 +32,8 @@ const api = {
   githubPollLogin: (deviceCode: string, interval: number, expiresIn: number) =>
     invoke("github:pollLogin", { deviceCode, interval, expiresIn }),
   githubSignOut: () => invoke("github:signOut"),
+  setupGithubActions: (projectId: string, password?: string) =>
+    invoke("github:setupActions", { projectId, password }),
 
   listHistory: (projectId: string) => invoke("history:list", projectId),
   readDeployLog: (logFile: string) => invoke("history:readLog", logFile),

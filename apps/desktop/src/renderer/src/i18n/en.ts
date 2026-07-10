@@ -94,6 +94,31 @@ export const en: Record<MessageKey, string> = {
   "commits.badge.failed": "Deploy failed",
   "commits.badge.notDeployed": "Not deployed",
 
+  "ciSetup.button": "Set up deploy on commit",
+  "ciSetup.title": "Deploy on commit",
+  "ciSetup.description":
+    "Every new commit on the {branch} branch will deploy to “{server}” automatically — even when Plantar is closed.",
+  "ciSetup.will1":
+    "A separate access key will be created for GitHub — your personal key stays on this computer only.",
+  "ciSetup.will2":
+    "The key and the server address will be stored in the repository's protected storage (GitHub Secrets).",
+  "ciSetup.will3":
+    "A commit with the auto-deploy file and the project settings (plantar.json) will be added to the {branch} branch.",
+  "ciSetup.secretsNote":
+    "The server access credentials will be stored not only on this computer but also on GitHub — without this, GitHub cannot deploy on its own.",
+  "ciSetup.loginNeeded": "Sign in to GitHub to set up deploy on commit.",
+  "ciSetup.reloginNeeded":
+    "One more GitHub permission is required — to change automation files in the repository. Sign in again to grant it.",
+  "ciSetup.login": "Sign in with GitHub",
+  "ciSetup.relogin": "Sign in again",
+  "ciSetup.submit": "Set up",
+  "ciSetup.working": "Setting up…",
+  "ciSetup.done":
+    "Done. Every commit on the {branch} branch will now deploy to the server automatically.",
+  "ciSetup.doneHistoryNote":
+    "These deploys are run by GitHub, so for now they do not appear in the app's history or commit badges — you can follow them on the Actions page.",
+  "ciSetup.openActions": "Open Actions on GitHub",
+
   "addProjectDialog.title": "New project",
   "addProjectDialog.description": "Where should the project code come from?",
   "addProjectDialog.gitDescription": "Paste a link to a GitHub repository.",

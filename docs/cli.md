@@ -1,6 +1,10 @@
 # CLI
 
-Запуск: `cd apps/cli && pnpm start <команда> [опции]`
+Запуск внутри монорепозитория: `cd apps/cli && pnpm start <команда> [опции]`
+
+## Сборка и публикация
+
+CLI собирается в один самодостаточный файл: `pnpm build` → `dist/index.cjs` (esbuild, все workspace-пакеты и зависимости внутри). Пакет публикуется в npm как `@plantar/cli` (`pnpm publish` соберёт автоматически); после установки `npm install -g @plantar/cli` доступна команда `plantar`. На установленный из npm пакет опирается workflow «Деплой при коммите» (см. [features.md](features.md)) — до первой публикации шаг `npm install -g @plantar/cli` в GitHub Actions будет падать.
 
 ## Общие опции подключения
 

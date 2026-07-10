@@ -37,6 +37,8 @@ export interface RemoteBranches {
 
 export interface GithubAccount {
   login: string;
+  /** Токену разрешено менять файлы автодеплоя в репозитории (scope workflow) */
+  canWriteWorkflows: boolean;
 }
 
 export interface GitCommit {
@@ -59,6 +61,12 @@ export interface DeviceLogin {
   deviceCode: string;
   interval: number;
   expiresIn: number;
+}
+
+/** Результат автонастройки деплоя при коммите (GitHub Actions) */
+export interface SetupActionsResult {
+  branch: string;
+  actionsUrl: string;
 }
 
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -122,6 +130,11 @@ declare global {
         expiresIn: number,
       ) => Promise<IpcResult<GithubAccount>>;
       githubSignOut: () => Promise<IpcResult<void>>;
+      /** Настраивает деплой при коммите: ключ в Secrets, workflow в ветку проекта */
+      setupGithubActions: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<SetupActionsResult>>;
 
       listHistory: (projectId: string) => Promise<IpcResult<DeployRecord[]>>;
       readDeployLog: (logFile: string) => Promise<IpcResult<string>>;

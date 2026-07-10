@@ -92,6 +92,26 @@ export function migratePlainKeys(): void {
   if (changed) writeServers(servers);
 }
 
+/**
+ * Убирает из authorized_keys ключи с этим комментарием — перед установкой нового
+ * ключа взамен старого. Комментарий приходит из имени проекта (только [a-z0-9-]),
+ * поэтому в шаблон grep он попадает без спецсимволов; `$` привязывает к концу
+ * строки, чтобы «plantar-ci-app» не задел «plantar-ci-app2».
+ */
+export async function removeKeysWithComment(
+  conn: SshConnection,
+  comment: string,
+): Promise<void> {
+  const pattern = shellQuote(` ${comment}$`);
+  const keys = "~/.ssh/authorized_keys";
+  const result = await conn.exec(
+    `if [ -f ${keys} ]; then { grep -v ${pattern} ${keys} || true; } > ${keys}.plantar-tmp && mv ${keys}.plantar-tmp ${keys} && chmod 600 ${keys}; fi`,
+  );
+  if (result.code !== 0) {
+    throw new Error(t("removeKeyFailed", { stderr: result.stderr }));
+  }
+}
+
 /** Добавляет публичный ключ в authorized_keys на сервере (идемпотентно) */
 export async function installPublicKey(conn: SshConnection, publicKey: string): Promise<void> {
   // Ключ содержит комментарий с именем сервера — экранируем, имя ничем не ограничено

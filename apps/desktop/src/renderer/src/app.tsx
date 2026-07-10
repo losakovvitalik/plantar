@@ -264,7 +264,11 @@ export default function App() {
               </TabsContent>
               {selectedProject.source === "git" && (
                 <TabsContent value="commits" className="h-full">
-                  <CommitsTab project={selectedProject} />
+                  <CommitsTab
+                    project={selectedProject}
+                    server={projectServer}
+                    askPassword={askPassword}
+                  />
                 </TabsContent>
               )}
               <TabsContent value="env" className="h-full">
