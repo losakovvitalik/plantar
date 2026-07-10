@@ -1,4 +1,4 @@
-import { ExternalLink, GitBranch, Globe, Rocket } from "lucide-react";
+import { Check, Copy, ExternalLink, GitBranch, Globe, Rocket } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type {
   ProjectConfig,
@@ -23,6 +23,87 @@ interface Props {
 }
 
 const SHOW_COMMANDS_KEY = "plantar:showCommands";
+
+function DeployError({ message }: { message: string }) {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<number | null>(null);
+  const errorLines = message.split(/\r?\n/);
+  const hasMore = errorLines.length > 4;
+  const content = expanded ? message : errorLines.slice(0, 4).join("\n");
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+      }
+    };
+  }, []);
+
+  async function copyMessage() {
+    try {
+      await navigator.clipboard.writeText(message);
+    } catch {
+      // Fallback для окружений Electron, где Clipboard API недоступен для file://.
+      const textarea = document.createElement("textarea");
+      textarea.value = message;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const success = document.execCommand("copy");
+      textarea.remove();
+      if (!success) return;
+    }
+
+    setCopied(true);
+    if (copiedTimerRef.current !== null) {
+      window.clearTimeout(copiedTimerRef.current);
+    }
+    copiedTimerRef.current = window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  return (
+    <div className="flex min-h-0 items-start gap-3 rounded-lg bg-clay/10 px-3 py-2 text-clay">
+      <pre
+        className={`thin-scroll min-w-0 flex-1 font-sans text-[12.5px] leading-snug break-words whitespace-pre-wrap ${
+          expanded
+            ? "max-h-[16.5em] overflow-y-auto"
+            : hasMore
+              ? "max-h-[5.5em] overflow-hidden"
+              : ""
+        }`}
+      >
+        {content}
+      </pre>
+      <div className="flex shrink-0 items-center gap-3">
+        {hasMore && (
+          <button
+            type="button"
+            className="rounded-sm text-[12.5px] font-semibold underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-clay/40"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? t("deploy.hideError") : t("deploy.showMoreError")}
+          </button>
+        )}
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-sm text-[12.5px] font-semibold underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-clay/40"
+          onClick={() => void copyMessage()}
+        >
+          {copied ? (
+            <Check className="size-3.5" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
+          {copied ? t("deploy.errorCopied") : t("deploy.copyError")}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function DeployTab({
   project,
@@ -161,11 +242,7 @@ export function DeployTab({
         )
       )}
 
-      {error && (
-        <p className="rounded-lg bg-clay/10 px-3 py-2 text-[12.5px] leading-snug whitespace-pre-wrap text-clay">
-          {error}
-        </p>
-      )}
+      {error && <DeployError message={error} />}
 
       <div
         ref={terminalRef}

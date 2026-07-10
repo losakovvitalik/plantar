@@ -11,8 +11,8 @@ export type PackageManager = (typeof PACKAGE_MANAGERS)[number];
 const projectConfigSchema = () =>
   z.object({
     name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, t("nameRegex")),
-    /** Тип проекта: статический сайт, Node.js-приложение или Telegram-бот */
-    type: z.enum(["static", "node", "bot"]).default("static"),
+    /** Тип проекта: статический сайт, Node.js/Next.js-приложение или Telegram-бот */
+    type: z.enum(["static", "node", "next", "bot"]).default("static"),
     /** Рантайм бота; python — зависимости из requirements.txt в venv */
     runtime: z.enum(["node", "python"]).default("node"),
     packageManager: z.enum(PACKAGE_MANAGERS).default("npm"),
@@ -61,7 +61,27 @@ export function loadProjectConfig(projectDir: string): ProjectConfig {
     throw new Error(t("configBadJson", { message: (err as Error).message }));
   }
 
-  return parseConfig(raw);
+  const config = parseConfig(raw);
+
+  // До появления поддержки Next.js он автоопределялся как обычная статика с dist.
+  // Читаем такой старый конфиг как Next.js; явный static-export с другим buildDir
+  // остаётся статическим. При первом успешном desktop-деплое тип сохранится вместе с портом.
+  if (
+    config.type === "static" &&
+    config.buildDir === "dist" &&
+    !config.startCommand
+  ) {
+    const detected = detectProjectConfig(projectDir).config;
+    if (detected.type === "next") {
+      return {
+        ...config,
+        type: "next",
+        startCommand: detected.startCommand,
+      };
+    }
+  }
+
+  return config;
 }
 
 export function writeProjectConfig(
@@ -188,8 +208,33 @@ export function detectProjectConfig(projectDir: string): DetectedProject {
   if (pythonBot) return pythonBot;
 
   const botFramework = BOT_FRAMEWORKS.find(([dep]) => pkg?.dependencies?.[dep]);
+  if (botFramework) {
+    const startCommand = pkg?.scripts?.start
+      ? `${packageManager} start`
+      : pkg?.main
+        ? `node ${pkg.main}`
+        : `${packageManager} start`;
+    return {
+      config: { name, packageManager, type: "bot", startCommand },
+      framework: botFramework[1],
+    };
+  }
+
+  if (deps.next) {
+    return {
+      config: {
+        name,
+        packageManager,
+        type: "next",
+        buildCommand: `${packageManager} run build`,
+        startCommand: `${packageManager} start`,
+      },
+      framework: "Next.js",
+    };
+  }
+
   const nodeFramework = NODE_FRAMEWORKS.find(([dep]) => pkg?.dependencies?.[dep]);
-  if (botFramework || nodeFramework) {
+  if (nodeFramework) {
     const startCommand = pkg?.scripts?.start
       ? `${packageManager} start`
       : pkg?.main
@@ -199,10 +244,10 @@ export function detectProjectConfig(projectDir: string): DetectedProject {
       config: {
         name,
         packageManager,
-        type: botFramework ? "bot" : "node",
+        type: "node",
         startCommand,
       },
-      framework: (botFramework ?? nodeFramework)![1],
+      framework: nodeFramework[1],
     };
   }
 

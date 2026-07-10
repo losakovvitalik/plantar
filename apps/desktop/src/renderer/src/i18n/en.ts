@@ -78,6 +78,10 @@ export const en: Record<MessageKey, string> = {
   "deploy.deployedAt": "App deployed: {url}",
   "deploy.botDeployed": "Bot deployed and running.",
   "deploy.terminalEmpty": "Every deploy step will show up here.",
+  "deploy.showMoreError": "Show more",
+  "deploy.hideError": "Collapse",
+  "deploy.copyError": "Copy",
+  "deploy.errorCopied": "Copied",
   "deploy.updateAndDeploy": "Update and deploy",
   "deploy.notDeployedYet": "Not deployed yet",
 
@@ -111,7 +115,7 @@ export const en: Record<MessageKey, string> = {
   "github.waiting": "Waiting for confirmation…",
 
   "env.banner":
-    "Variables are stored on the server and apply on the next deploy: for React sites at build time, for Node.js apps and bots a .env file is placed next to the app. Local .env files from the project folder are never uploaded to the server.",
+    "Variables are stored on the server and apply on the next deploy: for React and Next.js at build time, while Node.js apps and bots receive a .env file next to the app. Plantar manages NODE_ENV automatically — you do not need to add it here. Local .env files from the project folder are never uploaded to the server.",
   "env.confirmDiscard": "Unsaved changes will be lost. Continue?",
   "env.loading": "Loading variables from the server…",
   "env.load": "Load variables",
@@ -174,6 +178,8 @@ export const en: Record<MessageKey, string> = {
   "projectSettings.typeStaticHint": "Static site: React, Vite and others",
   "projectSettings.typeNodeLabel": "Node.js",
   "projectSettings.typeNodeHint": "Server app: Express and others",
+  "projectSettings.typeNextLabel": "Next.js",
+  "projectSettings.typeNextHint": "Next.js with server build and runtime",
   "projectSettings.typeBotLabel": "Telegram bot",
   "projectSettings.typeBotHint": "Long-polling bot: grammY, aiogram and others",
   "projectSettings.nameError":

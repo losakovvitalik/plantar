@@ -106,11 +106,15 @@ async function run(
   log(`$ ${command}`);
   const result = await conn.exec(command);
   if (result.code !== 0) {
+    const output = [result.stdout, result.stderr]
+      .filter(Boolean)
+      .join("\n")
+      .slice(-3000);
     throw new Error(
       t("commandFailed", {
         code: result.code,
         command,
-        stderr: result.stderr.slice(-2000),
+        stderr: output,
       }),
     );
   }
@@ -397,6 +401,8 @@ export async function deployProject(
   switch (config.type) {
     case "node":
       return deployNode(conn, projectDir, config, log, options);
+    case "next":
+      return deployNode(conn, projectDir, config, log, options, true);
     case "bot":
       return deployBot(conn, projectDir, config, log);
     default:
@@ -433,10 +439,14 @@ async function deployStatic(
 
   log(t("building", { command: config.buildCommand }));
   try {
+    // Plantar в dev-режиме сам работает с NODE_ENV=development. Не передаём это
+    // значение в production-сборку проекта: Next.js и Vite выставят нужный режим сами.
+    const buildEnv = { ...process.env, ...envVars };
+    delete buildEnv.NODE_ENV;
     await execAsync(config.buildCommand, {
       cwd: projectDir,
       maxBuffer: 50 * 1024 * 1024,
-      env: { ...process.env, ...envVars },
+      env: buildEnv,
     });
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };
@@ -525,12 +535,13 @@ async function waitForApp(
   log(t("appResponding"));
 }
 
-/** Общее для node и bot: загрузка проекта, установка зависимостей, подмена целевой папки */
+/** Общее для node, Next.js и bot: загрузка проекта, зависимости, сборка и подмена папки */
 async function uploadApp(
   conn: SshConnection,
   projectDir: string,
   config: ProjectConfig,
   log: (line: string) => void,
+  buildOnServer = false,
 ): Promise<{ target: string; fileCount: number }> {
   const python = config.runtime === "python";
   if (python && !existsSync(path.join(projectDir, "requirements.txt"))) {
@@ -547,7 +558,9 @@ async function uploadApp(
     projectDir,
     staging,
     (file) => log(`  ↑ ${file}`),
-    python ? [".venv", "__pycache__", ".git", ENV_FILE_RE] : ["node_modules", ".git", ENV_FILE_RE],
+    python
+      ? [".venv", "__pycache__", ".git", ENV_FILE_RE]
+      : ["node_modules", ...(buildOnServer ? [".next"] : []), ".git", ENV_FILE_RE],
   );
   log(t("uploadedFiles", { count: fileCount }));
 
@@ -563,17 +576,28 @@ async function uploadApp(
     await run(conn, `cd '${staging}' && ${config.packageManager} install`, log);
   }
 
-  await run(conn, `rm -rf '${target}' && mv '${staging}' '${target}'`, log);
-  log(t("deployedFiles", { count: fileCount, target }));
-
   // Env-файл проекта хранится вне папки релиза — кладём копию рядом с кодом,
-  // чтобы приложение нашло его как обычный .env
+  // чтобы приложение нашло его как обычный .env. Для Next.js это делается
+  // до сборки: NEXT_PUBLIC_* и серверные переменные могут понадобиться в build.
   const envFile = envStorePath(config.name);
   const hasEnv = await conn.exec(`test -f '${envFile}'`);
   if (hasEnv.code === 0) {
     log(t("applyingServerEnv"));
-    await run(conn, `cp '${envFile}' '${target}/.env' && chmod 600 '${target}/.env'`, log);
+    await run(conn, `cp '${envFile}' '${staging}/.env' && chmod 600 '${staging}/.env'`, log);
   }
+
+  if (buildOnServer) {
+    log(t("building", { command: config.buildCommand }));
+    // SSH-сессия или сохранённый .env не должны подменить production-режим сборки.
+    await run(
+      conn,
+      `cd '${staging}' && export NODE_ENV=production && ${config.buildCommand}`,
+      log,
+    );
+  }
+
+  await run(conn, `rm -rf '${target}' && mv '${staging}' '${target}'`, log);
+  log(t("deployedFiles", { count: fileCount, target }));
   return { target, fileCount };
 }
 
@@ -626,8 +650,15 @@ async function deployNode(
   config: ProjectConfig,
   log: (line: string) => void,
   options: DeployOptions,
+  buildOnServer = false,
 ): Promise<DeployResult> {
-  const { target, fileCount } = await uploadApp(conn, projectDir, config, log);
+  const { target, fileCount } = await uploadApp(
+    conn,
+    projectDir,
+    config,
+    log,
+    buildOnServer,
+  );
 
   const port = config.port ?? (await pickFreePort(conn));
   if (port !== config.port) log(t("portAssigned", { port }));

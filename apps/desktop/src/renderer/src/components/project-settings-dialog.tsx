@@ -14,11 +14,11 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { NodeLogo, ReactLogo, TelegramLogo } from "./tech-logos";
+import { NextLogo, NodeLogo, ReactLogo, TelegramLogo } from "./tech-logos";
 
 const PACKAGE_MANAGERS = ["npm", "pnpm", "yarn", "bun"] as const;
 
-type ProjectType = "static" | "node" | "bot";
+type ProjectType = "static" | "node" | "next" | "bot";
 
 const PROJECT_TYPES: Array<{
   value: ProjectType;
@@ -37,6 +37,12 @@ const PROJECT_TYPES: Array<{
     labelKey: "projectSettings.typeNodeLabel",
     hintKey: "projectSettings.typeNodeHint",
     Logo: NodeLogo,
+  },
+  {
+    value: "next",
+    labelKey: "projectSettings.typeNextLabel",
+    hintKey: "projectSettings.typeNextHint",
+    Logo: NextLogo,
   },
   {
     value: "bot",
@@ -146,8 +152,8 @@ export function ProjectSettingsDialog({
     setBusy(true);
     setError(null);
     const result = await onSubmit({
-      // Порт статики диалог не редактирует — сохраняем как есть
-      port: type === "node" ? portValue : initial.port,
+      // Порт статических сайтов и ботов диалог не редактирует — сохраняем как есть
+      port: type === "node" || type === "next" ? portValue : initial.port,
       type,
       runtime: type === "bot" ? runtime : undefined,
       name,
@@ -305,7 +311,7 @@ export function ProjectSettingsDialog({
                 />
               </div>
             )}
-            {type === "node" && (
+            {(type === "node" || type === "next") && (
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="prj-port">{t("projectSettings.port")}</Label>
                 <Input
@@ -319,7 +325,7 @@ export function ProjectSettingsDialog({
             )}
           </div>
 
-          {type === "static" ? (
+          {(type === "static" || type === "next") && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="prj-build">{t("projectSettings.buildCommand")}</Label>
               <Input
@@ -335,7 +341,9 @@ export function ProjectSettingsDialog({
                 .
               </p>
             </div>
-          ) : (
+          )}
+
+          {type !== "static" && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="prj-start">{t("projectSettings.startCommand")}</Label>
               <Input

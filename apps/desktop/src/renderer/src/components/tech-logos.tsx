@@ -43,3 +43,19 @@ export function NodeLogo({ className }: { className?: string }) {
     </svg>
   );
 }
+
+export function NextLogo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="11" fill="#111" />
+      <path
+        d="M7 16V8l7.3 8V8M17 8v8"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

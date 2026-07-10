@@ -78,6 +78,10 @@ export const ru = {
   "deploy.deployedAt": "Приложение задеплоено: {url}",
   "deploy.botDeployed": "Бот задеплоен и запущен.",
   "deploy.terminalEmpty": "Здесь будет виден каждый шаг деплоя.",
+  "deploy.showMoreError": "Показать ещё",
+  "deploy.hideError": "Скрыть",
+  "deploy.copyError": "Копировать",
+  "deploy.errorCopied": "Скопировано",
   "deploy.updateAndDeploy": "Обновить и задеплоить",
   "deploy.notDeployedYet": "Ещё не деплоился",
 
@@ -111,7 +115,7 @@ export const ru = {
   "github.waiting": "Ожидаю подтверждения…",
 
   "env.banner":
-    "Переменные хранятся на сервере и применяются при следующем деплое: для React-сайтов — при сборке, для Node.js и ботов файл .env кладётся рядом с приложением. Локальные .env-файлы из папки проекта на сервер не загружаются.",
+    "Переменные хранятся на сервере и применяются при следующем деплое: для React и Next.js — при сборке, для Node.js и ботов файл .env кладётся рядом с приложением. NODE_ENV Plantar задаёт автоматически — добавлять её сюда не нужно. Локальные .env-файлы из папки проекта на сервер не загружаются.",
   "env.confirmDiscard": "Несохранённые изменения будут потеряны. Продолжить?",
   "env.loading": "Загрузка переменных с сервера…",
   "env.load": "Загрузить переменные",
@@ -174,6 +178,8 @@ export const ru = {
   "projectSettings.typeStaticHint": "Статический сайт: React, Vite и другие",
   "projectSettings.typeNodeLabel": "Node.js",
   "projectSettings.typeNodeHint": "Серверное приложение: Express и другие",
+  "projectSettings.typeNextLabel": "Next.js",
+  "projectSettings.typeNextHint": "Next.js с серверной сборкой и запуском",
   "projectSettings.typeBotLabel": "Telegram-бот",
   "projectSettings.typeBotHint": "Бот на long polling: grammY, aiogram и другие",
   "projectSettings.nameError":
