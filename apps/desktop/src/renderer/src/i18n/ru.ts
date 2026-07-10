@@ -25,6 +25,7 @@ export const ru = {
   "app.tabStatus": "Статус",
   "app.tabLogs": "Логи",
   "app.tabHistory": "История",
+  "app.tabCommits": "Коммиты",
   "app.projectSettings": "Настройки проекта",
   "app.serverHint": "Сервер. Добавь проект через «+» в списке слева, чтобы деплоить.",
   "app.emptyAddServer": "Добавь первый сервер",
@@ -79,6 +80,15 @@ export const ru = {
   "deploy.terminalEmpty": "Здесь будет виден каждый шаг деплоя.",
   "deploy.updateAndDeploy": "Обновить и задеплоить",
   "deploy.notDeployedYet": "Ещё не деплоился",
+
+  "commits.loading": "Загружаю коммиты…",
+  "commits.empty": "Коммитов пока нет.",
+  "commits.branchHint": "Ветка {branch}",
+  "commits.refresh": "Обновить",
+  "commits.badge.onServer": "На сервере",
+  "commits.badge.deployed": "Задеплоен",
+  "commits.badge.failed": "Деплой упал",
+  "commits.badge.notDeployed": "Не деплоился",
 
   "addProjectDialog.title": "Новый проект",
   "addProjectDialog.description": "Откуда взять код проекта?",

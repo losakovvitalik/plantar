@@ -24,6 +24,7 @@ export const en: Record<MessageKey, string> = {
   "app.tabStatus": "Status",
   "app.tabLogs": "Logs",
   "app.tabHistory": "History",
+  "app.tabCommits": "Commits",
   "app.projectSettings": "Project settings",
   "app.serverHint":
     "This is a server. Add a project via “+” in the list on the left to deploy.",
@@ -79,6 +80,15 @@ export const en: Record<MessageKey, string> = {
   "deploy.terminalEmpty": "Every deploy step will show up here.",
   "deploy.updateAndDeploy": "Update and deploy",
   "deploy.notDeployedYet": "Not deployed yet",
+
+  "commits.loading": "Loading commits…",
+  "commits.empty": "No commits yet.",
+  "commits.branchHint": "Branch {branch}",
+  "commits.refresh": "Refresh",
+  "commits.badge.onServer": "On the server",
+  "commits.badge.deployed": "Deployed",
+  "commits.badge.failed": "Deploy failed",
+  "commits.badge.notDeployed": "Not deployed",
 
   "addProjectDialog.title": "New project",
   "addProjectDialog.description": "Where should the project code come from?",

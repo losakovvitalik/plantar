@@ -9,6 +9,7 @@ import type {
 import { AddProjectDialog } from "./components/add-project-dialog";
 import { AddServerDialog } from "./components/add-server-dialog";
 import { ProjectSettingsDialog } from "./components/project-settings-dialog";
+import { CommitsTab } from "./components/commits-tab";
 import { DeployTab } from "./components/deploy-tab";
 import { EnvTab } from "./components/env-tab";
 import { HistoryTab } from "./components/history-tab";
@@ -219,6 +220,11 @@ export default function App() {
                   <TabsTrigger className="px-4" value="deploy">
                     {t("app.tabDeploy")}
                   </TabsTrigger>
+                  {selectedProject.source === "git" && (
+                    <TabsTrigger className="px-4" value="commits">
+                      {t("app.tabCommits")}
+                    </TabsTrigger>
+                  )}
                   <TabsTrigger className="px-4" value="env">
                     {t("app.tabEnv")}
                   </TabsTrigger>
@@ -256,6 +262,11 @@ export default function App() {
                   onDeployed={refresh}
                 />
               </TabsContent>
+              {selectedProject.source === "git" && (
+                <TabsContent value="commits" className="h-full">
+                  <CommitsTab project={selectedProject} />
+                </TabsContent>
+              )}
               <TabsContent value="env" className="h-full">
                 <EnvTab
                   project={selectedProject}

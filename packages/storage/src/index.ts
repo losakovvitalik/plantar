@@ -158,6 +158,8 @@ export interface DeployRecord {
   status: "success" | "error";
   url?: string;
   error?: string;
+  /** Хеш задеплоенного коммита (для git-проектов); свяжет деплой с коммитом */
+  commit?: string;
   logFile: string;
 }
 
@@ -175,4 +177,35 @@ export function appendHistory(record: DeployRecord): void {
   const history = readHistory();
   history.push(record);
   writeFileSync(historyFile(), JSON.stringify(history, null, 2));
+}
+
+/** Коммит в кэше вкладки «Коммиты» (совпадает по форме с Commit из main/git.ts) */
+export interface CachedCommit {
+  hash: string;
+  subject: string;
+  date: string;
+  author: string;
+}
+
+/** Снимок вкладки «Коммиты» одного проекта: список коммитов + статусы деплоев */
+export interface CommitsCacheEntry {
+  commits: CachedCommit[];
+  history: DeployRecord[];
+  cachedAt: string;
+}
+
+function commitsCacheFile(): string {
+  return path.join(dataDir(), "commits-cache.json");
+}
+
+/** Кэш вкладки «Коммиты» по projectId — для мгновенного показа при открытии */
+export function readCommitsCache(): Record<string, CommitsCacheEntry> {
+  const file = commitsCacheFile();
+  if (!existsSync(file)) return {};
+  return JSON.parse(readFileSync(file, "utf8")) as Record<string, CommitsCacheEntry>;
+}
+
+export function writeCommitsCache(cache: Record<string, CommitsCacheEntry>): void {
+  mkdirSync(dataDir(), { recursive: true });
+  writeFileSync(commitsCacheFile(), JSON.stringify(cache, null, 2));
 }

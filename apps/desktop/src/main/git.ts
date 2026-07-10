@@ -127,3 +127,54 @@ export async function headCommit(
   const [hash, message = ""] = stdout.trim().split("\n");
   return { hash, message };
 }
+
+export interface Commit {
+  hash: string;
+  subject: string;
+  /** ISO-дата коммита */
+  date: string;
+  author: string;
+}
+
+/**
+ * Последние коммиты ветки. Сначала best-effort fetch (чтобы показать и ещё не
+ * задеплоенные коммиты), затем лог origin/<branch>. Если сети нет — показываем
+ * то, что уже в клоне. Разделители %x1f/новая строка не встречаются в полях.
+ */
+export async function listCommits(
+  dir: string,
+  branch: string,
+  token?: string,
+  limit = 30,
+): Promise<Commit[]> {
+  assertValidBranch(branch);
+  try {
+    await git([...authArgs(token), "-C", dir, "fetch", "--prune", "origin"]);
+  } catch {
+    /* нет сети/доступа — покажем локальную историю клона */
+  }
+
+  let ref = `origin/${branch}`;
+  try {
+    await git(["-C", dir, "rev-parse", "--verify", "--quiet", ref]);
+  } catch {
+    ref = "HEAD";
+  }
+
+  const stdout = await git([
+    "-C",
+    dir,
+    "log",
+    ref,
+    "-n",
+    String(limit),
+    "--format=%H%x1f%s%x1f%aI%x1f%an",
+  ]);
+  return stdout
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [hash, subject, date, author] = line.split("\x1f");
+      return { hash, subject, date, author };
+    });
+}

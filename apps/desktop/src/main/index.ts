@@ -24,14 +24,17 @@ import {
   type ProjectRecord,
   type ServerRecord,
   type AppSettings,
+  type DeployRecord,
   appendHistory,
   dataDir,
+  readCommitsCache,
   readHistory,
   readProjects,
   readServers,
   readSettings,
   reposDir,
   saveServerLogSnapshot,
+  writeCommitsCache,
   writeProjects,
   writeServers,
   writeSettings,
@@ -44,7 +47,7 @@ import {
   storePrivateKey,
 } from "./ssh-setup";
 import { dropConnection, isConnected, withPooledConnection } from "./ssh-pool";
-import { cloneRepo, headCommit, listRemoteBranches, updateRepo } from "./git";
+import { cloneRepo, headCommit, listCommits, listRemoteBranches, updateRepo } from "./git";
 import {
   getAccount,
   getToken,
@@ -79,6 +82,20 @@ function getProject(id: string): ProjectRecord {
 /** Эффективная папка проекта: клон/папка + подпапка (для монорепозиториев) */
 function projectDir(project: Pick<ProjectRecord, "path" | "subdir">): string {
   return project.subdir ? path.join(project.path, project.subdir) : project.path;
+}
+
+/** Записи истории деплоев проекта, новыми вперёд (имя берём из plantar.json, с фолбэком) */
+function projectHistory(project: ProjectRecord): DeployRecord[] {
+  const server = getServer(project.serverId);
+  let name = project.name;
+  try {
+    name = loadProjectConfig(projectDir(project)).name;
+  } catch {
+    /* plantar.json недоступен — используем имя на момент добавления */
+  }
+  return readHistory()
+    .filter((r) => r.project === name && r.host === server.host)
+    .reverse();
 }
 
 /**
@@ -337,11 +354,18 @@ async function runDeploy(
   const startedAt = new Date().toISOString();
 
   // git-проект: обновляем клон до свежего коммита ветки перед деплоем
+  let deployedCommit: { hash: string; message: string } | undefined;
   if (project.source === "git") {
     log(t("deployUpdatingRepo"));
     await updateRepo(project.path, project.branch!, getToken() ?? undefined);
     // plantar.json лежит untracked и переживает reset; на всякий случай восстанавливаем конфиг
     config = writeProjectConfig(dir, config);
+    // Коммит фиксируем до сборки — он нужен и в успешной, и в упавшей записи истории
+    try {
+      deployedCommit = await headCommit(project.path);
+    } catch {
+      /* не смогли прочитать коммит — деплой всё равно продолжаем */
+    }
   }
 
   const settings = readSettings();
@@ -361,20 +385,17 @@ async function runDeploy(
         finishedAt: new Date().toISOString(),
         status: "success",
         url: result.url,
+        commit: deployedCommit?.hash,
         logFile: logWriter.file,
       });
-      // git-проект: запоминаем задеплоенный коммит для показа в карточке проекта
-      if (project.source === "git") {
-        try {
-          const commit = await headCommit(project.path);
-          writeProjects(
-            readProjects().map((p) =>
-              p.id === project.id ? { ...p, deployedCommit: commit } : p,
-            ),
-          );
-        } catch {
-          /* не смогли прочитать коммит — не критично для деплоя */
-        }
+      // git-проект: запоминаем задеплоенный коммит для карточки проекта и вкладки «Коммиты»
+      if (deployedCommit) {
+        const commit = deployedCommit;
+        writeProjects(
+          readProjects().map((p) =>
+            p.id === project.id ? { ...p, deployedCommit: commit } : p,
+          ),
+        );
       }
       if (settings.notifyOnDeploySuccess) {
         notifyDeployResult(win, projectId, config.name, true);
@@ -390,6 +411,7 @@ async function runDeploy(
         finishedAt: new Date().toISOString(),
         status: "error",
         error: message,
+        commit: deployedCommit?.hash,
         logFile: logWriter.file,
       });
       notifyDeployResult(win, projectId, config.name, false);
@@ -478,6 +500,33 @@ app.whenReady().then(() => {
       const project = readProjects().find((p) => p.id === id);
       if (project?.source === "git") removeCloneDir(project.path);
       writeProjects(readProjects().filter((p) => p.id !== id));
+      // Убираем осиротевший снимок кэша коммитов
+      const cache = readCommitsCache();
+      if (id in cache) {
+        delete cache[id];
+        writeCommitsCache(cache);
+      }
+    }),
+  );
+  // Кэш вкладки «Коммиты»: мгновенный показ устаревшего снимка при открытии
+  ipcMain.handle("git:commitsCache", (_e, projectId: string) =>
+    toResult(async () => readCommitsCache()[projectId] ?? null),
+  );
+  // Свежий снимок: коммиты ветки (сетевой git fetch) + статусы деплоев; пишем в кэш
+  ipcMain.handle("git:commitsView", (_e, projectId: string) =>
+    toResult(async () => {
+      const project = getProject(projectId);
+      if (project.source !== "git") return { commits: [], history: [] };
+      const commits = await listCommits(
+        project.path,
+        project.branch!,
+        getToken() ?? undefined,
+      );
+      const history = projectHistory(project);
+      const cache = readCommitsCache();
+      cache[projectId] = { commits, history, cachedAt: new Date().toISOString() };
+      writeCommitsCache(cache);
+      return { commits, history };
     }),
   );
   ipcMain.handle(
@@ -568,20 +617,7 @@ app.whenReady().then(() => {
   );
 
   ipcMain.handle("history:list", (_e, projectId: string) =>
-    toResult(async () => {
-      const project = getProject(projectId);
-      const server = getServer(project.serverId);
-      // Имя сайта могли поменять в plantar.json — берём актуальное, с фолбэком
-      let name = project.name;
-      try {
-        name = loadProjectConfig(projectDir(project)).name;
-      } catch {
-        /* plantar.json недоступен — используем имя на момент добавления */
-      }
-      return readHistory()
-        .filter((r) => r.project === name && r.host === server.host)
-        .reverse();
-    }),
+    toResult(async () => projectHistory(getProject(projectId))),
   );
   ipcMain.handle("history:readLog", (_e, logFile: string) =>
     toResult(async () => {

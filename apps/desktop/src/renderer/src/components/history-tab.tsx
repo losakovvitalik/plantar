@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import type { DeployRecord, Language, ProjectRecord } from "@plantar/storage";
 import { type Translate, useI18n } from "../i18n";
 import { Button } from "./ui/button";
+import { DeployLogView } from "./deploy-log-view";
 
 const DATE_LOCALES: Record<Language, string> = { ru: "ru-RU", en: "en-US" };
 
@@ -32,34 +33,6 @@ function formatDuration(record: DeployRecord, t: Translate): string {
     minutes: Math.floor(seconds / 60),
     seconds: seconds % 60,
   });
-}
-
-/** Раскрытая запись: лениво подгружает и показывает лог деплоя */
-function DeployLogView({ logFile }: { logFile: string }) {
-  const { t } = useI18n();
-  const [content, setContent] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void (async () => {
-      const result = await window.plantar.readDeployLog(logFile);
-      if (result.ok) setContent(result.data);
-      else setError(result.error);
-    })();
-  }, [logFile]);
-
-  if (error) {
-    return (
-      <p className="border-t border-line px-4 py-3 text-[12.5px] text-clay">
-        {t("history.loadLogError", { error })}
-      </p>
-    );
-  }
-  return (
-    <pre className="thin-scroll max-h-72 overflow-y-auto rounded-b-xl bg-soil p-4 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-sprout">
-      {content ?? t("history.readingLog")}
-    </pre>
-  );
 }
 
 interface Props {

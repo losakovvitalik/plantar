@@ -1,6 +1,11 @@
 import type { DetectedProject, ProjectConfig, ProjectConfigInput } from "@plantar/config";
 import type { LogStreamSource, ServerInfo } from "@plantar/core";
-import type { AppSettings, DeployRecord, ProjectRecord, ServerRecord } from "@plantar/storage";
+import type {
+  AppSettings,
+  DeployRecord,
+  ProjectRecord,
+  ServerRecord,
+} from "@plantar/storage";
 
 export type {
   DetectedProject,
@@ -32,6 +37,20 @@ export interface RemoteBranches {
 
 export interface GithubAccount {
   login: string;
+}
+
+export interface GitCommit {
+  hash: string;
+  subject: string;
+  /** ISO-дата коммита */
+  date: string;
+  author: string;
+}
+
+/** Снимок вкладки «Коммиты»: коммиты ветки + статусы деплоев для бейджей */
+export interface CommitsView {
+  commits: GitCommit[];
+  history: DeployRecord[];
 }
 
 export interface DeviceLogin {
@@ -87,6 +106,10 @@ declare global {
       ) => Promise<IpcResult<ProjectConfig>>;
       /** Выбор подпапки проекта внутри клона (только git); null — отмена */
       pickSubdir: (root: string) => Promise<IpcResult<SubdirPick | null>>;
+      /** Закэшированный снимок вкладки «Коммиты» (мгновенно); null — кэша ещё нет */
+      getCommitsCache: (projectId: string) => Promise<IpcResult<CommitsView | null>>;
+      /** Свежий снимок вкладки «Коммиты» (сетевой git fetch); заодно обновляет кэш */
+      getCommitsView: (projectId: string) => Promise<IpcResult<CommitsView>>;
 
       getSettings: () => Promise<IpcResult<AppSettings>>;
       setSettings: (settings: AppSettings) => Promise<IpcResult<void>>;

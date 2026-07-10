@@ -21,6 +21,8 @@ const api = {
   writeProjectConfig: (projectId: string, config: unknown, subdir?: string) =>
     invoke("projects:writeConfig", { projectId, config, subdir }),
   pickSubdir: (root: string) => invoke("projects:pickSubdir", root),
+  getCommitsCache: (projectId: string) => invoke("git:commitsCache", projectId),
+  getCommitsView: (projectId: string) => invoke("git:commitsView", projectId),
 
   getSettings: () => invoke("settings:get"),
   setSettings: (settings: unknown) => invoke("settings:set", settings),
