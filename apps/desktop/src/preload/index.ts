@@ -14,6 +14,11 @@ const api = {
     invoke("projects:cloneRepo", { repoUrl, branch }),
   cancelClone: (clonePath: string) => invoke("projects:cancelClone", clonePath),
   addProject: (input: unknown) => invoke("projects:add", input),
+  discoverApps: (serverId: string, password?: string) =>
+    invoke("server:discover", { serverId, password }),
+  importProject: (input: unknown) => invoke("projects:import", input),
+  linkProjectFolder: (projectId: string) => invoke("projects:linkFolder", projectId),
+  linkProjectRepo: (projectId: string) => invoke("projects:linkRepo", projectId),
   removeProject: (id: string) => invoke("projects:remove", id),
   removeProjectFromServer: (projectId: string, password?: string) =>
     invoke("projects:removeFromServer", { projectId, password }),
@@ -49,6 +54,8 @@ const api = {
     invoke("server:info", { serverId, password }),
   isServerConnected: (serverId: string) => invoke("server:isConnected", serverId),
   deploy: (projectId: string, password?: string) => invoke("deploy:run", { projectId, password }),
+  rollback: (projectId: string, password?: string) =>
+    invoke("deploy:rollback", { projectId, password }),
 
   startLogStream: (projectId: string, source: string, password?: string) =>
     invoke("logs:streamStart", { projectId, source, password }),

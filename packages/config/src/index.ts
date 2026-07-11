@@ -44,6 +44,11 @@ function parseConfig(raw: unknown): ProjectConfig {
   return parsed.data;
 }
 
+/** Валидирует конфиг без файла — настройки импортированного проекта живут в записи проекта */
+export function parseProjectConfig(input: ProjectConfigInput): ProjectConfig {
+  return parseConfig(input);
+}
+
 export function hasProjectConfig(projectDir: string): boolean {
   return existsSync(path.join(projectDir, "plantar.json"));
 }

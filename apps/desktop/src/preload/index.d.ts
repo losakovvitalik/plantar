@@ -1,5 +1,5 @@
 import type { DetectedProject, ProjectConfig, ProjectConfigInput } from "@plantar/config";
-import type { LogStreamSource, ServerInfo } from "@plantar/core";
+import type { DiscoveredApp, LogStreamSource, ServerInfo } from "@plantar/core";
 import type {
   AppSettings,
   DeployRecord,
@@ -9,6 +9,7 @@ import type {
 
 export type {
   DetectedProject,
+  DiscoveredApp,
   LogStreamSource,
   ProjectConfig,
   ProjectConfigInput,
@@ -16,6 +17,23 @@ export type {
   ProjectRecord,
   ServerRecord,
 };
+
+/** Импорт найденного на сервере приложения как внешнего проекта */
+export interface ImportProjectInput {
+  serverId: string;
+  /** Настройки из формы импорта: имя, тип, рантайм, домен, порт */
+  config: ProjectConfigInput;
+  pm2Name: string;
+  appDir: string;
+  nginxConfFile?: string;
+  outLogPath?: string;
+  errLogPath?: string;
+  accessLogPath?: string;
+  errorLogPath?: string;
+  repoUrl?: string;
+  branch?: string;
+  repoSubdir?: string;
+}
 
 export interface PickedProject {
   path: string;
@@ -102,6 +120,20 @@ declare global {
         branch?: string;
       }) => Promise<IpcResult<ProjectRecord>>;
       removeProject: (id: string) => Promise<IpcResult<void>>;
+      /** Приложения, запущенные на сервере, но ещё не добавленные в Plantar */
+      discoverApps: (
+        serverId: string,
+        password?: string,
+      ) => Promise<IpcResult<DiscoveredApp[]>>;
+      importProject: (input: ImportProjectInput) => Promise<IpcResult<ProjectRecord>>;
+      /** Привязка папки с кодом к импортированному проекту; null — выбор отменён */
+      linkProjectFolder: (
+        projectId: string,
+      ) => Promise<IpcResult<{ project: ProjectRecord; config: ProjectConfig } | null>>;
+      /** Подключение обнаруженного GitHub-репозитория к импортированному проекту */
+      linkProjectRepo: (
+        projectId: string,
+      ) => Promise<IpcResult<{ project: ProjectRecord; config: ProjectConfig }>>;
       removeProjectFromServer: (
         projectId: string,
         password?: string,
@@ -152,6 +184,11 @@ declare global {
       /** Есть ли живое соединение с сервером — тогда пароль не понадобится */
       isServerConnected: (serverId: string) => Promise<IpcResult<boolean>>;
       deploy: (projectId: string, password?: string) => Promise<IpcResult<{ url?: string }>>;
+      /** Возврат предыдущей версии; лог приходит в onDeployLog */
+      rollback: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<{ url?: string }>>;
 
       /** Живой хвост логов: события приходят в onLogStreamData до stopLogStream */
       startLogStream: (

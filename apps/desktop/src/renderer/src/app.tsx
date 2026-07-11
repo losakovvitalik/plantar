@@ -1,4 +1,4 @@
-import { Settings2, Sprout } from "lucide-react";
+import { Radar, Settings2, Sprout } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ProjectConfig,
@@ -8,6 +8,7 @@ import type {
 } from "../../preload/index.d";
 import { AddProjectDialog } from "./components/add-project-dialog";
 import { AddServerDialog } from "./components/add-server-dialog";
+import { DiscoverAppsDialog } from "./components/discover-apps-dialog";
 import { ProjectSettingsDialog } from "./components/project-settings-dialog";
 import { CommitsTab } from "./components/commits-tab";
 import { DeployTab } from "./components/deploy-tab";
@@ -141,6 +142,9 @@ export default function App() {
     null,
   );
 
+  // Сервер, на котором открыт поиск запущенных приложений («Найдено на сервере»)
+  const [discoverFor, setDiscoverFor] = useState<ServerRecord | null>(null);
+
   const selectedServer =
     selection?.kind === "server"
       ? servers.find((s) => s.id === selection.id)
@@ -181,6 +185,15 @@ export default function App() {
     };
   }, [selectedProjectId, showError]);
 
+  // Обновляет список проектов и конфиг открытого проекта — после деплоя
+  // (первый деплой закрепляет порт) и после привязки папки с кодом
+  const refreshProject = useCallback(async () => {
+    await refresh();
+    if (!selectedProjectId) return;
+    const result = await window.plantar.readProjectConfig(selectedProjectId);
+    if (result.ok) setProjectConfig(result.data);
+  }, [refresh, selectedProjectId]);
+
   return (
     <div className="flex h-screen">
       {/* Зона перетаскивания окна на всю ширину; интерактивным элементам поверх неё нужен no-drag */}
@@ -208,11 +221,21 @@ export default function App() {
             <header className="px-6 pt-5">
               <div className="flex min-w-0 items-baseline gap-3">
                 <h1 className="shrink-0 text-lg font-bold">{selectedProject.name}</h1>
+                {selectedProject.external && (
+                  <span
+                    title={t("app.externalBadgeHint")}
+                    className="shrink-0 self-center rounded-full bg-amber-bg px-2 py-0.5 text-[11px] font-semibold text-soil"
+                  >
+                    {t("app.externalBadge")}
+                  </span>
+                )}
                 <span className="truncate font-mono text-[12px] text-ink-soft">
                   {projectServer.name} ·{" "}
                   {selectedProject.source === "git"
                     ? (selectedProject.repoUrl ?? selectedProject.path)
-                    : selectedProject.path}
+                    : selectedProject.path ||
+                      selectedProject.external?.appDir ||
+                      ""}
                 </span>
               </div>
               <div className="mt-3 flex items-center">
@@ -259,7 +282,7 @@ export default function App() {
                   askPassword={askPassword}
                   autoDeploy={autoDeploy}
                   onAutoDeployHandled={() => setAutoDeploy(false)}
-                  onDeployed={refresh}
+                  onDeployed={refreshProject}
                 />
               </TabsContent>
               {selectedProject.source === "git" && (
@@ -297,7 +320,23 @@ export default function App() {
         ) : selectedServer ? (
           <div className="flex h-full flex-col">
             <header className="px-6 pt-5">
-              <h1 className="text-lg font-bold">{selectedServer.name}</h1>
+              <div className="flex items-center gap-3">
+                <h1 className="min-w-0 truncate text-lg font-bold">
+                  {selectedServer.name}
+                </h1>
+                {/* Кнопка попадает под полосу перетаскивания окна: полоса — отдельный
+                    элемент поверх шапки, поэтому нужен и no-drag, и z-10 — иначе клики
+                    по верхней части кнопки молча достаются полосе */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="relative z-10 ml-auto shrink-0 [-webkit-app-region:no-drag]"
+                  onClick={() => setDiscoverFor(selectedServer)}
+                >
+                  <Radar />
+                  {t("app.discoverApps")}
+                </Button>
+              </div>
               <p className="mt-0.5 text-[13px] text-ink-soft">
                 {t("app.serverHint")}
               </p>
@@ -336,7 +375,9 @@ export default function App() {
           folderPath={
             selectedProject.source === "git"
               ? (selectedProject.repoUrl ?? selectedProject.path)
-              : selectedProject.path
+              : selectedProject.path ||
+                selectedProject.external?.appDir ||
+                ""
           }
           initial={projectConfig ?? {}}
           repoRoot={
@@ -443,6 +484,13 @@ export default function App() {
           setSelection({ kind: "project", id: result.data.id });
           return null;
         }}
+      />
+
+      <DiscoverAppsDialog
+        server={discoverFor}
+        askPassword={askPassword}
+        onClose={() => setDiscoverFor(null)}
+        onImported={() => void refresh()}
       />
 
       <RemoveProjectDialog

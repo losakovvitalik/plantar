@@ -148,6 +148,42 @@ const MESSAGES = {
     ru: "✓ Бот запущен. pm2 перезапустит его после падения и после перезагрузки сервера.",
     en: "✓ The bot is running. pm2 will restart it after a crash and after a server reboot.",
   },
+  takeoverStoppingOld: {
+    ru: "→ Останавливаю прежний процесс «{name}» — приложение переходит под управление Plantar…",
+    en: "→ Stopping the previous process “{name}” — the app is moving under Plantar management…",
+  },
+  takeoverOldStopped: {
+    ru: "✓ Прежний процесс остановлен и убран из автозапуска",
+    en: "✓ The previous process was stopped and removed from autostart",
+  },
+  takeoverDisablingNginx: {
+    ru: "→ Отключаю прежний конфиг nginx ({file})…",
+    en: "→ Disabling the previous nginx config ({file})…",
+  },
+  takeoverNginxManual: {
+    ru: "! Прежний конфиг nginx ({file}) лежит вне sites-enabled — Plantar его не трогает. Если сайт отвечает неправильно, отключите этот конфиг вручную.",
+    en: "! The previous nginx config ({file}) is outside sites-enabled — Plantar leaves it untouched. If the site responds incorrectly, disable that config manually.",
+  },
+  rollbackNotManaged: {
+    ru: "На сервере пока нет сохранённых версий этого приложения — они появятся после следующего деплоя через Plantar.",
+    en: "The server has no saved versions of this app yet — they will appear after the next deploy via Plantar.",
+  },
+  rollbackNoPrevious: {
+    ru: "Предыдущей версии нет: на сервере сохранена только одна версия приложения.",
+    en: "There is no previous version: the server has only one saved version of the app.",
+  },
+  rollbackNoEcosystem: {
+    ru: "В сохранённой версии {release} нет файла запуска — вернуться к ней не получится.",
+    en: "The saved version {release} has no start file — it cannot be restored.",
+  },
+  rollbackStarting: {
+    ru: "→ Возвращаю предыдущую версию ({release})…",
+    en: "→ Restoring the previous version ({release})…",
+  },
+  rollbackDone: {
+    ru: "✓ Возвращена версия {release}",
+    en: "✓ Version {release} restored",
+  },
 } satisfies Messages<string>;
 
 export const t = createT(MESSAGES);

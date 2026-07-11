@@ -6,17 +6,21 @@ import { SshConnection } from "@plantar/ssh";
 import {
   type LogStreamSource,
   deployProject,
+  discoverApps,
   getServerInfo,
   logStreamCommand,
   readProjectEnv,
   removeDeployedProject,
+  rollbackProject,
   writeProjectEnv,
 } from "@plantar/core";
 import {
+  type ProjectConfig,
   type ProjectConfigInput,
   detectProjectConfig,
   hasProjectConfig,
   loadProjectConfig,
+  parseProjectConfig,
   writeProjectConfig,
 } from "@plantar/config";
 import {
@@ -100,12 +104,20 @@ function projectDir(project: Pick<ProjectRecord, "path" | "subdir">): string {
   return project.subdir ? path.join(project.path, project.subdir) : project.path;
 }
 
+/** Конфиг проекта: у импортированных без папки живёт в записи, иначе — plantar.json */
+function projectConfig(project: ProjectRecord): ProjectConfig {
+  if (project.external && !project.path) {
+    return parseProjectConfig(project.external.config);
+  }
+  return loadProjectConfig(projectDir(project));
+}
+
 /** Записи истории деплоев проекта, новыми вперёд (имя берём из plantar.json, с фолбэком) */
 function projectHistory(project: ProjectRecord): DeployRecord[] {
   const server = getServer(project.serverId);
   let name = project.name;
   try {
-    name = loadProjectConfig(projectDir(project)).name;
+    name = projectConfig(project).name;
   } catch {
     /* plantar.json недоступен — используем имя на момент добавления */
   }
@@ -248,7 +260,7 @@ function assertNameFreeOnServer(serverId: string, name: string, excludeProjectId
     if (p.serverId !== serverId || p.id === excludeProjectId) return false;
     let existingName = p.name;
     try {
-      existingName = loadProjectConfig(projectDir(p)).name;
+      existingName = projectConfig(p).name;
     } catch {
       /* plantar.json недоступен — используем имя на момент добавления */
     }
@@ -257,6 +269,56 @@ function assertNameFreeOnServer(serverId: string, name: string, excludeProjectId
   if (clash) {
     throw new Error(t("nameTaken", { name, path: clash.path }));
   }
+}
+
+interface ImportProjectInput {
+  serverId: string;
+  /** Настройки из формы импорта: имя, тип, рантайм, домен, порт */
+  config: ProjectConfigInput;
+  pm2Name: string;
+  appDir: string;
+  nginxConfFile?: string;
+  outLogPath?: string;
+  errLogPath?: string;
+  accessLogPath?: string;
+  errorLogPath?: string;
+  repoUrl?: string;
+  branch?: string;
+  repoSubdir?: string;
+}
+
+/** Добавляет найденное на сервере приложение как внешний проект (без папки с кодом) */
+function importProject(input: ImportProjectInput): ProjectRecord {
+  getServer(input.serverId);
+  const config = parseProjectConfig(input.config);
+  assertNameFreeOnServer(input.serverId, config.name);
+  const record: ProjectRecord = {
+    id: randomUUID(),
+    serverId: input.serverId,
+    name: config.name,
+    path: "",
+    external: {
+      pm2Name: input.pm2Name,
+      appDir: input.appDir,
+      nginxConfFile: input.nginxConfFile,
+      outLogPath: input.outLogPath,
+      errLogPath: input.errLogPath,
+      accessLogPath: input.accessLogPath,
+      errorLogPath: input.errorLogPath,
+      repoUrl: input.repoUrl,
+      branch: input.branch,
+      repoSubdir: input.repoSubdir,
+      config: {
+        name: config.name,
+        type: config.type,
+        runtime: config.runtime,
+        domain: config.domain,
+        port: config.port,
+      },
+    },
+  };
+  writeProjects([...readProjects(), record]);
+  return record;
 }
 
 function addProject(input: AddProjectInput): ProjectRecord {
@@ -359,6 +421,8 @@ async function runDeploy(
 ): Promise<{ url?: string }> {
   const project = getProject(projectId);
   const server = getServer(project.serverId);
+  // Импортированный проект: деплой возможен только после привязки папки с кодом
+  if (project.external && !project.path) throw new Error(t("externalNeedsFolder"));
   const dir = projectDir(project);
   let config = loadProjectConfig(dir);
 
@@ -389,6 +453,13 @@ async function runDeploy(
     try {
       const result = await deployProject(conn, dir, config, log, {
         letsEncryptEmail: settings.letsEncryptEmail || undefined,
+        // Первый деплой импортированного проекта снимает прежний процесс и конфиг nginx
+        takeover: project.external
+          ? {
+              pm2Name: project.external.pm2Name,
+              nginxConfFile: project.external.nginxConfFile,
+            }
+          : undefined,
       });
       // Порт выбирается на сервере при первом деплое — закрепляем его в конфиге
       if (result.port && result.port !== config.port) {
@@ -405,11 +476,15 @@ async function runDeploy(
         logFile: logWriter.file,
       });
       // git-проект: запоминаем задеплоенный коммит для карточки проекта и вкладки «Коммиты»
-      if (deployedCommit) {
+      // Внешний проект после успешного деплоя переходит на управляемую структуру —
+      // пометка «внешний» снимается, дальше он живёт как обычный проект
+      if (deployedCommit || project.external) {
         const commit = deployedCommit;
         writeProjects(
           readProjects().map((p) =>
-            p.id === project.id ? { ...p, deployedCommit: commit } : p,
+            p.id === project.id
+              ? { ...p, ...(commit ? { deployedCommit: commit } : {}), external: undefined }
+              : p,
           ),
         );
       }
@@ -431,6 +506,57 @@ async function runDeploy(
         logFile: logWriter.file,
       });
       notifyDeployResult(win, projectId, config.name, false);
+      throw err;
+    }
+  });
+}
+
+/** Возврат предыдущей версии; лог идёт в тот же канал, что и лог деплоя */
+async function runRollback(
+  projectId: string,
+  password: string | undefined,
+  win: BrowserWindow,
+): Promise<{ url?: string }> {
+  const project = getProject(projectId);
+  // До первого деплоя через Plantar на сервере нет сохранённых версий
+  if (project.external) throw new Error(t("rollbackUnavailableExternal"));
+  const server = getServer(project.serverId);
+  const config = projectConfig(project);
+
+  const logWriter = new DeployLogWriter(config.name);
+  const log = (line: string) => {
+    logWriter.write(line);
+    win.webContents.send("deploy:log", { projectId, line });
+  };
+  const startedAt = new Date().toISOString();
+
+  return withServer(server, password, async (conn) => {
+    try {
+      const result = await rollbackProject(conn, config, log);
+      appendHistory({
+        project: config.name,
+        host: server.host,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        status: "success",
+        kind: "rollback",
+        url: result.url,
+        logFile: logWriter.file,
+      });
+      return { url: result.url };
+    } catch (err) {
+      const message = (err as Error).message;
+      logWriter.write(`\n${t("deployLogError")}: ${message}`);
+      appendHistory({
+        project: config.name,
+        host: server.host,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        status: "error",
+        kind: "rollback",
+        error: message,
+        logFile: logWriter.file,
+      });
       throw err;
     }
   });
@@ -582,6 +708,95 @@ app.whenReady().then(() => {
   ipcMain.handle("projects:add", (_e, input: AddProjectInput) =>
     toResult(async () => addProject(input)),
   );
+  // Обнаружение приложений, запущенных на сервере до подключения Plantar
+  ipcMain.handle("server:discover", (_e, args: { serverId: string; password?: string }) =>
+    toResult(async () => {
+      const server = getServer(args.serverId);
+      const apps = await withServer(server, args.password, (conn) => discoverApps(conn));
+      // Приложения, уже добавленные в Plantar, повторно не предлагаем
+      const taken = new Set<string>();
+      for (const p of readProjects().filter((p) => p.serverId === args.serverId)) {
+        taken.add(p.name);
+        if (p.external) taken.add(p.external.pm2Name);
+        try {
+          taken.add(projectConfig(p).name);
+        } catch {
+          /* plantar.json недоступен — имя записи уже учтено */
+        }
+      }
+      return apps.filter((a) => !taken.has(a.pm2Name) && !taken.has(a.suggestedName));
+    }),
+  );
+  ipcMain.handle("projects:import", (_e, input: ImportProjectInput) =>
+    toResult(async () => importProject(input)),
+  );
+  // Привязка папки с кодом к импортированному проекту: создаёт plantar.json
+  // из настроек, подтверждённых при импорте, поверх автоопределённых по папке
+  ipcMain.handle("projects:linkFolder", (_e, projectId: string) =>
+    toResult(async () => {
+      const project = getProject(projectId);
+      if (!project.external || project.path) throw new Error(t("linkFolderUnavailable"));
+      const picked = await dialog.showOpenDialog(win, {
+        title: t("pickProjectFolder"),
+        properties: ["openDirectory"],
+      });
+      if (picked.canceled || picked.filePaths.length === 0) return null;
+      const dir = picked.filePaths[0];
+      const base = hasProjectConfig(dir)
+        ? loadProjectConfig(dir)
+        : detectProjectConfig(dir).config;
+      const config = writeProjectConfig(dir, { ...base, ...project.external.config });
+      const updated = readProjects().map((p) =>
+        p.id === projectId ? { ...p, path: dir } : p,
+      );
+      writeProjects(updated);
+      return { project: updated.find((p) => p.id === projectId)!, config };
+    }),
+  );
+  // Подключение GitHub-репозитория к импортированному проекту: клонирует репозиторий,
+  // из которого приложение было задеплоено на сервер, и переводит проект в git-источник
+  ipcMain.handle("projects:linkRepo", (_e, projectId: string) =>
+    toResult(async () => {
+      const project = getProject(projectId);
+      const repoUrl = project.external?.repoUrl;
+      if (!project.external || project.path || !repoUrl) {
+        throw new Error(t("linkRepoUnavailable"));
+      }
+      // Ветку сервера могли удалить или HEAD был отвязан — берём ветку по умолчанию
+      const branch =
+        project.external.branch ??
+        (await listRemoteBranches(repoUrl, getToken() ?? undefined)).default;
+      const cloneDir = path.join(reposDir(), randomUUID());
+      await cloneRepo(repoUrl, branch, cloneDir, getToken() ?? undefined);
+      try {
+        const subdir = resolveSubdir(cloneDir, project.external.repoSubdir);
+        const dir = subdir ? path.join(cloneDir, subdir) : cloneDir;
+        const base = hasProjectConfig(dir)
+          ? loadProjectConfig(dir)
+          : detectProjectConfig(dir).config;
+        const config = writeProjectConfig(dir, { ...base, ...project.external.config });
+        const updated = readProjects().map((p) =>
+          p.id === projectId
+            ? {
+                ...p,
+                path: cloneDir,
+                subdir: subdir || undefined,
+                source: "git" as const,
+                repoUrl,
+                branch,
+              }
+            : p,
+        );
+        writeProjects(updated);
+        return { project: updated.find((p) => p.id === projectId)!, config };
+      } catch (err) {
+        // Подключение не удалось (например, папки приложения нет в репозитории) —
+        // не оставляем осиротевший клон
+        rmSync(cloneDir, { recursive: true, force: true });
+        throw err;
+      }
+    }),
+  );
   ipcMain.handle("projects:remove", (_e, id: string) =>
     toResult(async () => {
       const project = readProjects().find((p) => p.id === id);
@@ -633,7 +848,7 @@ app.whenReady().then(() => {
       }),
   );
   ipcMain.handle("projects:readConfig", (_e, projectId: string) =>
-    toResult(async () => loadProjectConfig(projectDir(getProject(projectId)))),
+    toResult(async () => projectConfig(getProject(projectId))),
   );
   // Открывает выбор подпапки внутри клона и определяет настройки в ней
   ipcMain.handle("projects:pickSubdir", (_e, root: string) =>
@@ -644,6 +859,28 @@ app.whenReady().then(() => {
     (_e, args: { projectId: string; config: ProjectConfigInput; subdir?: string }) =>
       toResult(async () => {
         const project = getProject(args.projectId);
+        // Импортированный проект без папки: plantar.json ещё нет,
+        // настройки живут в записи проекта
+        if (project.external && !project.path) {
+          const config = parseProjectConfig(args.config);
+          assertNameFreeOnServer(project.serverId, config.name, project.id);
+          const external = {
+            ...project.external,
+            config: {
+              name: config.name,
+              type: config.type,
+              runtime: config.runtime,
+              domain: config.domain,
+              port: config.port,
+            },
+          };
+          writeProjects(
+            readProjects().map((p) =>
+              p.id === project.id ? { ...p, name: config.name, external } : p,
+            ),
+          );
+          return config;
+        }
         // subdir применим только к git-проектам; для локальных остаётся как был
         const subdir =
           project.source === "git"
@@ -665,11 +902,11 @@ app.whenReady().then(() => {
       }),
   );
 
-  // Переменные проекта хранятся на сервере (вне папки релиза) и применяются при деплое
+  // Переменные проекта хранятся на сервере (вне папки версии) и применяются при деплое
   ipcMain.handle("env:read", (_e, args: { projectId: string; password?: string }) =>
     toResult(async () => {
       const project = getProject(args.projectId);
-      const config = loadProjectConfig(projectDir(project));
+      const config = projectConfig(project);
       return withServer(getServer(project.serverId), args.password, (conn) =>
         readProjectEnv(conn, config.name),
       );
@@ -680,7 +917,7 @@ app.whenReady().then(() => {
     (_e, args: { projectId: string; content: string; password?: string }) =>
       toResult(async () => {
         const project = getProject(args.projectId);
-        const config = loadProjectConfig(projectDir(project));
+        const config = projectConfig(project);
         await withServer(getServer(project.serverId), args.password, (conn) =>
           writeProjectEnv(conn, config.name, args.content),
         );
@@ -690,11 +927,14 @@ app.whenReady().then(() => {
   // Локальные .env-файлы из папки проекта — только на чтение, для импорта на сервер
   const ENV_FILE_RE = /^\.env[\w.-]*$/;
   ipcMain.handle("env:listLocal", (_e, projectId: string) =>
-    toResult(async () =>
-      readdirSync(projectDir(getProject(projectId)))
+    toResult(async () => {
+      const project = getProject(projectId);
+      // У импортированного проекта без папки локальных файлов нет
+      if (!project.path) return [];
+      return readdirSync(projectDir(project))
         .filter((f) => ENV_FILE_RE.test(f))
-        .sort(),
-    ),
+        .sort();
+    }),
   );
   ipcMain.handle("env:readLocal", (_e, args: { projectId: string; file: string }) =>
     toResult(async () => {
@@ -730,6 +970,9 @@ app.whenReady().then(() => {
   ipcMain.handle("deploy:run", (_e, args: { projectId: string; password?: string }) =>
     toResult(() => runDeploy(args.projectId, args.password, win)),
   );
+  ipcMain.handle("deploy:rollback", (_e, args: { projectId: string; password?: string }) =>
+    toResult(() => runRollback(args.projectId, args.password, win)),
+  );
 
   // Живые лог-стримы: id → остановка. Активный стрим держит соединение в пуле занятым
   const logStreams = new Map<string, () => void>();
@@ -747,10 +990,22 @@ app.whenReady().then(() => {
         // Имя могли поменять в plantar.json — берём актуальное, с фолбэком
         let name = project.name;
         try {
-          name = loadProjectConfig(projectDir(project)).name;
+          name = projectConfig(project).name;
         } catch {
           /* plantar.json недоступен — используем имя на момент добавления */
         }
+        // Импортированное приложение пишет логи по своим путям, пока Plantar
+        // не пересоздаст процесс при первом деплое
+        const external = project.external;
+        const logPaths =
+          external && args.source === "app" && external.outLogPath && external.errLogPath
+            ? { out: external.outLogPath, err: external.errLogPath }
+            : external && args.source === "nginx"
+              ? {
+                  out: external.accessLogPath ?? "/var/log/nginx/access.log",
+                  err: external.errorLogPath ?? "/var/log/nginx/error.log",
+                }
+              : undefined;
 
         const streamId = randomUUID();
         const send = (channel: string, payload: unknown) => {
@@ -770,7 +1025,7 @@ app.whenReady().then(() => {
           withServer(server, args.password, (conn) =>
             new Promise<void>((closed) => {
               conn
-                .execStream(logStreamCommand(args.source, name), {
+                .execStream(logStreamCommand(args.source, name, 200, logPaths), {
                   onStdout: (text) => {
                     collect("access", text);
                     send("logs:stream-data", { streamId, channel: "out", text });

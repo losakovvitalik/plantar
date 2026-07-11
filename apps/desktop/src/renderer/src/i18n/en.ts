@@ -37,6 +37,10 @@ export const en: Record<MessageKey, string> = {
     "Settings saved. They will apply to the app on the next deploy.",
   "app.newProject": "New project",
   "app.addProject": "Add project",
+  "app.discoverApps": "Find apps",
+  "app.externalBadge": "External",
+  "app.externalBadgeHint":
+    "This app was running on the server before Plantar. Restoring the previous version becomes available after the first deploy via Plantar.",
 
   "sidebar.servers": "Servers",
   "sidebar.addServer": "Add server",
@@ -84,6 +88,41 @@ export const en: Record<MessageKey, string> = {
   "deploy.errorCopied": "Copied",
   "deploy.updateAndDeploy": "Update and deploy",
   "deploy.notDeployedYet": "Not deployed yet",
+  "deploy.rollback": "Restore previous version",
+  "deploy.rollingBack": "Restoring…",
+  "deploy.rollbackConfirm":
+    "Restore the previous version of the app on the server? The current version will be stopped.",
+  "deploy.rollbackExternalHint":
+    "Restoring the previous version becomes available after the first deploy via Plantar.",
+  "deploy.rolledBackAt": "Previous version restored: {url}",
+  "deploy.rolledBackDone": "Previous version restored.",
+  "deploy.externalHint":
+    "This app was imported from the server. Logs and variables already work; after the first deploy Plantar starts keeping versions — restoring the previous version becomes available.",
+  "deploy.externalNeedsFolder":
+    "To deploy this app, choose the folder with its code on this computer.",
+  "deploy.externalRepoBefore": "This app was deployed from the repository",
+  "deploy.externalRepoAfter":
+    ". Connect it — updates will be pulled from GitHub on every deploy.",
+  "deploy.connectRepo": "Connect repository",
+  "deploy.connectingRepo": "Connecting…",
+  "deploy.pickFolder": "Choose code folder",
+
+  "discover.title": "Found on the server",
+  "discover.description":
+    "Apps running on the server “{server}” that are not in Plantar yet.",
+  "discover.hint":
+    "The project is added as external: logs and variables work right away, and restoring the previous version appears after the first deploy via Plantar.",
+  "discover.scanning": "Looking for running apps on the server…",
+  "discover.empty":
+    "No new apps found: everything running on the server is already in the list, or the server has no apps started via pm2.",
+  "discover.retry": "Search again",
+  "discover.statusOnline": "running",
+  "discover.statusStopped": "stopped",
+  "discover.serverFolder": "Folder on the server",
+  "discover.repo": "Repository",
+  "discover.add": "Add",
+  "discover.adding": "Adding…",
+  "discover.added": "Added",
 
   "commits.loading": "Loading commits…",
   "commits.empty": "No commits yet.",
@@ -174,6 +213,7 @@ export const en: Record<MessageKey, string> = {
   "history.seconds": "{seconds} s",
   "history.minutesSeconds": "{minutes} min {seconds} s",
   "history.openSite": "Open site",
+  "history.rollback": "Version restored",
 
   "logs.sourceApp": "App",
   "logs.channelOutput": "Output",

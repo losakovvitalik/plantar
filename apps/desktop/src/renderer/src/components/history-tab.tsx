@@ -111,6 +111,11 @@ export function HistoryTab({ project }: Props) {
                         duration: formatDuration(record, t),
                       })}
                     </span>
+                    {record.kind === "rollback" && (
+                      <span className="ml-2 rounded-full bg-moss/10 px-2 py-0.5 text-[11px] font-semibold text-moss">
+                        {t("history.rollback")}
+                      </span>
+                    )}
                   </div>
                   {record.status === "error" && (
                     <div className="mt-0.5 truncate text-[12.5px] text-clay">

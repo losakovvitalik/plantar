@@ -73,12 +73,43 @@ export interface DeployedCommit {
   message: string;
 }
 
+/** Приложение, обнаруженное на сервере при импорте: как управлять им до первого деплоя */
+export interface ExternalAppInfo {
+  /** Имя pm2-процесса на сервере; может отличаться от имени проекта */
+  pm2Name: string;
+  /** Папка приложения на сервере */
+  appDir: string;
+  /** Прежний конфиг nginx; отключается при первом деплое через Plantar */
+  nginxConfFile?: string;
+  /** Пути логов pm2-процесса — у чужих процессов бывают нестандартными */
+  outLogPath?: string;
+  errLogPath?: string;
+  /** Пути логов nginx из прежнего конфига */
+  accessLogPath?: string;
+  errorLogPath?: string;
+  /** Git-репозиторий, из которого приложение попало на сервер (https-адрес);
+   *  позволяет подключить проект к GitHub вместо выбора локальной папки */
+  repoUrl?: string;
+  branch?: string;
+  /** Папка приложения внутри репозитория; пусто — корень */
+  repoSubdir?: string;
+  /** Настройки проекта, пока не привязана папка с кодом и нет plantar.json */
+  config: {
+    name: string;
+    type: "static" | "node" | "next" | "bot";
+    runtime?: "node" | "python";
+    domain?: string;
+    port?: number;
+  };
+}
+
 export interface ProjectRecord {
   id: string;
   serverId: string;
   /** name из plantar.json на момент добавления */
   name: string;
-  /** Локальная папка проекта; для git-источника — путь к клону в reposDir() */
+  /** Локальная папка проекта; для git-источника — путь к клону в reposDir();
+   *  у импортированного с сервера проекта пусто, пока папка не привязана */
   path: string;
   /** Подпапка внутри path, где лежит проект (для монорепозиториев); пусто — корень */
   subdir?: string;
@@ -89,6 +120,10 @@ export interface ProjectRecord {
   branch?: string;
   /** Для source=git: коммит последнего успешного деплоя */
   deployedCommit?: DeployedCommit;
+  /** Импортирован с сервера: Plantar управляет приложением, но структура версий
+   *  появится после первого деплоя; до этого возврат версии недоступен.
+   *  Сбрасывается после первого успешного деплоя через Plantar. */
+  external?: ExternalAppInfo;
 }
 
 function readJsonList<T>(file: string): T[] {
@@ -156,6 +191,8 @@ export interface DeployRecord {
   startedAt: string;
   finishedAt: string;
   status: "success" | "error";
+  /** Запись создана возвратом предыдущей версии; отсутствует — обычный деплой */
+  kind?: "deploy" | "rollback";
   url?: string;
   error?: string;
   /** Хеш задеплоенного коммита (для git-проектов); свяжет деплой с коммитом */

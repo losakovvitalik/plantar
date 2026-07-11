@@ -1,4 +1,14 @@
-import { Check, Copy, ExternalLink, GitBranch, Globe, Rocket } from "lucide-react";
+import {
+  Check,
+  Copy,
+  ExternalLink,
+  FolderOpen,
+  GitBranch,
+  Globe,
+  PackageSearch,
+  Rocket,
+  Undo2,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type {
   ProjectConfig,
@@ -116,11 +126,20 @@ export function DeployTab({
 }: Props) {
   const { t } = useI18n();
   const isGit = project.source === "git";
+  const isExternal = Boolean(project.external);
+  const needsFolder = isExternal && !project.path;
+  // Репозиторий, из которого приложение было задеплоено на сервер (если нашёлся)
+  const externalRepo = project.external?.repoUrl;
+  const [linkingRepo, setLinkingRepo] = useState(false);
   const [lines, setLines] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
+  // Что именно выполняется — деплой или возврат версии (для подписей кнопок)
+  const [rollingBack, setRollingBack] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
   // Успешный деплой без адреса (боты) — показываем текст вместо ссылки
   const [deployed, setDeployed] = useState(false);
+  // Успешный возврат предыдущей версии — своя подпись результата
+  const [rolledBack, setRolledBack] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCommands, setShowCommands] = useState(
     () => localStorage.getItem(SHOW_COMMANDS_KEY) !== "0",
@@ -149,9 +168,11 @@ export function DeployTab({
     const password = await passwordFor(server, askPassword);
     if (password === null) return;
     setRunning(true);
+    setRollingBack(false);
     setLines([]);
     setUrl(null);
     setDeployed(false);
+    setRolledBack(false);
     setError(null);
     const result = await window.plantar.deploy(project.id, password);
     setRunning(false);
@@ -162,6 +183,54 @@ export function DeployTab({
     } else {
       setError(result.error);
     }
+  }
+
+  async function rollback() {
+    if (!window.confirm(t("deploy.rollbackConfirm"))) return;
+    const password = await passwordFor(server, askPassword);
+    if (password === null) return;
+    setRunning(true);
+    setRollingBack(true);
+    setLines([]);
+    setUrl(null);
+    setDeployed(false);
+    setRolledBack(false);
+    setError(null);
+    const result = await window.plantar.rollback(project.id, password);
+    setRunning(false);
+    setRollingBack(false);
+    if (result.ok) {
+      setUrl(result.data.url ?? null);
+      setRolledBack(true);
+      onDeployed();
+    } else {
+      setError(result.error);
+    }
+  }
+
+  /** Привязка папки с кодом к импортированному проекту — открывает выбор папки */
+  async function linkFolder() {
+    setError(null);
+    const result = await window.plantar.linkProjectFolder(project.id);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    if (!result.data) return; // выбор папки закрыли
+    onDeployed(); // родитель перечитает список проектов и конфиг
+  }
+
+  /** Подключение обнаруженного репозитория: клонирует его и переводит проект в git-источник */
+  async function linkRepo() {
+    setError(null);
+    setLinkingRepo(true);
+    const result = await window.plantar.linkProjectRepo(project.id);
+    setLinkingRepo(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    onDeployed();
   }
 
   useEffect(() => {
@@ -179,13 +248,23 @@ export function DeployTab({
   return (
     <div className="flex h-full flex-col gap-4">
       <div className="flex items-center gap-3">
-        <Button onClick={deploy} disabled={running || !config}>
+        <Button onClick={deploy} disabled={running || !config || needsFolder}>
           <Rocket />
-          {running
+          {running && !rollingBack
             ? t("deploy.running")
             : isGit
               ? t("deploy.updateAndDeploy")
               : t("deploy.start")}
+        </Button>
+
+        <Button
+          variant="outline"
+          onClick={rollback}
+          disabled={running || !config || isExternal}
+          title={isExternal ? t("deploy.rollbackExternalHint") : undefined}
+        >
+          <Undo2 />
+          {rollingBack ? t("deploy.rollingBack") : t("deploy.rollback")}
         </Button>
 
         {config && config.type !== "bot" && (
@@ -209,6 +288,54 @@ export function DeployTab({
         </label>
       </div>
 
+      {isExternal && (
+        <div className="flex items-center gap-3 rounded-lg bg-amber-bg px-3 py-2 text-[12.5px] leading-snug text-ink">
+          <PackageSearch className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1">
+            {!needsFolder ? (
+              t("deploy.externalHint")
+            ) : externalRepo ? (
+              <>
+                {t("deploy.externalRepoBefore")}{" "}
+                <button
+                  type="button"
+                  onClick={() => void window.plantar.openExternal(externalRepo)}
+                  className="break-all font-semibold text-moss underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-moss/50"
+                >
+                  {externalRepo}
+                </button>
+                {t("deploy.externalRepoAfter")}
+              </>
+            ) : (
+              t("deploy.externalNeedsFolder")
+            )}
+          </span>
+          {needsFolder && externalRepo && (
+            <Button
+              size="sm"
+              className="shrink-0"
+              onClick={() => void linkRepo()}
+              disabled={linkingRepo}
+            >
+              <GitBranch />
+              {linkingRepo ? t("deploy.connectingRepo") : t("deploy.connectRepo")}
+            </Button>
+          )}
+          {needsFolder && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => void linkFolder()}
+              disabled={linkingRepo}
+            >
+              <FolderOpen />
+              {t("deploy.pickFolder")}
+            </Button>
+          )}
+        </div>
+      )}
+
       {isGit && (
         <div className="flex items-center gap-2 rounded-lg bg-moss/5 px-3 py-2 text-[12.5px] text-ink-soft">
           <GitBranch className="size-3.5 shrink-0 text-moss" />
@@ -231,13 +358,19 @@ export function DeployTab({
           onClick={() => window.plantar.openExternal(url)}
           className="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-moss outline-none hover:underline focus-visible:ring-2 focus-visible:ring-moss/50"
         >
-          {t("deploy.deployedAt", { url })}
+          {rolledBack
+            ? t("deploy.rolledBackAt", { url })
+            : t("deploy.deployedAt", { url })}
           <ExternalLink className="size-3.5" />
         </button>
+      ) : deployed ? (
+        <p className="self-start text-sm font-semibold text-moss">
+          {t("deploy.botDeployed")}
+        </p>
       ) : (
-        deployed && (
+        rolledBack && (
           <p className="self-start text-sm font-semibold text-moss">
-            {t("deploy.botDeployed")}
+            {t("deploy.rolledBackDone")}
           </p>
         )
       )}

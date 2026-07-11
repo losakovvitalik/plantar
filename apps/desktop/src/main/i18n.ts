@@ -136,6 +136,22 @@ const MESSAGES = {
     ru: "Папка «{subdir}» не найдена в репозитории.",
     en: "The folder “{subdir}” was not found in the repository.",
   },
+  externalNeedsFolder: {
+    ru: "Сначала укажите папку с кодом проекта — кнопка на вкладке «Деплой».",
+    en: "First choose the folder with the project code — the button is on the Deploy tab.",
+  },
+  rollbackUnavailableExternal: {
+    ru: "Возврат предыдущей версии станет доступен после первого деплоя через Plantar.",
+    en: "Restoring the previous version becomes available after the first deploy via Plantar.",
+  },
+  linkFolderUnavailable: {
+    ru: "Папку с кодом можно привязать только к проекту, импортированному с сервера.",
+    en: "A code folder can only be linked to a project imported from the server.",
+  },
+  linkRepoUnavailable: {
+    ru: "У этого проекта нет обнаруженного репозитория — укажите папку с кодом.",
+    en: "This project has no detected repository — choose the folder with its code.",
+  },
 } satisfies Messages<string>;
 
 export const t = createT(MESSAGES);

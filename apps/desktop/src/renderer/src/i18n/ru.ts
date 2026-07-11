@@ -37,6 +37,10 @@ export const ru = {
     "Настройки сохранены. Они применятся к приложению при следующем деплое.",
   "app.newProject": "Новый проект",
   "app.addProject": "Добавить проект",
+  "app.discoverApps": "Найти приложения",
+  "app.externalBadge": "Внешний",
+  "app.externalBadgeHint":
+    "Приложение работало на сервере до Plantar. Возврат предыдущей версии станет доступен после первого деплоя через Plantar.",
 
   "sidebar.servers": "Серверы",
   "sidebar.addServer": "Добавить сервер",
@@ -84,6 +88,41 @@ export const ru = {
   "deploy.errorCopied": "Скопировано",
   "deploy.updateAndDeploy": "Обновить и задеплоить",
   "deploy.notDeployedYet": "Ещё не деплоился",
+  "deploy.rollback": "Вернуть предыдущую версию",
+  "deploy.rollingBack": "Возвращаю…",
+  "deploy.rollbackConfirm":
+    "Вернуть предыдущую версию приложения на сервере? Текущая версия будет остановлена.",
+  "deploy.rollbackExternalHint":
+    "Возврат предыдущей версии станет доступен после первого деплоя через Plantar.",
+  "deploy.rolledBackAt": "Предыдущая версия возвращена: {url}",
+  "deploy.rolledBackDone": "Предыдущая версия возвращена.",
+  "deploy.externalHint":
+    "Приложение импортировано с сервера. Логи и переменные уже работают, а после первого деплоя Plantar начнёт хранить версии — станет доступен возврат предыдущей версии.",
+  "deploy.externalNeedsFolder":
+    "Чтобы деплоить это приложение, укажите папку с его кодом на этом компьютере.",
+  "deploy.externalRepoBefore": "Приложение задеплоено из репозитория",
+  "deploy.externalRepoAfter":
+    ". Подключите его — обновления будут скачиваться из GitHub при каждом деплое.",
+  "deploy.connectRepo": "Подключить репозиторий",
+  "deploy.connectingRepo": "Подключаю…",
+  "deploy.pickFolder": "Указать папку с кодом",
+
+  "discover.title": "Найдено на сервере",
+  "discover.description":
+    "Приложения, запущенные на сервере «{server}», которых ещё нет в Plantar.",
+  "discover.hint":
+    "Проект добавится как внешний: логи и переменные заработают сразу, а возврат предыдущей версии появится после первого деплоя через Plantar.",
+  "discover.scanning": "Ищу запущенные приложения на сервере…",
+  "discover.empty":
+    "Новых приложений не нашлось: всё, что запущено на сервере, уже есть в списке, либо на сервере нет приложений, запущенных через pm2.",
+  "discover.retry": "Поискать ещё раз",
+  "discover.statusOnline": "работает",
+  "discover.statusStopped": "остановлено",
+  "discover.serverFolder": "Папка на сервере",
+  "discover.repo": "Репозиторий",
+  "discover.add": "Добавить",
+  "discover.adding": "Добавляю…",
+  "discover.added": "Добавлен",
 
   "commits.loading": "Загружаю коммиты…",
   "commits.empty": "Коммитов пока нет.",
@@ -174,6 +213,7 @@ export const ru = {
   "history.seconds": "{seconds} с",
   "history.minutesSeconds": "{minutes} мин {seconds} с",
   "history.openSite": "Открыть сайт",
+  "history.rollback": "Возврат версии",
 
   "logs.sourceApp": "Приложение",
   "logs.channelOutput": "Вывод",

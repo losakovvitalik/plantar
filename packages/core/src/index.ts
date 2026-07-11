@@ -4,9 +4,18 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
-import type { SshConnection } from "@plantar/ssh";
+import { type SshConnection, shellQuote } from "@plantar/ssh";
 import type { ProjectConfig } from "@plantar/config";
 import { t } from "./messages";
+
+export {
+  discoverApps,
+  normalizeGitUrl,
+  parseListeningPorts,
+  parseNginxSites,
+  parsePm2Jlist,
+} from "./discover";
+export type { DiscoveredApp, NginxSite, Pm2App } from "./discover";
 
 export interface ServerInfo {
   os: {
@@ -242,17 +251,26 @@ export function logStreamCommand(
   source: LogStreamSource,
   siteName: string,
   lines = 200,
+  /** Явные пути к логам — у импортированных приложений они бывают нестандартными */
+  paths?: { out: string; err: string },
 ): string {
-  const [out, err] =
-    source === "app"
-      ? [`$HOME/.pm2/logs/${siteName}-out.log`, `$HOME/.pm2/logs/${siteName}-error.log`]
-      : [`/var/log/nginx/${siteName}.access.log`, `/var/log/nginx/${siteName}.error.log`];
+  const [out, err] = paths
+    ? [shellQuote(paths.out), shellQuote(paths.err)]
+    : source === "app"
+      ? [
+          `"$HOME/.pm2/logs/${siteName}-out.log"`,
+          `"$HOME/.pm2/logs/${siteName}-error.log"`,
+        ]
+      : [
+          `"/var/log/nginx/${siteName}.access.log"`,
+          `"/var/log/nginx/${siteName}.error.log"`,
+        ];
   // Жалобы самих tail (нет файла и т.п.) глушатся, чтобы не мешаться с логами;
   // >&2 до 2>/dev/null: сначала stdout уходит в канал stderr, потом stderr tail — в null.
   // cat ждёт EOF по stdin (закрытие канала) и убивает tail — иначе они висят на сервере
   return (
-    `tail -n ${lines} -F "${out}" 2>/dev/null & OUT_PID=$!; ` +
-    `tail -n ${lines} -F "${err}" >&2 2>/dev/null & ERR_PID=$!; ` +
+    `tail -n ${lines} -F ${out} 2>/dev/null & OUT_PID=$!; ` +
+    `tail -n ${lines} -F ${err} >&2 2>/dev/null & ERR_PID=$!; ` +
     `cat >/dev/null 2>&1; kill $OUT_PID $ERR_PID 2>/dev/null`
   );
 }
@@ -304,6 +322,87 @@ export interface DeployResult {
   port?: number;
 }
 
+/**
+ * Управляемая структура на сервере: каждая версия деплоится в
+ * /var/www/<name>/releases/<метка времени>, симлинк current указывает
+ * на рабочую версию. Возврат предыдущей версии — переключение симлинка.
+ */
+const appBaseDir = (name: string) => `/var/www/${name}`;
+const releasesDir = (name: string) => `${appBaseDir(name)}/releases`;
+const KEEP_RELEASES = 5;
+
+/** Имя новой версии; сортируется по алфавиту как по времени */
+function newReleaseName(): string {
+  return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+}
+
+/**
+ * Переносит staging-папку в releases/<release>. Старую плоскую структуру
+ * (/var/www/<name> без releases) заменяет управляемой — прежняя копия
+ * и так перетиралась при каждом деплое.
+ */
+async function finalizeRelease(
+  conn: SshConnection,
+  name: string,
+  staging: string,
+  release: string,
+  log: (line: string) => void,
+): Promise<string> {
+  const base = appBaseDir(name);
+  const target = `${releasesDir(name)}/${release}`;
+  await run(
+    conn,
+    `if [ -e '${base}' ] && [ ! -d '${base}/releases' ]; then rm -rf '${base}'; fi && ` +
+      `mkdir -p '${releasesDir(name)}' && rm -rf '${target}' && mv '${staging}' '${target}'`,
+    log,
+  );
+  return target;
+}
+
+/** Переключает current на версию; nginx и возврат версии смотрят на этот симлинк */
+async function switchCurrent(
+  conn: SshConnection,
+  name: string,
+  release: string,
+  log: (line: string) => void,
+): Promise<void> {
+  await run(conn, `ln -sfn 'releases/${release}' '${appBaseDir(name)}/current'`, log);
+}
+
+/** Удаляет старые версии, оставляя KEEP_RELEASES последних (current всегда среди них) */
+async function pruneReleases(
+  conn: SshConnection,
+  name: string,
+  log: (line: string) => void,
+): Promise<void> {
+  await run(
+    conn,
+    `cd '${releasesDir(name)}' && ls -1 | sort | head -n -${KEEP_RELEASES} | xargs -r rm -rf --`,
+    log,
+  );
+}
+
+export interface ReleasesInfo {
+  /** Имена версий, новые сначала */
+  releases: string[];
+  /** Версия, на которую указывает current; null — управляемой структуры ещё нет */
+  current: string | null;
+}
+
+export async function listReleases(
+  conn: SshConnection,
+  name: string,
+): Promise<ReleasesInfo> {
+  const list = await conn.exec(`ls -1 '${releasesDir(name)}' 2>/dev/null | sort -r`);
+  const releases = list.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const link = await conn.exec(`readlink '${appBaseDir(name)}/current' 2>/dev/null`);
+  const current = link.stdout.trim().split("/").pop() ?? "";
+  return { releases, current: releases.includes(current) ? current : null };
+}
+
 async function configureNginx(
   conn: SshConnection,
   config: ProjectConfig,
@@ -332,7 +431,7 @@ async function configureNginx(
   const rootLines = appPort
     ? ""
     : `
-    root /var/www/${config.name};
+    root /var/www/${config.name}/current;
     index index.html;
 `;
 
@@ -389,6 +488,58 @@ async function setupSsl(
 export interface DeployOptions {
   /** Email для регистрации в Let's Encrypt */
   letsEncryptEmail?: string;
+  /** Первый деплой импортированного проекта: перед запуском снимается прежний
+   *  pm2-процесс, а прежний конфиг nginx отключается — приложение переходит
+   *  под управление Plantar */
+  takeover?: {
+    pm2Name: string;
+    nginxConfFile?: string;
+  };
+}
+
+/** Останавливает pm2-процесс, под которым приложение работало до импорта */
+async function takeoverPm2(
+  conn: SshConnection,
+  pm2Name: string,
+  log: (line: string) => void,
+): Promise<void> {
+  log(t("takeoverStoppingOld", { name: pm2Name }));
+  const deleted = await conn.exec(`pm2 delete ${shellQuote(pm2Name)}`);
+  if (deleted.code === 0) log(t("takeoverOldStopped"));
+  else log(t("pm2NotFound"));
+}
+
+/**
+ * Отключает прежний nginx-конфиг импортированного приложения, чтобы он
+ * не конфликтовал с конфигом Plantar. Трогает только sites-enabled:
+ * конфиг в другом месте безопаснее отключить вручную.
+ */
+async function disableForeignNginxConf(
+  conn: SshConnection,
+  confFile: string,
+  name: string,
+  log: (line: string) => void,
+): Promise<void> {
+  const ownPaths = [
+    `/etc/nginx/sites-available/${name}.conf`,
+    `/etc/nginx/sites-enabled/${name}.conf`,
+  ];
+  // Прежний конфиг совпадает с конфигом Plantar — он просто перезапишется
+  if (ownPaths.includes(confFile)) return;
+  if (!confFile.startsWith("/etc/nginx/sites-enabled/")) {
+    log(t("takeoverNginxManual", { file: confFile }));
+    return;
+  }
+  log(t("takeoverDisablingNginx", { file: confFile }));
+  const quoted = shellQuote(confFile);
+  // Симлинк удаляем (оригинал остаётся в sites-available); обычный файл
+  // переносим из sites-enabled, чтобы nginx перестал его подхватывать
+  await run(
+    conn,
+    `if [ -L ${quoted} ]; then rm -f ${quoted}; ` +
+      `else mv ${quoted} /etc/nginx/sites-available/"$(basename ${quoted})".imported; fi`,
+    log,
+  );
 }
 
 export async function deployProject(
@@ -404,7 +555,7 @@ export async function deployProject(
     case "next":
       return deployNode(conn, projectDir, config, log, options, true);
     case "bot":
-      return deployBot(conn, projectDir, config, log);
+      return deployBot(conn, projectDir, config, log, options);
     default:
       return deployStatic(conn, projectDir, config, log, options);
   }
@@ -462,7 +613,6 @@ async function deployStatic(
     throw new Error(t("buildDirMissing", { dir: config.buildDir, projectDir }));
   }
 
-  const target = `/var/www/${config.name}`;
   const staging = `/var/www/.${config.name}.uploading`;
 
   await run(conn, `rm -rf '${staging}'`, log);
@@ -470,9 +620,15 @@ async function deployStatic(
   const fileCount = await conn.uploadDirectory(localDist, staging, (file) =>
     log(`  ↑ ${file}`),
   );
-  await run(conn, `rm -rf '${target}' && mv '${staging}' '${target}'`, log);
+  const release = newReleaseName();
+  const target = await finalizeRelease(conn, config.name, staging, release, log);
+  await switchCurrent(conn, config.name, release, log);
+  await pruneReleases(conn, config.name, log);
   log(t("deployedFiles", { count: fileCount, target }));
 
+  if (options.takeover?.nginxConfFile) {
+    await disableForeignNginxConf(conn, options.takeover.nginxConfFile, config.name, log);
+  }
   await configureNginx(conn, config, log);
 
   let url: string;
@@ -542,13 +698,12 @@ async function uploadApp(
   config: ProjectConfig,
   log: (line: string) => void,
   buildOnServer = false,
-): Promise<{ target: string; fileCount: number }> {
+): Promise<{ target: string; fileCount: number; release: string }> {
   const python = config.runtime === "python";
   if (python && !existsSync(path.join(projectDir, "requirements.txt"))) {
     throw new Error(t("requirementsMissing", { dir: projectDir }));
   }
 
-  const target = `/var/www/${config.name}`;
   const staging = `/var/www/.${config.name}.uploading`;
 
   await run(conn, `rm -rf '${staging}'`, log);
@@ -596,9 +751,10 @@ async function uploadApp(
     );
   }
 
-  await run(conn, `rm -rf '${target}' && mv '${staging}' '${target}'`, log);
+  const release = newReleaseName();
+  const target = await finalizeRelease(conn, config.name, staging, release, log);
   log(t("deployedFiles", { count: fileCount, target }));
-  return { target, fileCount };
+  return { target, fileCount, release };
 }
 
 /** Пишет pm2-конфиг и запускает процесс; настраивает автозапуск после перезагрузки сервера */
@@ -638,7 +794,13 @@ async function startWithPm2(
   await run(conn, `cat > '${ecosystemPath}' <<'PLANTAR_EOF'\n${ecosystem}\nPLANTAR_EOF`, log);
 
   log(t("startingPm2", { command: startCommand }));
-  await run(conn, `pm2 startOrRestart '${ecosystemPath}' --update-env`, log);
+  // Каждая версия живёт в своей папке (releases/<метка>), а pm2 restart не всегда
+  // применяет новые cwd/script из конфига — процесс пересоздаётся заново
+  await run(
+    conn,
+    `pm2 delete '${config.name}' >/dev/null 2>&1; pm2 start '${ecosystemPath}'`,
+    log,
+  );
   // pm2 startup + save: процесс переживёт перезагрузку сервера
   await run(conn, `pm2 startup systemd -u "$(whoami)" --hp "$HOME"`, log);
   await run(conn, "pm2 save", log);
@@ -652,7 +814,7 @@ async function deployNode(
   options: DeployOptions,
   buildOnServer = false,
 ): Promise<DeployResult> {
-  const { target, fileCount } = await uploadApp(
+  const { target, fileCount, release } = await uploadApp(
     conn,
     projectDir,
     config,
@@ -663,10 +825,21 @@ async function deployNode(
   const port = config.port ?? (await pickFreePort(conn));
   if (port !== config.port) log(t("portAssigned", { port }));
 
+  // Прежний процесс импортированного приложения держит порт — снимаем его до запуска
+  if (options.takeover && options.takeover.pm2Name !== config.name) {
+    await takeoverPm2(conn, options.takeover.pm2Name, log);
+  }
+
   await startWithPm2(conn, target, config, { PORT: port, NODE_ENV: "production" }, log);
 
   await waitForApp(conn, config.name, port, log);
 
+  await switchCurrent(conn, config.name, release, log);
+  await pruneReleases(conn, config.name, log);
+
+  if (options.takeover?.nginxConfFile) {
+    await disableForeignNginxConf(conn, options.takeover.nginxConfFile, config.name, log);
+  }
   await configureNginx(conn, config, log, port);
 
   let url: string;
@@ -723,13 +896,95 @@ async function deployBot(
   projectDir: string,
   config: ProjectConfig,
   log: (line: string) => void,
+  options: DeployOptions = {},
 ): Promise<DeployResult> {
-  const { target, fileCount } = await uploadApp(conn, projectDir, config, log);
+  const { target, fileCount, release } = await uploadApp(conn, projectDir, config, log);
+
+  // Прежний процесс импортированного бота продолжил бы работать параллельно
+  if (options.takeover && options.takeover.pm2Name !== config.name) {
+    await takeoverPm2(conn, options.takeover.pm2Name, log);
+  }
 
   await startWithPm2(conn, target, config, { NODE_ENV: "production" }, log);
 
   await waitForStableProcess(conn, config.name, log);
 
+  await switchCurrent(conn, config.name, release, log);
+  await pruneReleases(conn, config.name, log);
+
   log(t("botDeployed"));
   return { target, fileCount };
+}
+
+/** Порт из pm2-конфига версии — на случай, если порт менялся между версиями */
+async function releasePort(
+  conn: SshConnection,
+  name: string,
+  release: string,
+): Promise<number | undefined> {
+  const ecosystem = await conn.exec(
+    `cat '${releasesDir(name)}/${release}/plantar.pm2.config.cjs' 2>/dev/null`,
+  );
+  const match = ecosystem.stdout.match(/"PORT":\s*(\d+)/);
+  return match ? Number(match[1]) : undefined;
+}
+
+export interface RollbackResult {
+  /** Версия, к которой вернулись */
+  release: string;
+  /** Адрес сайта; у ботов его нет */
+  url?: string;
+}
+
+/**
+ * Возвращает предыдущую версию: у сайтов переключает симлинк current,
+ * у приложений перезапускает pm2 из папки предыдущей версии.
+ * Работает только с управляемой структурой releases/current.
+ */
+export async function rollbackProject(
+  conn: SshConnection,
+  config: ProjectConfig,
+  log: (line: string) => void = () => {},
+): Promise<RollbackResult> {
+  const { releases, current } = await listReleases(conn, config.name);
+  if (!current) throw new Error(t("rollbackNotManaged"));
+  const previous = releases[releases.indexOf(current) + 1];
+  if (!previous) throw new Error(t("rollbackNoPrevious"));
+
+  log(t("rollbackStarting", { release: previous }));
+
+  if (config.type !== "static") {
+    const ecosystemPath = `${releasesDir(config.name)}/${previous}/plantar.pm2.config.cjs`;
+    const exists = await conn.exec(`test -f '${ecosystemPath}'`);
+    if (exists.code !== 0) throw new Error(t("rollbackNoEcosystem", { release: previous }));
+
+    await run(
+      conn,
+      `pm2 delete '${config.name}' >/dev/null 2>&1; pm2 start '${ecosystemPath}'`,
+      log,
+    );
+    await run(conn, "pm2 save", log);
+
+    if (config.type === "bot") {
+      await waitForStableProcess(conn, config.name, log);
+    } else {
+      const port = (await releasePort(conn, config.name, previous)) ?? config.port;
+      if (port) {
+        await waitForApp(conn, config.name, port, log);
+        // У предыдущей версии мог быть другой порт — направляем nginx на него
+        if (port !== config.port) await configureNginx(conn, config, log, port);
+      }
+    }
+  }
+
+  await switchCurrent(conn, config.name, previous, log);
+  log(t("rollbackDone", { release: previous }));
+
+  const url =
+    config.type === "bot"
+      ? undefined
+      : config.domain
+        ? `https://${config.domain}/`
+        : `http://${conn.host}/`;
+  return { release: previous, url };
 }
