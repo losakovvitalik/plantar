@@ -144,6 +144,8 @@ declare global {
         config: ProjectConfigInput,
         subdir?: string,
       ) => Promise<IpcResult<ProjectConfig>>;
+      /** Смена ветки git-проекта: переключает локальный клон и сохраняет выбор */
+      setProjectBranch: (projectId: string, branch: string) => Promise<IpcResult<void>>;
       /** Выбор подпапки проекта внутри клона (только git); null — отмена */
       pickSubdir: (root: string) => Promise<IpcResult<SubdirPick | null>>;
       /** Закэшированный снимок вкладки «Коммиты» (мгновенно); null — кэша ещё нет */

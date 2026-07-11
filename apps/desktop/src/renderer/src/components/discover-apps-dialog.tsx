@@ -14,6 +14,7 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Select } from "./ui/select";
 
 interface Props {
   /** Сервер, на котором ищем приложения; null — диалог закрыт */
@@ -240,18 +241,17 @@ function DiscoveredAppCard({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={`disc-type-${app.pm2Name}`}>{t("projectSettings.type")}</Label>
-            <select
+            <Select
               id={`disc-type-${app.pm2Name}`}
               value={type}
               onChange={(e) => setType(e.target.value as ImportType)}
-              className="border-input focus-visible:border-ring/60 focus-visible:ring-ring/30 h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:ring-2"
             >
               {IMPORT_TYPES.map((value) => (
                 <option key={value} value={value}>
                   {typeLabels[value]}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           {type !== "bot" && (
             <div className="flex flex-col gap-1.5">

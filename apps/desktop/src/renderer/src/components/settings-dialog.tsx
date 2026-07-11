@@ -15,6 +15,7 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Select } from "./ui/select";
 import { Switch } from "./ui/switch";
 
 interface Props {
@@ -114,20 +115,20 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
               <Label htmlFor="app-language" className="text-[13.5px] font-semibold">
                 {t("settings.language")}
               </Label>
-              <select
+              <Select
                 id="app-language"
                 value={settings.language}
                 onChange={(e) =>
                   setSettings({ ...settings, language: e.target.value as Language })
                 }
-                className="border-input focus-visible:border-ring/60 focus-visible:ring-ring/30 h-9 w-40 rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:ring-2"
+                className="w-40"
               >
                 {(Object.keys(LANGUAGE_NAMES) as Language[]).map((lang) => (
                   <option key={lang} value={lang}>
                     {LANGUAGE_NAMES[lang]}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
 
             <div className="flex items-start justify-between gap-6">

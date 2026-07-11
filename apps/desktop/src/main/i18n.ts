@@ -152,6 +152,10 @@ const MESSAGES = {
     ru: "У этого проекта нет обнаруженного репозитория — укажите папку с кодом.",
     en: "This project has no detected repository — choose the folder with its code.",
   },
+  branchNotGit: {
+    ru: "Сменить ветку можно только у проекта, добавленного из GitHub.",
+    en: "The branch can only be changed for a project added from GitHub.",
+  },
 } satisfies Messages<string>;
 
 export const t = createT(MESSAGES);

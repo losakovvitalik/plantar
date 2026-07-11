@@ -279,6 +279,10 @@ export const en: Record<MessageKey, string> = {
   "projectSettings.subdirPick": "Choose folder",
   "projectSettings.subdirHint":
     "Set a folder if the project is not at the repository root (for example, in a monorepo). Defaults to the root.",
+  "projectSettings.branch": "Branch",
+  "projectSettings.branchChange": "Change",
+  "projectSettings.branchHint":
+    "Deploys use the selected branch. If deploy on commit is set up, set it up again after changing the branch.",
 
   "removeProject.title": "Remove project “{name}”?",
   "removeProject.description":

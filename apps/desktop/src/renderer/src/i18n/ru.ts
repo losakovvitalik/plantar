@@ -279,6 +279,10 @@ export const ru = {
   "projectSettings.subdirPick": "Выбрать папку",
   "projectSettings.subdirHint":
     "Укажите папку, если проект лежит не в корне репозитория (например, в монорепозитории). По умолчанию — корень.",
+  "projectSettings.branch": "Ветка",
+  "projectSettings.branchChange": "Сменить",
+  "projectSettings.branchHint":
+    "Деплой идёт из выбранной ветки. Если настроен деплой при коммите, после смены ветки настройте его заново.",
 
   "removeProject.title": "Удалить проект «{name}»?",
   "removeProject.description":

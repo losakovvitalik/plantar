@@ -14,6 +14,7 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Select } from "./ui/select";
 import { NextLogo, NodeLogo, ReactLogo, TelegramLogo } from "./tech-logos";
 
 const PACKAGE_MANAGERS = ["npm", "pnpm", "yarn", "bun"] as const;
@@ -61,8 +62,12 @@ interface Props {
   /** Подсказка об источнике настроек (автоопределение / plantar.json) */
   note?: string;
   submitLabel: string;
-  /** Возвращает текст ошибки или null при успехе */
-  onSubmit: (config: ProjectConfigInput, subdir?: string) => Promise<string | null>;
+  /** Возвращает текст ошибки или null при успехе; branch передаётся, только если её сменили */
+  onSubmit: (
+    config: ProjectConfigInput,
+    subdir?: string,
+    branch?: string,
+  ) => Promise<string | null>;
   /** Сообщение об успешном сохранении — показывается внутри диалога */
   savedMessage?: string;
   /** Обработчик кнопки «Деплой» рядом с сообщением о сохранении */
@@ -71,6 +76,10 @@ interface Props {
   repoRoot?: string;
   /** Текущая подпапка проекта внутри репозитория ("" — корень) */
   initialSubdir?: string;
+  /** Ссылка на репозиторий git-проекта — включает смену ветки; пусто — смены нет */
+  repoUrl?: string;
+  /** Текущая ветка git-проекта */
+  initialBranch?: string;
 }
 
 export function ProjectSettingsDialog({
@@ -86,6 +95,8 @@ export function ProjectSettingsDialog({
   onDeploy,
   repoRoot,
   initialSubdir,
+  repoUrl,
+  initialBranch,
 }: Props) {
   const { t } = useI18n();
   const [type, setType] = useState<ProjectType>("static");
@@ -99,6 +110,9 @@ export function ProjectSettingsDialog({
   const [startCommand, setStartCommand] = useState("");
   const [port, setPort] = useState("");
   const [subdir, setSubdir] = useState("");
+  const [branch, setBranch] = useState("");
+  const [branches, setBranches] = useState<string[] | null>(null);
+  const [branchesLoading, setBranchesLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -119,10 +133,26 @@ export function ProjectSettingsDialog({
     if (open) {
       applyConfig(initial);
       setSubdir(initialSubdir ?? "");
+      setBranch(initialBranch ?? "");
+      setBranches(null);
       setError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  /** Загружает список веток репозитория и включает их выбор */
+  async function loadBranches() {
+    if (!repoUrl) return;
+    setBranchesLoading(true);
+    setError(null);
+    const result = await window.plantar.listRepoBranches(repoUrl);
+    setBranchesLoading(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setBranches(result.data.branches);
+  }
 
   /** Выбор подпапки проекта внутри репозитория с переопределением настроек по ней */
   async function pickSubdir() {
@@ -163,7 +193,9 @@ export function ProjectSettingsDialog({
       startCommand: startCommand.trim() || undefined,
       // Бот работает без домена — не тащим его из прежних настроек
       domain: type === "bot" ? undefined : domain.trim() || undefined,
-    }, repoRoot ? subdir : undefined);
+    },
+    repoRoot ? subdir : undefined,
+    branch && branch !== initialBranch ? branch : undefined);
     setBusy(false);
     if (result) setError(result);
   }
@@ -183,6 +215,50 @@ export function ProjectSettingsDialog({
             <p className="rounded-lg bg-moss/10 px-3 py-2 text-[12.5px] leading-snug text-moss">
               {note}
             </p>
+          )}
+
+          {repoUrl && initialBranch && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="prj-branch">{t("projectSettings.branch")}</Label>
+              {branches ? (
+                <Select
+                  id="prj-branch"
+                  value={branch}
+                  onChange={(e) => setBranch(e.target.value)}
+                >
+                  {(branches.includes(branch) ? branches : [branch, ...branches]).map(
+                    (b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ),
+                  )}
+                </Select>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate rounded-md border border-input bg-moss/5 px-3 py-1.5 font-mono text-[12.5px]">
+                    {branch}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => void loadBranches()}
+                    disabled={branchesLoading}
+                  >
+                    {branchesLoading
+                      ? t("common.loading")
+                      : t("projectSettings.branchChange")}
+                  </Button>
+                </div>
+              )}
+              {branches && (
+                <p className="text-[12px] leading-snug text-ink-soft/80">
+                  {t("projectSettings.branchHint")}
+                </p>
+              )}
+            </div>
           )}
 
           {repoRoot && (
@@ -269,21 +345,20 @@ export function ProjectSettingsDialog({
             {type === "bot" && (
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="prj-runtime">{t("projectSettings.runtime")}</Label>
-                <select
+                <Select
                   id="prj-runtime"
                   value={runtime}
                   onChange={(e) => setRuntime(e.target.value as "node" | "python")}
-                  className="border-input focus-visible:border-ring/60 focus-visible:ring-ring/30 h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:ring-2"
                 >
                   <option value="node">Node.js</option>
                   <option value="python">Python</option>
-                </select>
+                </Select>
               </div>
             )}
             {!(type === "bot" && runtime === "python") && (
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="prj-pm">{t("projectSettings.packageManager")}</Label>
-                <select
+                <Select
                   id="prj-pm"
                   value={packageManager}
                   onChange={(e) =>
@@ -291,14 +366,13 @@ export function ProjectSettingsDialog({
                       e.target.value as ProjectConfigInput["packageManager"],
                     )
                   }
-                  className="border-input focus-visible:border-ring/60 focus-visible:ring-ring/30 h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:ring-2"
                 >
                   {PACKAGE_MANAGERS.map((pm) => (
                     <option key={pm} value={pm}>
                       {pm}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
             {type === "static" && (

@@ -901,6 +901,25 @@ app.whenReady().then(() => {
         return config;
       }),
   );
+  // Смена ветки git-проекта: сразу переключаем локальный клон, чтобы подпапка
+  // и настройки читались из выбранной ветки, а не только со следующего деплоя
+  ipcMain.handle(
+    "projects:setBranch",
+    (_e, args: { projectId: string; branch: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        if (project.source !== "git" || !project.path) {
+          throw new Error(t("branchNotGit"));
+        }
+        assertValidBranch(args.branch);
+        await updateRepo(project.path, args.branch, getToken() ?? undefined);
+        writeProjects(
+          readProjects().map((p) =>
+            p.id === project.id ? { ...p, branch: args.branch } : p,
+          ),
+        );
+      }),
+  );
 
   // Переменные проекта хранятся на сервере (вне папки версии) и применяются при деплое
   ipcMain.handle("env:read", (_e, args: { projectId: string; password?: string }) =>

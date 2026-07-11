@@ -13,6 +13,7 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Select } from "./ui/select";
 
 interface Props {
   open: boolean;
@@ -144,18 +145,17 @@ export function AddProjectDialog({ open, onOpenChange, onPickLocal, onCloned }: 
             {branches && (
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="repo-branch">{t("addProjectDialog.branch")}</Label>
-                <select
+                <Select
                   id="repo-branch"
                   value={branch}
                   onChange={(e) => setBranch(e.target.value)}
-                  className="border-input focus-visible:border-ring/60 focus-visible:ring-ring/30 h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:ring-2"
                 >
                   {branches.map((b) => (
                     <option key={b} value={b}>
                       {b}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
 

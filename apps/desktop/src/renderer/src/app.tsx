@@ -384,6 +384,10 @@ export default function App() {
             selectedProject.source === "git" ? selectedProject.path : undefined
           }
           initialSubdir={selectedProject.subdir}
+          repoUrl={
+            selectedProject.source === "git" ? selectedProject.repoUrl : undefined
+          }
+          initialBranch={selectedProject.branch}
           submitLabel={t("common.save")}
           savedMessage={settingsSaved ? t("app.settingsSaved") : undefined}
           onDeploy={() => {
@@ -392,7 +396,16 @@ export default function App() {
             setTab("deploy");
             setAutoDeploy(true);
           }}
-          onSubmit={async (input, subdir) => {
+          onSubmit={async (input, subdir, branch) => {
+            // Ветку меняем до записи конфига: подпапка и plantar.json
+            // должны примениться уже к новой ветке
+            if (branch) {
+              const switched = await window.plantar.setProjectBranch(
+                selectedProject.id,
+                branch,
+              );
+              if (!switched.ok) return switched.error;
+            }
             const result = await window.plantar.writeProjectConfig(
               selectedProject.id,
               input,
@@ -400,6 +413,7 @@ export default function App() {
             );
             if (!result.ok) return result.error;
             const changed =
+              Boolean(branch) ||
               JSON.stringify(result.data) !== JSON.stringify(projectConfig);
             setProjectConfig(result.data);
             await refresh();
