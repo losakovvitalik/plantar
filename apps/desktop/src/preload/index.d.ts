@@ -2,12 +2,16 @@ import type { DetectedProject, ProjectConfig, ProjectConfigInput } from "@planta
 import type { DiscoveredApp, LogStreamSource, ServerInfo } from "@plantar/core";
 import type {
   AppSettings,
+  AppStatus,
+  AppStatusEntry,
   DeployRecord,
   ProjectRecord,
   ServerRecord,
 } from "@plantar/storage";
 
 export type {
+  AppStatus,
+  AppStatusEntry,
   DetectedProject,
   DiscoveredApp,
   LogStreamSource,
@@ -185,6 +189,10 @@ declare global {
       getServerInfo: (serverId: string, password?: string) => Promise<IpcResult<ServerInfo>>;
       /** Есть ли живое соединение с сервером — тогда пароль не понадобится */
       isServerConnected: (serverId: string) => Promise<IpcResult<boolean>>;
+      /** Живые статусы приложений сервера (один запрос); заодно обновляет кэш */
+      getAppStatuses: (serverId: string) => Promise<IpcResult<AppStatusEntry>>;
+      /** Кэш статусов приложений по serverId — снимок прошлой проверки */
+      getAppStatusCache: () => Promise<IpcResult<Record<string, AppStatusEntry>>>;
       deploy: (projectId: string, password?: string) => Promise<IpcResult<{ url?: string }>>;
       /** Возврат предыдущей версии; лог приходит в onDeployLog */
       rollback: (

@@ -50,6 +50,17 @@ export const en: Record<MessageKey, string> = {
   "sidebar.removeServer": "Remove server",
   "sidebar.removeProject": "Remove project from the list",
   "sidebar.settings": "Settings",
+  "sidebar.status.refresh": "Check app statuses",
+  "sidebar.status.running": "Running",
+  "sidebar.status.stopped": "Not running",
+  "sidebar.status.error": "Error — the app is down",
+  "sidebar.status.unknown": "Status unknown",
+  "sidebar.status.checking": "Checking…",
+  "sidebar.status.server.checking": "Checking…",
+  "sidebar.status.server.ok": "Server is reachable",
+  "sidebar.status.server.unreachable": "No connection to the server",
+  "sidebar.status.server.needsPassword": "Status unknown — password required",
+  "sidebar.status.checkedAt": "checked {time}",
 
   "addServer.title": "Add server",
   "addServer.description":

@@ -23,6 +23,7 @@ import { StatusTab } from "./components/status-tab";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { useI18n } from "./i18n";
+import { useAppStatuses } from "./lib/use-app-statuses";
 
 export type Selection = { kind: "server" | "project"; id: string } | null;
 
@@ -53,6 +54,14 @@ export default function App() {
     if (srv.ok) setServers(srv.data);
     if (prj.ok) setProjects(prj.data);
   }, []);
+
+  // Индикаторы «работает/не работает» в сайдбаре; каждое обновление списка
+  // (добавление, деплой) перепроверяет статусы
+  const {
+    statuses,
+    refreshing: statusesRefreshing,
+    refresh: refreshStatuses,
+  } = useAppStatuses(servers);
 
   useEffect(() => {
     void refresh();
@@ -202,6 +211,9 @@ export default function App() {
         servers={servers}
         projects={projects}
         selection={selection}
+        statuses={statuses}
+        refreshingStatuses={statusesRefreshing}
+        onRefreshStatuses={() => void refreshStatuses()}
         onSelect={setSelection}
         onAddServer={() => setAddServerOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}

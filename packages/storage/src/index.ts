@@ -246,3 +246,29 @@ export function writeCommitsCache(cache: Record<string, CommitsCacheEntry>): voi
   mkdirSync(dataDir(), { recursive: true });
   writeFileSync(commitsCacheFile(), JSON.stringify(cache, null, 2));
 }
+
+/** Статус приложения на сервере (по pm2-процессу); static — без живой проверки */
+export type AppStatus = "running" | "stopped" | "error" | "static";
+
+/** Снимок статусов приложений одного сервера */
+export interface AppStatusEntry {
+  /** projectId → статус */
+  apps: Record<string, AppStatus>;
+  checkedAt: string;
+}
+
+function appStatusCacheFile(): string {
+  return path.join(dataDir(), "app-status-cache.json");
+}
+
+/** Кэш статусов приложений по serverId — для мгновенного показа при открытии */
+export function readAppStatusCache(): Record<string, AppStatusEntry> {
+  const file = appStatusCacheFile();
+  if (!existsSync(file)) return {};
+  return JSON.parse(readFileSync(file, "utf8")) as Record<string, AppStatusEntry>;
+}
+
+export function writeAppStatusCache(cache: Record<string, AppStatusEntry>): void {
+  mkdirSync(dataDir(), { recursive: true });
+  writeFileSync(appStatusCacheFile(), JSON.stringify(cache, null, 2));
+}

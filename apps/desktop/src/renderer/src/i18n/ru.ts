@@ -50,6 +50,17 @@ export const ru = {
   "sidebar.removeServer": "Удалить сервер",
   "sidebar.removeProject": "Убрать проект из списка",
   "sidebar.settings": "Настройки",
+  "sidebar.status.refresh": "Проверить статусы приложений",
+  "sidebar.status.running": "Работает",
+  "sidebar.status.stopped": "Не запущено",
+  "sidebar.status.error": "Ошибка — приложение не работает",
+  "sidebar.status.unknown": "Статус неизвестен",
+  "sidebar.status.checking": "Проверка…",
+  "sidebar.status.server.checking": "Проверка…",
+  "sidebar.status.server.ok": "Сервер доступен",
+  "sidebar.status.server.unreachable": "Нет связи с сервером",
+  "sidebar.status.server.needsPassword": "Статус неизвестен — нужен пароль",
+  "sidebar.status.checkedAt": "проверено {time}",
 
   "addServer.title": "Добавить сервер",
   "addServer.description":

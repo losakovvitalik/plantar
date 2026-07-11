@@ -9,6 +9,7 @@ import {
   discoverApps,
   getServerInfo,
   logStreamCommand,
+  pm2ProcessStatuses,
   readProjectEnv,
   removeDeployedProject,
   rollbackProject,
@@ -25,12 +26,14 @@ import {
 } from "@plantar/config";
 import {
   DeployLogWriter,
+  type AppStatus,
   type ProjectRecord,
   type ServerRecord,
   type AppSettings,
   type DeployRecord,
   appendHistory,
   dataDir,
+  readAppStatusCache,
   readCommitsCache,
   readHistory,
   readProjects,
@@ -38,6 +41,7 @@ import {
   readSettings,
   reposDir,
   saveServerLogSnapshot,
+  writeAppStatusCache,
   writeCommitsCache,
   writeProjects,
   writeServers,
@@ -124,6 +128,26 @@ function projectHistory(project: ProjectRecord): DeployRecord[] {
   return readHistory()
     .filter((r) => r.project === name && r.host === server.host)
     .reverse();
+}
+
+/** Статус приложения проекта по карте pm2-процессов сервера (имя → статус) */
+function appStatusOf(project: ProjectRecord, pm2: Map<string, string>): AppStatus {
+  let name = project.name;
+  let type: string | undefined;
+  try {
+    const config = projectConfig(project);
+    name = config.name;
+    type = config.type;
+  } catch {
+    /* plantar.json недоступен — используем имя на момент добавления */
+  }
+  // Статичный сайт живёт без pm2-процесса — живой проверки для него нет
+  if (type === "static") return "static";
+  // Внешнее приложение до первого деплоя работает под прежним именем pm2
+  const status = pm2.get(project.external ? project.external.pm2Name : name);
+  if (status === "online" || status === "launching") return "running";
+  if (status === "errored") return "error";
+  return "stopped";
 }
 
 /**
@@ -688,6 +712,12 @@ app.whenReady().then(() => {
       dropConnection(id);
       writeServers(readServers().filter((s) => s.id !== id));
       writeProjects(readProjects().filter((p) => p.serverId !== id));
+      // Убираем осиротевший снимок статусов приложений
+      const statusCache = readAppStatusCache();
+      if (id in statusCache) {
+        delete statusCache[id];
+        writeAppStatusCache(statusCache);
+      }
     }),
   );
 
@@ -984,6 +1014,27 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("server:isConnected", (_e, serverId: string) =>
     toResult(async () => isConnected(serverId)),
+  );
+  // Статусы приложений сервера одним pm2-запросом; снимок кэшируется
+  // для мгновенного показа при следующем открытии приложения
+  ipcMain.handle("server:appStatuses", (_e, args: { serverId: string }) =>
+    toResult(async () => {
+      const server = getServer(args.serverId);
+      const pm2 = await withServer(server, undefined, (conn) => pm2ProcessStatuses(conn));
+      const apps: Record<string, AppStatus> = {};
+      for (const project of readProjects().filter((p) => p.serverId === args.serverId)) {
+        apps[project.id] = appStatusOf(project, pm2);
+      }
+      const entry = { apps, checkedAt: new Date().toISOString() };
+      const cache = readAppStatusCache();
+      cache[args.serverId] = entry;
+      writeAppStatusCache(cache);
+      return entry;
+    }),
+  );
+  // Кэш статусов прошлой проверки — показывается сразу, пока идёт живая
+  ipcMain.handle("server:appStatusesCache", () =>
+    toResult(async () => readAppStatusCache()),
   );
 
   ipcMain.handle("deploy:run", (_e, args: { projectId: string; password?: string }) =>

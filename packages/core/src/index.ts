@@ -16,6 +16,7 @@ export {
   parsePm2Jlist,
 } from "./discover";
 export type { DiscoveredApp, NginxSite, Pm2App } from "./discover";
+export { pm2ProcessStatuses } from "./status";
 
 export interface ServerInfo {
   os: {

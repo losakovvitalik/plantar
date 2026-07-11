@@ -1,13 +1,68 @@
-import { FolderPlus, Package, Plus, Server, Settings, Sprout, Trash2 } from "lucide-react";
-import type { ProjectRecord, ServerRecord } from "../../../preload/index.d";
+import {
+  FolderPlus,
+  Package,
+  Plus,
+  RefreshCw,
+  Server,
+  Settings,
+  Sprout,
+  Trash2,
+} from "lucide-react";
+import type { Language } from "@plantar/storage";
+import type { AppStatus, ProjectRecord, ServerRecord } from "../../../preload/index.d";
 import type { Selection } from "../app";
 import { useI18n } from "../i18n";
+import type { ServerAppStatuses } from "../lib/use-app-statuses";
 import { cn } from "../lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+
+const DATE_LOCALES: Record<Language, string> = { ru: "ru-RU", en: "en-US" };
+
+function formatChecked(iso: string, lang: Language): string {
+  return new Date(iso).toLocaleString(DATE_LOCALES[lang], {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+const SERVER_DOT: Record<ServerAppStatuses["kind"], string> = {
+  checking: "animate-pulse bg-sage/50",
+  ok: "bg-sprout",
+  unreachable: "bg-clay",
+  needsPassword: "border border-sage/50",
+};
+
+/** Статус проекта в сайдбаре; static не показывается — живой проверки для него нет */
+type ProjectDotKind = Exclude<AppStatus, "static"> | "unknown" | "checking";
+
+const PROJECT_DOT: Record<ProjectDotKind, string> = {
+  running: "bg-sprout",
+  stopped: "bg-sage/50",
+  error: "bg-clay",
+  unknown: "border border-sage/50",
+  checking: "animate-pulse bg-sage/50",
+};
+
+/** Статус приложения проекта из снимка сервера; нет данных — неизвестен */
+function projectDotKind(
+  server: ServerAppStatuses | undefined,
+  projectId: string,
+): AppStatus | "unknown" | "checking" {
+  if (!server) return "checking";
+  const status = server.apps[projectId];
+  if (status) return status;
+  return server.kind === "checking" ? "checking" : "unknown";
+}
 
 interface Props {
   servers: ServerRecord[];
   projects: ProjectRecord[];
   selection: Selection;
+  statuses: Record<string, ServerAppStatuses>;
+  refreshingStatuses: boolean;
+  onRefreshStatuses: () => void;
   onSelect: (selection: Selection) => void;
   onAddServer: () => void;
   onAddProject: (serverId: string) => void;
@@ -20,6 +75,9 @@ export function Sidebar({
   servers,
   projects,
   selection,
+  statuses,
+  refreshingStatuses,
+  onRefreshStatuses,
   onSelect,
   onAddServer,
   onAddProject,
@@ -27,7 +85,7 @@ export function Sidebar({
   onRemoveProject,
   onOpenSettings,
 }: Props) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   return (
     <aside className="flex w-60 shrink-0 flex-col bg-pine text-sage">
       {/* Отступ под кнопки-светофоры macOS; зона перетаскивания — общая полоса в app.tsx */}
@@ -42,13 +100,25 @@ export function Sidebar({
         <span className="text-[11px] font-bold tracking-[0.14em] text-sage/60 uppercase">
           {t("sidebar.servers")}
         </span>
-        <button
-          onClick={onAddServer}
-          title={t("sidebar.addServer")}
-          className="rounded-md p-1 text-sage/70 outline-none hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-sprout/50"
-        >
-          <Plus className="size-4" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          {servers.length > 0 && (
+            <button
+              onClick={onRefreshStatuses}
+              disabled={refreshingStatuses}
+              title={t("sidebar.status.refresh")}
+              className="rounded-md p-1 text-sage/70 outline-none hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-sprout/50"
+            >
+              <RefreshCw className={cn("size-3.5", refreshingStatuses && "animate-spin")} />
+            </button>
+          )}
+          <button
+            onClick={onAddServer}
+            title={t("sidebar.addServer")}
+            className="rounded-md p-1 text-sage/70 outline-none hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-sprout/50"
+          >
+            <Plus className="size-4" />
+          </button>
+        </div>
       </div>
 
       <nav className="thin-scroll flex-1 overflow-y-auto px-2 pb-2">
@@ -61,6 +131,10 @@ export function Sidebar({
         {servers.map((server) => {
           const serverProjects = projects.filter((p) => p.serverId === server.id);
           const serverActive = selection?.kind === "server" && selection.id === server.id;
+          const status = statuses[server.id];
+          const checkedSuffix = status?.checkedAt
+            ? ` · ${t("sidebar.status.checkedAt", { time: formatChecked(status.checkedAt, lang) })}`
+            : "";
           return (
             <div key={server.id} className="mb-1">
               <div
@@ -90,10 +164,28 @@ export function Sidebar({
                 >
                   <Trash2 className="size-3.5" />
                 </button>
+                {/* Точка всегда видима (кнопки появляются слева от неё) — иначе
+                    подсказку при наведении было бы не прочитать */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="flex size-3.5 shrink-0 items-center justify-center">
+                      <span
+                        className={cn(
+                          "size-2 rounded-full",
+                          SERVER_DOT[status?.kind ?? "checking"],
+                        )}
+                      />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    {t(`sidebar.status.server.${status?.kind ?? "checking"}`) + checkedSuffix}
+                  </TooltipContent>
+                </Tooltip>
               </div>
 
               {serverProjects.map((project) => {
                 const active = selection?.kind === "project" && selection.id === project.id;
+                const dot = projectDotKind(status, project.id);
                 return (
                   <div
                     key={project.id}
@@ -118,6 +210,18 @@ export function Sidebar({
                     >
                       <Trash2 className="size-3.5" />
                     </button>
+                    {dot !== "static" && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="flex size-3.5 shrink-0 items-center justify-center">
+                            <span className={cn("size-2 rounded-full", PROJECT_DOT[dot])} />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">
+                          {t(`sidebar.status.${dot}`) + checkedSuffix}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
                   </div>
                 );
               })}

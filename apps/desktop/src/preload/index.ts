@@ -55,6 +55,8 @@ const api = {
   getServerInfo: (serverId: string, password?: string) =>
     invoke("server:info", { serverId, password }),
   isServerConnected: (serverId: string) => invoke("server:isConnected", serverId),
+  getAppStatuses: (serverId: string) => invoke("server:appStatuses", { serverId }),
+  getAppStatusCache: () => invoke("server:appStatusesCache"),
   deploy: (projectId: string, password?: string) => invoke("deploy:run", { projectId, password }),
   rollback: (projectId: string, password?: string) =>
     invoke("deploy:rollback", { projectId, password }),
