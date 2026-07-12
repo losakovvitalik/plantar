@@ -269,6 +269,25 @@ export function parseNginxSites(dump: string): NginxSite[] {
 }
 
 /**
+ * server-блоки чужих конфигов, объявляющие тот же домен в server_name.
+ * Совпадение только точное: catch-all («_», «*.домен») конфликтом не считается.
+ * Собственные пути Plantar (sites-available|enabled/<имя>.conf) исключаются.
+ */
+export function findDomainConflicts(
+  sites: NginxSite[],
+  domain: string,
+  projectName: string,
+): NginxSite[] {
+  const ownFiles = new Set([
+    `/etc/nginx/sites-available/${projectName}.conf`,
+    `/etc/nginx/sites-enabled/${projectName}.conf`,
+  ]);
+  return sites.filter(
+    (site) => !ownFiles.has(site.file) && site.serverNames.includes(domain),
+  );
+}
+
+/**
  * Приводит адрес git-remote к https-виду, с которым работает Plantar
  * (клонирование с токеном идёт по https): git@host:owner/repo(.git) и
  * ssh://git@host/owner/repo → https://host/owner/repo.

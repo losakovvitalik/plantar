@@ -8,7 +8,7 @@ import { type SshConnection, shellQuote } from "@plantar/ssh";
 import { readPackageJson, type ProjectConfig } from "@plantar/config";
 import { t } from "./messages";
 
-import { ENV_FILE_RE } from "./discover";
+import { ENV_FILE_RE, findDomainConflicts, parseNginxSites } from "./discover";
 
 export {
   ENV_FILE_RE,
@@ -459,6 +459,20 @@ async function configureNginx(
   log: (line: string) => void,
   appPort?: number,
 ): Promise<void> {
+  // Чужой конфиг с тем же доменом перехватывал бы запросы (включая 443-блок
+  // с сертификатом) — отключаем его до записи своего конфига и до certbot
+  if (config.domain) {
+    const dump = await conn.exec("nginx -T 2>/dev/null");
+    const conflicts =
+      dump.code === 0
+        ? findDomainConflicts(parseNginxSites(dump.stdout), config.domain, config.name)
+        : [];
+    for (const file of new Set(conflicts.map((site) => site.file))) {
+      log(t("domainConflict", { domain: config.domain, file }));
+      await disableForeignNginxConf(conn, file, config.name, log);
+    }
+  }
+
   // Без домена сайт становится default_server — отвечает по IP.
   const listen = config.domain ? "80" : "80 default_server";
   const serverName = config.domain ?? "_";
@@ -535,6 +549,38 @@ async function setupSsl(
   log(t("httpsConfigured"));
 }
 
+/**
+ * Смоук-проверка после деплоя: запрос к публичному адресу с самого сервера,
+ * чтобы проверить всю цепочку nginx → приложение (без влияния DNS и сети
+ * пользователя). Редиректы и коды авторизации — сайт отвечает; 502/503/504
+ * или отсутствие ответа — прокси не достучался до приложения. Неудача не
+ * роняет деплой, а заменяет «сайт доступен» предупреждением.
+ */
+async function verifySiteAvailable(
+  conn: SshConnection,
+  url: string,
+  liveMessage: "siteAvailable" | "appAvailable",
+  log: (line: string) => void,
+): Promise<void> {
+  log(t("checkingSiteUrl", { url }));
+  // -k: проверяем доступность, а не сертификат; ретраи — nginx/приложению
+  // может понадобиться пара секунд после перезагрузки
+  const check = await conn.exec(
+    `for i in 1 2 3 4 5; do ` +
+      `code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 ${shellQuote(url)} 2>/dev/null || true); ` +
+      `case "$code" in ''|000|502|503|504) sleep 2;; *) echo "$code"; exit 0;; esac; ` +
+      `done; echo "$code"; exit 1`,
+  );
+  const code = check.stdout.trim().split("\n").pop() ?? "";
+  if (check.code === 0) {
+    log(t(liveMessage, { url }));
+  } else if (code === "" || code === "000") {
+    log(t("siteCheckNoResponse", { url }));
+  } else {
+    log(t("siteCheckBadGateway", { url, code }));
+  }
+}
+
 export interface DeployOptions {
   /** Email для регистрации в Let's Encrypt */
   letsEncryptEmail?: string;
@@ -583,11 +629,12 @@ async function disableForeignNginxConf(
   log(t("takeoverDisablingNginx", { file: confFile }));
   const quoted = shellQuote(confFile);
   // Симлинк удаляем (оригинал остаётся в sites-available); обычный файл
-  // переносим из sites-enabled, чтобы nginx перестал его подхватывать
+  // переносим из sites-enabled, чтобы nginx перестал его подхватывать.
+  // Уже отключённый файл (takeover + проверка домена) тихо пропускается.
   await run(
     conn,
     `if [ -L ${quoted} ]; then rm -f ${quoted}; ` +
-      `else mv ${quoted} /etc/nginx/sites-available/"$(basename ${quoted})".imported; fi`,
+      `elif [ -e ${quoted} ]; then mv ${quoted} /etc/nginx/sites-available/"$(basename ${quoted})".imported; fi`,
     log,
   );
 }
@@ -700,7 +747,7 @@ async function deployStatic(
   } else {
     url = `http://${conn.host}/`;
   }
-  log(t("siteAvailable", { url }));
+  await verifySiteAvailable(conn, url, "siteAvailable", log);
   return { target, fileCount, url };
 }
 
@@ -926,7 +973,7 @@ async function deployNode(
   } else {
     url = `http://${conn.host}/`;
   }
-  log(t("appAvailable", { url }));
+  await verifySiteAvailable(conn, url, "appAvailable", log);
   return { target, fileCount, url, port };
 }
 

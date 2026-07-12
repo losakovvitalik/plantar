@@ -97,6 +97,22 @@ const MESSAGES = {
     en: "✓ Files deployed: {count} → {target}",
   },
   siteAvailable: { ru: "✓ Сайт доступен: {url}", en: "✓ The site is live: {url}" },
+  domainConflict: {
+    ru: "! Адрес {domain} уже занят другой настройкой веб-сервера ({file}) — она перекрывала бы этот сайт",
+    en: "! The address {domain} is already taken by another web server configuration ({file}) — it would shadow this site",
+  },
+  checkingSiteUrl: {
+    ru: "→ Проверяю, что сайт открывается: {url}",
+    en: "→ Checking that the site opens: {url}",
+  },
+  siteCheckNoResponse: {
+    ru: "! Деплой завершён, но сайт {url} пока не отвечает. Попробуйте открыть его через минуту-другую; если не поможет — посмотрите логи.",
+    en: "! The deploy finished, but the site {url} is not responding yet. Try opening it in a minute or two; if that does not help, check the logs.",
+  },
+  siteCheckBadGateway: {
+    ru: "! Деплой завершён, но сайт {url} пока не открывается (ответ {code}): веб-сервер не достучался до приложения. Попробуйте открыть сайт через минуту-другую; если не поможет — посмотрите логи.",
+    en: "! The deploy finished, but the site {url} is not opening yet (response {code}): the web server could not reach the app. Try opening the site in a minute or two; if that does not help, check the logs.",
+  },
   noFreePort: {
     ru: "Не нашлось свободного порта в диапазоне {from}–{to}.",
     en: "No free port found in the range {from}–{to}.",
