@@ -5,6 +5,7 @@ import {
   FolderOpen,
   GitBranch,
   Globe,
+  Loader2,
   PackageSearch,
   Rocket,
   Undo2,
@@ -34,7 +35,14 @@ interface Props {
 
 const SHOW_COMMANDS_KEY = "plantar:showCommands";
 
-function DeployError({ message }: { message: string }) {
+function DeployError({
+  message,
+  onCompatRetry,
+}: {
+  message: string;
+  /** Конфликт зависимостей npm — показывает подсказку и кнопку режима совместимости */
+  onCompatRetry?: () => void;
+}) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -75,42 +83,54 @@ function DeployError({ message }: { message: string }) {
   }
 
   return (
-    <div className="flex min-h-0 items-start gap-3 rounded-lg bg-clay/10 px-3 py-2 text-clay">
-      <pre
-        className={`thin-scroll min-w-0 flex-1 font-sans text-[12.5px] leading-snug break-words whitespace-pre-wrap ${
-          expanded
-            ? "max-h-[16.5em] overflow-y-auto"
-            : hasMore
-              ? "max-h-[5.5em] overflow-hidden"
-              : ""
-        }`}
-      >
-        {content}
-      </pre>
-      <div className="flex shrink-0 items-center gap-3">
-        {hasMore && (
+    <div className="flex min-h-0 flex-col gap-2 rounded-lg bg-clay/10 px-3 py-2 text-clay">
+      <div className="flex min-h-0 items-start gap-3">
+        <pre
+          className={`thin-scroll min-w-0 flex-1 font-sans text-[12.5px] leading-snug break-words whitespace-pre-wrap ${
+            expanded
+              ? "max-h-[16.5em] overflow-y-auto"
+              : hasMore
+                ? "max-h-[5.5em] overflow-hidden"
+                : ""
+          }`}
+        >
+          {content}
+        </pre>
+        <div className="flex shrink-0 items-center gap-3">
+          {hasMore && (
+            <button
+              type="button"
+              className="rounded-sm text-[12.5px] font-semibold underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-clay/40"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {expanded ? t("deploy.hideError") : t("deploy.showMoreError")}
+            </button>
+          )}
           <button
             type="button"
-            className="rounded-sm text-[12.5px] font-semibold underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-clay/40"
-            aria-expanded={expanded}
-            onClick={() => setExpanded((value) => !value)}
+            className="inline-flex items-center gap-1.5 rounded-sm text-[12.5px] font-semibold underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-clay/40"
+            onClick={() => void copyMessage()}
           >
-            {expanded ? t("deploy.hideError") : t("deploy.showMoreError")}
+            {copied ? (
+              <Check className="size-3.5" />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
+            {copied ? t("deploy.errorCopied") : t("deploy.copyError")}
           </button>
-        )}
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-sm text-[12.5px] font-semibold underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-clay/40"
-          onClick={() => void copyMessage()}
-        >
-          {copied ? (
-            <Check className="size-3.5" />
-          ) : (
-            <Copy className="size-3.5" />
-          )}
-          {copied ? t("deploy.errorCopied") : t("deploy.copyError")}
-        </button>
+        </div>
       </div>
+      {onCompatRetry && (
+        <div className="flex items-center gap-3 border-t border-clay/20 pt-2">
+          <p className="min-w-0 flex-1 text-[12.5px] leading-snug">
+            {t("deploy.peerConflictHint")}
+          </p>
+          <Button size="sm" className="shrink-0" onClick={onCompatRetry}>
+            {t("deploy.compatRetry")}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -140,7 +160,8 @@ export function DeployTab({
   const [deployed, setDeployed] = useState(false);
   // Успешный возврат предыдущей версии — своя подпись результата
   const [rolledBack, setRolledBack] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // code — машинный код ошибки: по npm-peer-conflict показывается кнопка режима совместимости
+  const [error, setError] = useState<{ message: string; code?: string } | null>(null);
   const [showCommands, setShowCommands] = useState(
     () => localStorage.getItem(SHOW_COMMANDS_KEY) !== "0",
   );
@@ -163,6 +184,16 @@ export function DeployTab({
     }
   }, [lines]);
 
+  // Длительность текущего шага: долгие команды (npm install, сборка) не пишут в лог
+  // до завершения, и без бегущего счётчика деплой выглядит зависшим
+  const [stepSeconds, setStepSeconds] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    setStepSeconds(0);
+    const id = window.setInterval(() => setStepSeconds((s) => s + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [running, lines.length]);
+
   function toggleCommands(value: boolean) {
     setShowCommands(value);
     localStorage.setItem(SHOW_COMMANDS_KEY, value ? "1" : "0");
@@ -173,7 +204,7 @@ export function DeployTab({
   // в отличие от состояния running
   const busyRef = useRef(false);
 
-  async function deploy() {
+  async function deploy(legacyPeerDeps = false) {
     if (busyRef.current) return;
     busyRef.current = true;
     try {
@@ -187,14 +218,14 @@ export function DeployTab({
       setDeployed(false);
       setRolledBack(false);
       setError(null);
-      const result = await window.plantar.deploy(project.id, password);
+      const result = await window.plantar.deploy(project.id, password, legacyPeerDeps);
       setRunning(false);
       if (result.ok) {
         setUrl(result.data.url ?? null);
         setDeployed(true);
         onDeployed();
       } else {
-        setError(result.error);
+        setError({ message: result.error, code: result.code });
       }
     } finally {
       busyRef.current = false;
@@ -224,7 +255,7 @@ export function DeployTab({
         setRolledBack(true);
         onDeployed();
       } else {
-        setError(result.error);
+        setError({ message: result.error });
       }
     } finally {
       busyRef.current = false;
@@ -236,7 +267,7 @@ export function DeployTab({
     setError(null);
     const result = await window.plantar.linkProjectFolder(project.id);
     if (!result.ok) {
-      setError(result.error);
+      setError({ message: result.error });
       return;
     }
     if (!result.data) return; // выбор папки закрыли
@@ -250,7 +281,7 @@ export function DeployTab({
     const result = await window.plantar.linkProjectRepo(project.id);
     setLinkingRepo(false);
     if (!result.ok) {
-      setError(result.error);
+      setError({ message: result.error });
       return;
     }
     onDeployed();
@@ -271,7 +302,7 @@ export function DeployTab({
   return (
     <div className="flex h-full flex-col gap-4">
       <div className="flex items-center gap-3">
-        <Button onClick={deploy} disabled={running || !config || needsFolder}>
+        <Button onClick={() => void deploy()} disabled={running || !config || needsFolder}>
           <Rocket />
           {running && !rollingBack
             ? t("deploy.running")
@@ -398,7 +429,14 @@ export function DeployTab({
         )
       )}
 
-      {error && <DeployError message={error} />}
+      {error && (
+        <DeployError
+          message={error.message}
+          onCompatRetry={
+            error.code === "npm-peer-conflict" ? () => void deploy(true) : undefined
+          }
+        />
+      )}
 
       <div
         ref={terminalRef}
@@ -410,15 +448,30 @@ export function DeployTab({
         className="thin-scroll min-h-0 flex-1 overflow-y-auto rounded-xl bg-soil p-4 font-mono text-[12.5px] leading-relaxed text-sprout"
       >
         {visibleLines.length === 0 ? (
-          <span className="text-sprout/40">
+          <span className="inline-flex items-center gap-2 text-sprout/40">
+            {running && <Loader2 className="size-3.5 shrink-0 animate-spin" />}
             {running ? t("common.connecting") : t("deploy.terminalEmpty")}
           </span>
         ) : (
-          visibleLines.map((line, i) => (
-            <div key={i} className="whitespace-pre-wrap">
-              {line}
-            </div>
-          ))
+          <>
+            {visibleLines.map((line, i) => (
+              <div key={i} className="whitespace-pre-wrap">
+                {line}
+              </div>
+            ))}
+            {running && (
+              <div className="mt-1 flex items-center gap-2 text-sprout/60">
+                <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                {/* Счётчик — только на затянувшемся шаге; на быстрых был бы мельтешением */}
+                {stepSeconds >= 5 && (
+                  <span className="tabular-nums">
+                    {Math.floor(stepSeconds / 60)}:
+                    {String(stepSeconds % 60).padStart(2, "0")}
+                  </span>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

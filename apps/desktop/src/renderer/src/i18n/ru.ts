@@ -97,6 +97,9 @@ export const ru = {
   "deploy.hideError": "Скрыть",
   "deploy.copyError": "Копировать",
   "deploy.errorCopied": "Скопировано",
+  "deploy.peerConflictHint":
+    "Вы можете исправить версии в самом проекте. Либо установите зависимости в режиме совместимости — после успешного деплоя он сохранится и для следующих деплоев.",
+  "deploy.compatRetry": "Попробовать режим совместимости",
   "deploy.updateAndDeploy": "Обновить и задеплоить",
   "deploy.notDeployedYet": "Ещё не деплоился",
   "deploy.rollback": "Вернуть предыдущую версию",

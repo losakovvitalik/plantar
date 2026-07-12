@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
 import { type SshConnection, shellQuote } from "@plantar/ssh";
-import type { ProjectConfig } from "@plantar/config";
+import { readPackageJson, type ProjectConfig } from "@plantar/config";
 import { t } from "./messages";
 
 export {
@@ -122,6 +122,38 @@ const INSTALL_COMMANDS: Record<string, string[]> = {
     "DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv python3-pip",
   ],
 };
+
+/**
+ * npm не смог согласовать peer-зависимости (ERESOLVE). GUI по коду ошибки
+ * предлагает повторить деплой в режиме совместимости (--legacy-peer-deps).
+ */
+export class NpmPeerConflictError extends Error {
+  code = "npm-peer-conflict" as const;
+}
+
+/** Команда установки зависимостей с учётом режима совместимости (только npm) */
+function installCommandFor(config: ProjectConfig): string {
+  return config.packageManager === "npm" && config.legacyPeerDeps
+    ? "npm install --legacy-peer-deps"
+    : `${config.packageManager} install`;
+}
+
+function logInstallingDeps(config: ProjectConfig, log: (line: string) => void): void {
+  log(
+    config.packageManager === "npm" && config.legacyPeerDeps
+      ? t("installingDepsCompat")
+      : t("installingDeps", { packageManager: config.packageManager }),
+  );
+}
+
+/** Конфликт peer-зависимостей: строгий npm упал на ERESOLVE, режим совместимости не включён */
+function isPeerConflict(config: ProjectConfig, output: string): boolean {
+  return (
+    config.packageManager === "npm" &&
+    !config.legacyPeerDeps &&
+    output.includes("ERESOLVE")
+  );
+}
 
 async function run(
   conn: SshConnection,
@@ -558,6 +590,11 @@ async function disableForeignNginxConf(
   );
 }
 
+/** Бэкенды со скриптом build (Strapi, NestJS, TypeScript) стартуют из собранного кода */
+function hasBuildScript(projectDir: string): boolean {
+  return Boolean(readPackageJson(projectDir)?.scripts?.build);
+}
+
 export async function deployProject(
   conn: SshConnection,
   projectDir: string,
@@ -567,7 +604,7 @@ export async function deployProject(
 ): Promise<DeployResult> {
   switch (config.type) {
     case "node":
-      return deployNode(conn, projectDir, config, log, options);
+      return deployNode(conn, projectDir, config, log, options, hasBuildScript(projectDir));
     case "next":
       return deployNode(conn, projectDir, config, log, options, true);
     case "bot":
@@ -593,13 +630,16 @@ async function deployStatic(
   // локально. Без серверных env: там часто NODE_ENV=production, из-за которого
   // yarn/npm пропустят devDependencies (vite, typescript), и сборка упадёт.
   if (!existsSync(path.join(projectDir, "node_modules"))) {
-    const installCommand = `${config.packageManager} install`;
-    log(t("installingDeps", { packageManager: config.packageManager }));
+    const installCommand = installCommandFor(config);
+    logInstallingDeps(config, log);
     try {
       await execAsync(installCommand, { cwd: projectDir, maxBuffer: 50 * 1024 * 1024 });
     } catch (err) {
       const e = err as { stdout?: string; stderr?: string };
       const output = [e.stdout, e.stderr].filter(Boolean).join("\n").slice(-3000);
+      if (isPeerConflict(config, output)) {
+        throw new NpmPeerConflictError(t("npmPeerConflict", { output }));
+      }
       throw new Error(t("installLocalFailed", { command: installCommand, output }));
     }
   }
@@ -633,8 +673,12 @@ async function deployStatic(
 
   await run(conn, `rm -rf '${staging}'`, log);
   log(t("uploadingFiles"));
-  const fileCount = await conn.uploadDirectory(localDist, staging, (file) =>
-    log(`  ↑ ${file}`),
+  const fileCount = await conn.uploadDirectory(
+    localDist,
+    staging,
+    (file) => log(`  ↑ ${file}`),
+    [],
+    log,
   );
   const release = newReleaseName();
   const target = await finalizeRelease(conn, config.name, staging, release, log);
@@ -732,6 +776,7 @@ async function uploadApp(
     python
       ? [".venv", "__pycache__", ".git", ENV_FILE_RE]
       : ["node_modules", ...(buildOnServer ? [".next"] : []), ".git", ENV_FILE_RE],
+    log,
   );
   log(t("uploadedFiles", { count: fileCount }));
 
@@ -743,8 +788,22 @@ async function uploadApp(
       log,
     );
   } else {
-    log(t("installingDeps", { packageManager: config.packageManager }));
-    await run(conn, `cd '${staging}' && ${config.packageManager} install`, log);
+    logInstallingDeps(config, log);
+    const installCommand = `cd '${staging}' && ${installCommandFor(config)}`;
+    log(`$ ${installCommand}`);
+    const installed = await conn.exec(installCommand);
+    if (installed.code !== 0) {
+      const output = [installed.stdout, installed.stderr]
+        .filter(Boolean)
+        .join("\n")
+        .slice(-3000);
+      if (isPeerConflict(config, output)) {
+        throw new NpmPeerConflictError(t("npmPeerConflict", { output }));
+      }
+      throw new Error(
+        t("commandFailed", { code: installed.code, command: installCommand, stderr: output }),
+      );
+    }
   }
 
   // Env-файл проекта хранится вне папки релиза — кладём копию рядом с кодом,

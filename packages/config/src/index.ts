@@ -16,6 +16,8 @@ const projectConfigSchema = () =>
     /** Рантайм бота; python — зависимости из requirements.txt в venv */
     runtime: z.enum(["node", "python"]).default("node"),
     packageManager: z.enum(PACKAGE_MANAGERS).default("npm"),
+    /** npm: ставить зависимости с --legacy-peer-deps (конфликт версий, подтверждён пользователем) */
+    legacyPeerDeps: z.boolean().optional(),
     buildCommand: z.string().default("npm run build"),
     buildDir: z.string().default("dist"),
     /** Команда запуска Node.js-приложения; статические сайты её не используют */
@@ -117,7 +119,7 @@ interface PackageJson {
   devDependencies?: Record<string, string>;
 }
 
-function readPackageJson(dir: string): PackageJson | null {
+export function readPackageJson(dir: string): PackageJson | null {
   const file = path.join(dir, "package.json");
   if (!existsSync(file)) return null;
   try {

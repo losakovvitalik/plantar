@@ -105,7 +105,10 @@ export interface SetupActionsResult {
   actionsUrl: string;
 }
 
-export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
+/** code — машинный код ошибки (например npm-peer-conflict) для действий в GUI */
+export type IpcResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string; code?: string };
 
 export interface AddServerInput {
   name: string;
@@ -234,7 +237,11 @@ declare global {
         seconds: number,
         password?: string,
       ) => Promise<IpcResult<ServerMetrics>>;
-      deploy: (projectId: string, password?: string) => Promise<IpcResult<{ url?: string }>>;
+      deploy: (
+        projectId: string,
+        password?: string,
+        legacyPeerDeps?: boolean,
+      ) => Promise<IpcResult<{ url?: string }>>;
       /** Возврат предыдущей версии; лог приходит в onDeployLog */
       rollback: (
         projectId: string,

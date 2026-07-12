@@ -67,7 +67,8 @@ const api = {
     invoke("metrics:traffic", { projectId, password }),
   getServerMetrics: (serverId: string, seconds: number, password?: string) =>
     invoke("metrics:server", { serverId, seconds, password }),
-  deploy: (projectId: string, password?: string) => invoke("deploy:run", { projectId, password }),
+  deploy: (projectId: string, password?: string, legacyPeerDeps?: boolean) =>
+    invoke("deploy:run", { projectId, password, legacyPeerDeps }),
   rollback: (projectId: string, password?: string) =>
     invoke("deploy:rollback", { projectId, password }),
 

@@ -1,6 +1,8 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { Client, type SFTPWrapper } from "ssh2";
+import { create as createTar } from "tar";
 import { t } from "./messages";
 
 /**
@@ -150,9 +152,10 @@ export class SshConnection {
   }
 
   /**
-   * Рекурсивно загружает содержимое localDir в remoteDir.
-   * Папки и файлы, чьё имя (на любом уровне) совпадает со строкой
-   * или подходит под RegExp из exclude, пропускаются.
+   * Загружает содержимое localDir в remoteDir: пакует всё в tar.gz локально,
+   * передаёт одним файлом и распаковывает на сервере — одна передача вместо
+   * SFTP-запроса на каждый файл. Папки и файлы, чьё имя (на любом уровне)
+   * совпадает со строкой или подходит под RegExp из exclude, пропускаются.
    * Возвращает количество загруженных файлов.
    */
   async uploadDirectory(
@@ -160,45 +163,78 @@ export class SshConnection {
     remoteDir: string,
     onFile?: (relativePath: string) => void,
     exclude: (string | RegExp)[] = [],
+    log?: (line: string) => void,
   ): Promise<number> {
-    const entries = readdirSync(localDir, { recursive: true, withFileTypes: true });
-
-    const toPosix = (p: string) => p.split(path.sep).join(path.posix.sep);
     const excluded = (relativePath: string) =>
       relativePath
         .split(path.posix.sep)
         .some((part) =>
           exclude.some((e) => (typeof e === "string" ? e === part : e.test(part))),
         );
-    const dirs = entries
-      .filter((e) => e.isDirectory())
-      .map((e) => toPosix(path.join(path.relative(localDir, e.parentPath), e.name)))
-      .filter((d) => !excluded(d));
-    const files = entries
-      .filter((e) => e.isFile())
-      .map((e) => toPosix(path.join(path.relative(localDir, e.parentPath), e.name)))
-      .filter((f) => !excluded(f));
 
-    const mkdirTargets = [remoteDir, ...dirs.map((d) => path.posix.join(remoteDir, d))];
-    const mkdir = await this.exec(
-      `mkdir -p ${mkdirTargets.map(shellQuote).join(" ")}`,
-    );
-    if (mkdir.code !== 0) {
-      throw new Error(t("mkdirFailed", { stderr: mkdir.stderr }));
-    }
+    const tmpDir = mkdtempSync(path.join(tmpdir(), "plantar-upload-"));
+    const archive = path.join(tmpDir, "upload.tgz");
+    try {
+      let fileCount = 0;
+      await createTar(
+        {
+          gzip: true,
+          file: archive,
+          cwd: localDir,
+          // Не тащим в архив локальные uid/gid и прочие метаданные системы
+          portable: true,
+          filter: (entryPath, stat) => {
+            const rel = entryPath.replace(/^\.\/?/, "");
+            if (rel === "") return true;
+            if (excluded(rel)) return false;
+            // При упаковке с диска stat — это fs.Stats (ReadEntry бывает только при чтении tar)
+            if ("isFile" in stat && stat.isFile()) {
+              fileCount++;
+              onFile?.(rel);
+            }
+            return true;
+          },
+        },
+        ["."],
+      );
 
-    const sftp = await this.sftp();
-    for (const file of files) {
+      const mkdir = await this.exec(`mkdir -p ${shellQuote(remoteDir)}`);
+      if (mkdir.code !== 0) {
+        throw new Error(t("mkdirFailed", { stderr: mkdir.stderr }));
+      }
+
+      // Архив кладём внутрь remoteDir: очистка staging-папки убирает и его
+      const remoteArchive = path.posix.join(remoteDir, ".plantar-upload.tgz");
+      const sizeMb = Math.max(statSync(archive).size / 1024 / 1024, 0.1).toFixed(1);
+      log?.(t("uploadingArchive", { size: sizeMb }));
+      const sftp = await this.sftp();
       await new Promise<void>((resolve, reject) => {
+        let nextMilestone = 25;
         sftp.fastPut(
-          path.join(localDir, file),
-          path.posix.join(remoteDir, file),
+          archive,
+          remoteArchive,
+          {
+            step: (transferred, _chunk, total) => {
+              while (total > 0 && (transferred / total) * 100 >= nextMilestone && nextMilestone < 100) {
+                log?.(`  ↑ ${nextMilestone}%`);
+                nextMilestone += 25;
+              }
+            },
+          },
           (err) => (err ? reject(err) : resolve()),
         );
       });
-      onFile?.(file);
+
+      const extract = await this.exec(
+        `tar -xzf ${shellQuote(remoteArchive)} -C ${shellQuote(remoteDir)} && rm -f ${shellQuote(remoteArchive)}`,
+      );
+      if (extract.code !== 0) {
+        throw new Error(t("extractFailed", { stderr: extract.stderr }));
+      }
+      return fileCount;
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
     }
-    return files.length;
   }
 
   close(): void {

@@ -97,6 +97,9 @@ export const en: Record<MessageKey, string> = {
   "deploy.hideError": "Collapse",
   "deploy.copyError": "Copy",
   "deploy.errorCopied": "Copied",
+  "deploy.peerConflictHint":
+    "You can correct the versions in the project itself. Alternatively, install the dependencies in compatibility mode — after a successful deploy it will be kept for future deploys as well.",
+  "deploy.compatRetry": "Try compatibility mode",
   "deploy.updateAndDeploy": "Update and deploy",
   "deploy.notDeployedYet": "Not deployed yet",
   "deploy.rollback": "Restore previous version",

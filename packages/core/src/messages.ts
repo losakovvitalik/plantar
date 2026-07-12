@@ -79,6 +79,14 @@ const MESSAGES = {
     ru: "Не удалось установить зависимости ({command}):\n{output}",
     en: "Failed to install dependencies ({command}):\n{output}",
   },
+  npmPeerConflict: {
+    ru: "Не удалось установить зависимости: некоторые компоненты проекта конфликтуют друг с другом.\n{output}",
+    en: "Failed to install dependencies: some components of the project conflict with each other.\n{output}",
+  },
+  installingDepsCompat: {
+    ru: "→ Устанавливаю зависимости в режиме совместимости: npm install --legacy-peer-deps",
+    en: "→ Installing dependencies in compatibility mode: npm install --legacy-peer-deps",
+  },
   buildDirMissing: {
     ru: "После сборки не найдена папка «{dir}» в {projectDir}. Проверь buildDir в plantar.json.",
     en: "The “{dir}” folder was not found in {projectDir} after the build. Check buildDir in plantar.json.",

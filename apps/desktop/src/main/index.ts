@@ -87,13 +87,14 @@ import {
 } from "./github-actions";
 import { setLanguage, t } from "./i18n";
 
-type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
+type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
 
 async function toResult<T>(fn: () => Promise<T>): Promise<IpcResult<T>> {
   try {
     return { ok: true, data: await fn() };
   } catch (err) {
-    return { ok: false, error: (err as Error).message };
+    // code — машинный код ошибки (например npm-peer-conflict); GUI по нему предлагает действие
+    return { ok: false, error: (err as Error).message, code: (err as { code?: string }).code };
   }
 }
 
@@ -465,6 +466,8 @@ async function runDeploy(
   projectId: string,
   password: string | undefined,
   win: BrowserWindow,
+  // Режим совместимости (npm --legacy-peer-deps); пользователь подтвердил кнопкой в GUI
+  legacyPeerDeps?: boolean,
 ): Promise<{ url?: string }> {
   const project = getProject(projectId);
   const server = getServer(project.serverId);
@@ -496,9 +499,11 @@ async function runDeploy(
   }
 
   const settings = readSettings();
+  // Флаг не пишем в конфиг заранее: он закрепится ниже, только если деплой удался
+  const deployConfig = legacyPeerDeps ? { ...config, legacyPeerDeps: true } : config;
   return withServer(server, password, async (conn) => {
     try {
-      const result = await deployProject(conn, dir, config, log, {
+      const result = await deployProject(conn, dir, deployConfig, log, {
         letsEncryptEmail: settings.letsEncryptEmail || undefined,
         // Первый деплой импортированного проекта снимает прежний процесс и конфиг nginx
         takeover: project.external
@@ -508,9 +513,13 @@ async function runDeploy(
             }
           : undefined,
       });
-      // Порт выбирается на сервере при первом деплое — закрепляем его в конфиге
-      if (result.port && result.port !== config.port) {
-        writeProjectConfig(dir, { ...config, port: result.port });
+      // Закрепляем в конфиге порт (выбирается на сервере при первом деплое)
+      // и режим совместимости — подтверждённый выбор нужен и автодеплою из CI
+      const configUpdates: Partial<ProjectConfig> = {};
+      if (result.port && result.port !== config.port) configUpdates.port = result.port;
+      if (legacyPeerDeps && !config.legacyPeerDeps) configUpdates.legacyPeerDeps = true;
+      if (Object.keys(configUpdates).length > 0) {
+        writeProjectConfig(dir, { ...config, ...configUpdates });
       }
       appendHistory({
         project: config.name,
@@ -1137,10 +1146,14 @@ app.whenReady().then(() => {
       }),
   );
 
-  ipcMain.handle("deploy:run", (_e, args: { projectId: string; password?: string }) =>
-    toResult(() =>
-      withDeployLock(args.projectId, () => runDeploy(args.projectId, args.password, win)),
-    ),
+  ipcMain.handle(
+    "deploy:run",
+    (_e, args: { projectId: string; password?: string; legacyPeerDeps?: boolean }) =>
+      toResult(() =>
+        withDeployLock(args.projectId, () =>
+          runDeploy(args.projectId, args.password, win, args.legacyPeerDeps),
+        ),
+      ),
   );
   ipcMain.handle("deploy:rollback", (_e, args: { projectId: string; password?: string }) =>
     toResult(() =>
