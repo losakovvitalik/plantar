@@ -151,6 +151,34 @@ export function EnvTab({ project, server, askPassword }: Props) {
     setDirty(true);
   }
 
+  /**
+   * Вставка многострочного текста в поле строки разбирается как env-файл:
+   * переменные добавляются отдельными строками (пустая строка заменяется,
+   * иначе вставка идёт после текущей). Однострочная вставка работает как обычно.
+   */
+  function pasteEnv(index: number, e: React.ClipboardEvent<HTMLInputElement>) {
+    const text = e.clipboardData.getData("text");
+    if (!text.includes("\n")) return;
+    const pasted = parseEnv(text);
+    if (!pasted.some((l) => l.type === "var")) return;
+    e.preventDefault();
+    const current = lines![index];
+    const replaceEmpty =
+      current.type === "var" && !current.key && !current.value;
+    const at = replaceEmpty ? index : index + 1;
+    setLines((prev) => {
+      const next = [...prev!];
+      next.splice(at, replaceEmpty ? 1 : 0, ...pasted);
+      return next;
+    });
+    // Индексы строк после точки вставки сдвигаются — пересчитываем раскрытые
+    const shift = pasted.length - (replaceEmpty ? 1 : 0);
+    setRevealed(
+      (prev) => new Set([...prev].map((i) => (i >= at ? i + shift : i))),
+    );
+    setDirty(true);
+  }
+
   async function importLocal(file: string) {
     const result = await window.plantar.readLocalEnvFile(project.id, file);
     if (!result.ok) {
@@ -197,115 +225,8 @@ export function EnvTab({ project, server, askPassword }: Props) {
           </div>
         )
       ) : (
-        <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
-          {varCount === 0 ? (
-            <div className="flex flex-col items-center py-10 text-center">
-              <FileKey2 className="size-8 text-[#b8bfb8]" />
-              <h3 className="mt-3 text-[15px] font-bold">
-                {t("env.emptyTitle")}
-              </h3>
-              <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-ink-soft">
-                {t("env.emptyHint")}
-              </p>
-              {localFiles.length > 0 && (
-                <div className="mt-4 flex flex-col items-center gap-2">
-                  <p className="text-[12.5px] text-ink-soft">
-                    {t("env.importHint")}
-                  </p>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    {localFiles.map((file) => (
-                      <Button
-                        key={file}
-                        variant="outline"
-                        size="sm"
-                        onClick={() => importLocal(file)}
-                        className="font-mono text-[12.5px]"
-                      >
-                        <Import />
-                        {file}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="mb-2 flex justify-end gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={load}
-                disabled={loading}
-                className="text-ink-soft"
-                title={t("env.refreshTitle")}
-              >
-                <RefreshCw className={cn(loading && "animate-spin")} />
-                {t("env.refresh")}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowAll((v) => !v)}
-                className="text-ink-soft"
-              >
-                {showAll ? <EyeOff /> : <Eye />}
-                {showAll ? t("env.hideAll") : t("env.showAll")}
-              </Button>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-2">
-            {(lines ?? []).map((line, i) => {
-              if (line.type !== "var") return null;
-              const isRevealed = showAll || revealed.has(i);
-              return (
-                <div key={i} className="group flex items-center gap-2">
-                  <Input
-                    value={line.key}
-                    onChange={(e) => update(i, { key: e.target.value })}
-                    placeholder={t("env.keyPlaceholder")}
-                    className="w-64 font-mono text-[12.5px]"
-                  />
-                  <span className="text-ink-soft/50">=</span>
-                  <Input
-                    value={line.value}
-                    onChange={(e) => update(i, { value: e.target.value })}
-                    placeholder={t("env.valuePlaceholder")}
-                    className="flex-1 font-mono text-[12.5px]"
-                    autoComplete="off"
-                    style={
-                      isRevealed
-                        ? undefined
-                        : ({
-                            WebkitTextSecurity: "disc",
-                          } as React.CSSProperties)
-                    }
-                  />
-                  <button
-                    onClick={() => toggleReveal(i)}
-                    disabled={showAll}
-                    title={isRevealed ? t("env.hideValue") : t("env.showValue")}
-                    className="rounded-md p-1.5 text-ink-soft/50 outline-none hover:bg-moss/10 hover:text-ink disabled:pointer-events-none disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-moss/50"
-                  >
-                    {isRevealed ? (
-                      <EyeOff className="size-4" />
-                    ) : (
-                      <Eye className="size-4" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => removeLine(i)}
-                    title={t("env.removeVar")}
-                    className="rounded-md p-1.5 text-ink-soft/50 opacity-0 outline-none group-hover:opacity-100 hover:bg-clay/10 hover:text-clay focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-moss/50"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="mt-3 flex items-center gap-3">
+        <>
+          <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={addVar}>
               <Plus />
               {t("env.addVar")}
@@ -323,8 +244,122 @@ export function EnvTab({ project, server, askPassword }: Props) {
                 {t("env.unsaved")}
               </span>
             )}
+            {varCount > 0 && (
+              <div className="ml-auto flex gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={load}
+                  disabled={loading}
+                  className="text-ink-soft"
+                  title={t("env.refreshTitle")}
+                >
+                  <RefreshCw className={cn(loading && "animate-spin")} />
+                  {t("env.refresh")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowAll((v) => !v)}
+                  className="text-ink-soft"
+                >
+                  {showAll ? <EyeOff /> : <Eye />}
+                  {showAll ? t("env.hideAll") : t("env.showAll")}
+                </Button>
+              </div>
+            )}
           </div>
-        </div>
+
+          <div className="thin-scroll min-h-0 flex-1 overflow-y-auto">
+            {varCount === 0 && (
+              <div className="flex flex-col items-center py-10 text-center">
+                <FileKey2 className="size-8 text-[#b8bfb8]" />
+                <h3 className="mt-3 text-[15px] font-bold">
+                  {t("env.emptyTitle")}
+                </h3>
+                <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-ink-soft">
+                  {t("env.emptyHint")}
+                </p>
+                {localFiles.length > 0 && (
+                  <div className="mt-4 flex flex-col items-center gap-2">
+                    <p className="text-[12.5px] text-ink-soft">
+                      {t("env.importHint")}
+                    </p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {localFiles.map((file) => (
+                        <Button
+                          key={file}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => importLocal(file)}
+                          className="font-mono text-[12.5px]"
+                        >
+                          <Import />
+                          {file}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2">
+              {(lines ?? []).map((line, i) => {
+                if (line.type !== "var") return null;
+                const isRevealed = showAll || revealed.has(i);
+                return (
+                  <div key={i} className="group flex items-center gap-2">
+                    <Input
+                      value={line.key}
+                      onChange={(e) => update(i, { key: e.target.value })}
+                      onPaste={(e) => pasteEnv(i, e)}
+                      placeholder={t("env.keyPlaceholder")}
+                      className="w-64 font-mono text-[12.5px]"
+                    />
+                    <span className="text-ink-soft/50">=</span>
+                    <Input
+                      value={line.value}
+                      onChange={(e) => update(i, { value: e.target.value })}
+                      onPaste={(e) => pasteEnv(i, e)}
+                      placeholder={t("env.valuePlaceholder")}
+                      className="flex-1 font-mono text-[12.5px]"
+                      autoComplete="off"
+                      style={
+                        isRevealed
+                          ? undefined
+                          : ({
+                              WebkitTextSecurity: "disc",
+                            } as React.CSSProperties)
+                      }
+                    />
+                    <button
+                      onClick={() => toggleReveal(i)}
+                      disabled={showAll}
+                      title={
+                        isRevealed ? t("env.hideValue") : t("env.showValue")
+                      }
+                      className="rounded-md p-1.5 text-ink-soft/50 outline-none hover:bg-moss/10 hover:text-ink disabled:pointer-events-none disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-moss/50"
+                    >
+                      {isRevealed ? (
+                        <EyeOff className="size-4" />
+                      ) : (
+                        <Eye className="size-4" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => removeLine(i)}
+                      title={t("env.removeVar")}
+                      className="rounded-md p-1.5 text-ink-soft/50 opacity-0 outline-none group-hover:opacity-100 hover:bg-clay/10 hover:text-clay focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-moss/50"
+                    >
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

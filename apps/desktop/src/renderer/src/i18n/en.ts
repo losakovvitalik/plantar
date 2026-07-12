@@ -133,6 +133,7 @@ export const en: Record<MessageKey, string> = {
   "discover.statusOnline": "running",
   "discover.statusStopped": "stopped",
   "discover.serverFolder": "Folder on the server",
+  "discover.envFiles": "Environment files",
   "discover.repo": "Repository",
   "discover.add": "Add",
   "discover.adding": "Adding…",

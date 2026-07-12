@@ -30,6 +30,8 @@ export function DiscoverAppsDialog({ server, askPassword, onClose, onImported }:
   const [apps, setApps] = useState<DiscoveredApp[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Пароль со скана: импорт тоже ходит на сервер (переносит env-файлы приложения)
+  const [password, setPassword] = useState<string | undefined>(undefined);
 
   async function scan(target: ServerRecord) {
     setApps(null);
@@ -39,6 +41,7 @@ export function DiscoverAppsDialog({ server, askPassword, onClose, onImported }:
       onClose();
       return;
     }
+    setPassword(password);
     setLoading(true);
     const result = await window.plantar.discoverApps(target.id, password);
     setLoading(false);
@@ -104,6 +107,7 @@ export function DiscoverAppsDialog({ server, askPassword, onClose, onImported }:
                   key={app.pm2Name}
                   app={app}
                   serverId={server.id}
+                  password={password}
                   onImported={onImported}
                 />
               ) : null,
@@ -121,10 +125,12 @@ type ImportType = (typeof IMPORT_TYPES)[number];
 function DiscoveredAppCard({
   app,
   serverId,
+  password,
   onImported,
 }: {
   app: DiscoveredApp;
   serverId: string;
+  password?: string;
   onImported: () => void;
 }) {
   const { t } = useI18n();
@@ -160,6 +166,7 @@ function DiscoveredAppCard({
     setError(null);
     const result = await window.plantar.importProject({
       serverId,
+      password,
       config: {
         name,
         type,
@@ -221,6 +228,14 @@ function DiscoveredAppCard({
       <p className="truncate font-mono text-[12px] text-ink-soft" title={app.appDir}>
         {t("discover.serverFolder")}: {app.appDir || "—"}
       </p>
+      {app.envFiles.length > 0 && (
+        <p
+          className="truncate font-mono text-[12px] text-ink-soft"
+          title={app.envFiles.join(", ")}
+        >
+          {t("discover.envFiles")}: {app.envFiles.join(", ")}
+        </p>
+      )}
       {app.repoUrl && (
         <p className="truncate font-mono text-[12px] text-ink-soft" title={app.repoUrl}>
           {t("discover.repo")}: {app.repoUrl}

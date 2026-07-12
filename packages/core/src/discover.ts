@@ -5,6 +5,51 @@ import { type SshConnection, shellQuote } from "@plantar/ssh";
  * Ничего не устанавливает: читает pm2 jlist, nginx -T и ss -tlnp.
  */
 
+/** Имена env-файлов: .env, .env.local, .env.prod и т.п. */
+export const ENV_FILE_RE = /^\.env[\w.-]*$/;
+
+/** Шаблоны без реальных значений и скрипты direnv — при импорте не переносим */
+const ENV_SKIP_RE = /\.(example|sample|template)$|^\.envrc$/i;
+
+/** Порядок переопределения как у dotenv: базовый .env, затем остальные, *.local — последними */
+function envFileRank(name: string): number {
+  if (name === ".env") return 0;
+  return name.includes(".local") ? 2 : 1;
+}
+
+/** Env-файлы в папке приложения, отсортированные от базового к переопределяющему */
+export async function listAppEnvFiles(
+  conn: SshConnection,
+  appDir: string,
+): Promise<string[]> {
+  if (!appDir) return [];
+  const result = await conn.exec(`ls -a ${shellQuote(appDir)} 2>/dev/null`);
+  if (result.code !== 0) return [];
+  return result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((name) => ENV_FILE_RE.test(name) && !ENV_SKIP_RE.test(name))
+    .sort((a, b) => envFileRank(a) - envFileRank(b) || a.localeCompare(b));
+}
+
+/**
+ * Содержимое env-файлов приложения одним текстом. При нескольких файлах блоки
+ * идут от базового к переопределяющему (при деплое поздние значения побеждают)
+ * и помечаются комментарием с именем исходного файла.
+ */
+export async function readAppEnv(conn: SshConnection, appDir: string): Promise<string> {
+  const files = await listAppEnvFiles(conn, appDir);
+  const parts: string[] = [];
+  for (const file of files) {
+    const result = await conn.exec(`cat ${shellQuote(`${appDir}/${file}`)} 2>/dev/null`);
+    if (result.code !== 0) continue;
+    const content = result.stdout.trim();
+    if (!content) continue;
+    parts.push(files.length > 1 ? `# ${file}\n${content}` : content);
+  }
+  return parts.join("\n\n");
+}
+
 /** pm2-процесс из pm2 jlist — только поля, нужные для импорта */
 export interface Pm2App {
   name: string;
@@ -300,6 +345,8 @@ export interface DiscoveredApp {
   /** Пути логов nginx из конфига сайта */
   accessLogPath?: string;
   errorLogPath?: string;
+  /** Env-файлы в папке приложения — при импорте их содержимое переносится в Plantar */
+  envFiles: string[];
   /** Git-репозиторий, из которого приложение попало на сервер (адрес в https-виде) */
   repoUrl?: string;
   /** Ветка, развёрнутая на сервере */
@@ -379,6 +426,7 @@ export async function discoverApps(conn: SshConnection): Promise<DiscoveredApp[]
       errLogPath: proc.errLogPath,
       accessLogPath: site?.accessLog,
       errorLogPath: site?.errorLog,
+      envFiles: await listAppEnvFiles(conn, proc.cwd),
       repoUrl: repo?.repoUrl,
       branch: repo?.branch,
       repoSubdir: repo?.repoSubdir,

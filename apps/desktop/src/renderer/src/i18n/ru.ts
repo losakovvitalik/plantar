@@ -133,6 +133,7 @@ export const ru = {
   "discover.statusOnline": "работает",
   "discover.statusStopped": "остановлено",
   "discover.serverFolder": "Папка на сервере",
+  "discover.envFiles": "Файлы с переменными",
   "discover.repo": "Репозиторий",
   "discover.add": "Добавить",
   "discover.adding": "Добавляю…",

@@ -39,6 +39,8 @@ export type {
 /** Импорт найденного на сервере приложения как внешнего проекта */
 export interface ImportProjectInput {
   serverId: string;
+  /** Пароль сервера, если соединение из пула уже закрылось */
+  password?: string;
   /** Настройки из формы импорта: имя, тип, рантайм, домен, порт */
   config: ProjectConfigInput;
   pm2Name: string;

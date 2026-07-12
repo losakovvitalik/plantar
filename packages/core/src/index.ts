@@ -8,12 +8,17 @@ import { type SshConnection, shellQuote } from "@plantar/ssh";
 import { readPackageJson, type ProjectConfig } from "@plantar/config";
 import { t } from "./messages";
 
+import { ENV_FILE_RE } from "./discover";
+
 export {
+  ENV_FILE_RE,
   discoverApps,
+  listAppEnvFiles,
   normalizeGitUrl,
   parseListeningPorts,
   parseNginxSites,
   parsePm2Jlist,
+  readAppEnv,
 } from "./discover";
 export type { DiscoveredApp, NginxSite, Pm2App } from "./discover";
 export { parsePm2Health, pm2ProcessHealth, pm2ProcessStatuses } from "./status";
@@ -225,9 +230,6 @@ export async function setupServer(
 /** Env-файлы проектов живут на сервере вне папок релизов — деплой их не затирает */
 const ENV_STORE_DIR = "/var/www/.plantar/env";
 const envStorePath = (name: string) => `${ENV_STORE_DIR}/${name}.env`;
-
-/** Имена локальных env-файлов, которые не должны попадать на сервер при загрузке кода */
-export const ENV_FILE_RE = /^\.env[\w.-]*$/;
 
 /** Содержимое env-файла проекта на сервере; отсутствие файла — пустая строка */
 export async function readProjectEnv(conn: SshConnection, name: string): Promise<string> {

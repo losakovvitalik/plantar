@@ -16,6 +16,7 @@ import {
   logStreamCommand,
   pm2ProcessHealth,
   pm2ProcessStatuses,
+  readAppEnv,
   readProjectEnv,
   removeDeployedProject,
   rollbackProject,
@@ -304,6 +305,8 @@ function assertNameFreeOnServer(serverId: string, name: string, excludeProjectId
 
 interface ImportProjectInput {
   serverId: string;
+  /** Пароль сервера, если соединение из пула уже закрылось */
+  password?: string;
   /** Настройки из формы импорта: имя, тип, рантайм, домен, порт */
   config: ProjectConfigInput;
   pm2Name: string;
@@ -319,10 +322,16 @@ interface ImportProjectInput {
 }
 
 /** Добавляет найденное на сервере приложение как внешний проект (без папки с кодом) */
-function importProject(input: ImportProjectInput): ProjectRecord {
-  getServer(input.serverId);
+async function importProject(input: ImportProjectInput): Promise<ProjectRecord> {
+  const server = getServer(input.serverId);
   const config = parseProjectConfig(input.config);
   assertNameFreeOnServer(input.serverId, config.name);
+  // Переносим env-файлы приложения в хранилище Plantar до записи проекта:
+  // если сервер недоступен, импорт не удастся целиком и его можно повторить
+  await withServer(server, input.password, async (conn) => {
+    const env = await readAppEnv(conn, input.appDir);
+    if (env) await writeProjectEnv(conn, config.name, env);
+  });
   const record: ProjectRecord = {
     id: randomUUID(),
     serverId: input.serverId,
