@@ -1,5 +1,14 @@
 import type { DetectedProject, ProjectConfig, ProjectConfigInput } from "@plantar/config";
-import type { DiscoveredApp, LogStreamSource, ServerInfo } from "@plantar/core";
+import type {
+  DiscoveredApp,
+  LogStreamSource,
+  MonitoringStatus,
+  MonitoringTool,
+  Pm2ProcessHealth,
+  ServerInfo,
+  ServerMetrics,
+  TrafficStats,
+} from "@plantar/core";
 import type {
   AppSettings,
   AppStatus,
@@ -15,9 +24,14 @@ export type {
   DetectedProject,
   DiscoveredApp,
   LogStreamSource,
+  MonitoringStatus,
+  MonitoringTool,
+  Pm2ProcessHealth,
   ProjectConfig,
   ProjectConfigInput,
   ServerInfo,
+  ServerMetrics,
+  TrafficStats,
   ProjectRecord,
   ServerRecord,
 };
@@ -193,6 +207,33 @@ declare global {
       getAppStatuses: (serverId: string) => Promise<IpcResult<AppStatusEntry>>;
       /** Кэш статусов приложений по serverId — снимок прошлой проверки */
       getAppStatusCache: () => Promise<IpcResult<Record<string, AppStatusEntry>>>;
+      /** Что из инструментов мониторинга установлено на сервере */
+      getMonitoringStatus: (
+        serverId: string,
+        password?: string,
+      ) => Promise<IpcResult<MonitoringStatus>>;
+      /** Установка инструмента мониторинга; уже установленный пропускается */
+      installMonitoringTool: (
+        serverId: string,
+        tool: MonitoringTool,
+        password?: string,
+      ) => Promise<IpcResult<void>>;
+      /** Здоровье pm2-процесса приложения; null — процесса на сервере нет */
+      getAppHealth: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<Pm2ProcessHealth | null>>;
+      /** Посещаемость приложения по access-логу nginx (нужен GoAccess) */
+      getTrafficStats: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<TrafficStats>>;
+      /** История нагрузки сервера за час или сутки (нужен Netdata) */
+      getServerMetrics: (
+        serverId: string,
+        seconds: number,
+        password?: string,
+      ) => Promise<IpcResult<ServerMetrics>>;
       deploy: (projectId: string, password?: string) => Promise<IpcResult<{ url?: string }>>;
       /** Возврат предыдущей версии; лог приходит в onDeployLog */
       rollback: (

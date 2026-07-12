@@ -17,6 +17,10 @@
   --color-clay: #c2543f;
   --color-amber: #8a6420;
   --color-amber-bg: #f7efdd;
+  /* Цвета серий графиков: насыщеннее фирменных — проверены на контраст
+     и различимость при цветослепоте (dataviz-валидатор, поверхность card) */
+  --color-chart-1: #20794f;
+  --color-chart-2: #a06b10;
 
   --font-sans: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;

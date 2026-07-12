@@ -5,10 +5,16 @@ import { BrowserWindow, Notification, app, dialog, ipcMain, shell } from "electr
 import { SshConnection } from "@plantar/ssh";
 import {
   type LogStreamSource,
+  type MonitoringTool,
   deployProject,
   discoverApps,
+  getMonitoringStatus,
   getServerInfo,
+  getServerMetrics,
+  getTrafficStats,
+  installMonitoringTool,
   logStreamCommand,
+  pm2ProcessHealth,
   pm2ProcessStatuses,
   readProjectEnv,
   removeDeployedProject,
@@ -436,6 +442,23 @@ function notifyDeployResult(
     win.webContents.send("deploy:open-project", { projectId });
   });
   notification.show();
+}
+
+/**
+ * Не даёт запустить два деплоя (или деплой и откат) одного проекта
+ * одновременно: параллельные запуски дерутся за git-клон (index.lock)
+ * и staging-папку на сервере.
+ */
+const activeDeploys = new Set<string>();
+
+async function withDeployLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
+  if (activeDeploys.has(projectId)) throw new Error(t("deployAlreadyRunning"));
+  activeDeploys.add(projectId);
+  try {
+    return await fn();
+  } finally {
+    activeDeploys.delete(projectId);
+  }
 }
 
 async function runDeploy(
@@ -1037,11 +1060,94 @@ app.whenReady().then(() => {
     toResult(async () => readAppStatusCache()),
   );
 
+  ipcMain.handle(
+    "monitoring:status",
+    (_e, args: { serverId: string; password?: string }) =>
+      toResult(async () =>
+        withServer(getServer(args.serverId), args.password, (conn) =>
+          getMonitoringStatus(conn),
+        ),
+      ),
+  );
+  ipcMain.handle(
+    "monitoring:install",
+    (_e, args: { serverId: string; tool: MonitoringTool; password?: string }) =>
+      toResult(async () => {
+        // Имя инструмента попадает в shell-команду установки — только известные
+        if (args.tool !== "goaccess" && args.tool !== "netdata") {
+          throw new Error(t("unknownMonitoringTool"));
+        }
+        await withServer(getServer(args.serverId), args.password, (conn) =>
+          installMonitoringTool(conn, args.tool),
+        );
+      }),
+  );
+
+  // Здоровье pm2-процесса приложения; null — процесса на сервере нет
+  ipcMain.handle(
+    "metrics:app",
+    (_e, args: { projectId: string; password?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        const server = getServer(project.serverId);
+        let name = project.name;
+        try {
+          name = projectConfig(project).name;
+        } catch {
+          /* plantar.json недоступен — используем имя на момент добавления */
+        }
+        const pm2Name = project.external ? project.external.pm2Name : name;
+        const health = await withServer(server, args.password, (conn) =>
+          pm2ProcessHealth(conn),
+        );
+        return health.get(pm2Name) ?? null;
+      }),
+  );
+
+  // Посещаемость приложения по access-логу nginx (нужен GoAccess на сервере)
+  ipcMain.handle(
+    "metrics:traffic",
+    (_e, args: { projectId: string; password?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        const server = getServer(project.serverId);
+        let name = project.name;
+        try {
+          name = projectConfig(project).name;
+        } catch {
+          /* plantar.json недоступен — используем имя на момент добавления */
+        }
+        const logPath =
+          project.external?.accessLogPath ?? `/var/log/nginx/${name}.access.log`;
+        return withServer(server, args.password, (conn) =>
+          getTrafficStats(conn, logPath),
+        );
+      }),
+  );
+
+  // История нагрузки сервера из Netdata; окно — час или сутки
+  ipcMain.handle(
+    "metrics:server",
+    (_e, args: { serverId: string; seconds: number; password?: string }) =>
+      toResult(async () => {
+        const seconds = args.seconds === 86400 ? 86400 : 3600;
+        return withServer(getServer(args.serverId), args.password, (conn) =>
+          getServerMetrics(conn, seconds),
+        );
+      }),
+  );
+
   ipcMain.handle("deploy:run", (_e, args: { projectId: string; password?: string }) =>
-    toResult(() => runDeploy(args.projectId, args.password, win)),
+    toResult(() =>
+      withDeployLock(args.projectId, () => runDeploy(args.projectId, args.password, win)),
+    ),
   );
   ipcMain.handle("deploy:rollback", (_e, args: { projectId: string; password?: string }) =>
-    toResult(() => runRollback(args.projectId, args.password, win)),
+    toResult(() =>
+      withDeployLock(args.projectId, () =>
+        runRollback(args.projectId, args.password, win),
+      ),
+    ),
   );
 
   // Живые лог-стримы: id → остановка. Активный стрим держит соединение в пуле занятым

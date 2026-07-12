@@ -145,6 +145,8 @@ export function DeployTab({
     () => localStorage.getItem(SHOW_COMMANDS_KEY) !== "0",
   );
   const terminalRef = useRef<HTMLDivElement>(null);
+  // Прилипание к низу: автоскролл только пока пользователь не проскроллил вверх
+  const stickRef = useRef(true);
 
   useEffect(() => {
     const unsubscribe = window.plantar.onDeployLog((event) => {
@@ -156,7 +158,9 @@ export function DeployTab({
   }, [project.id]);
 
   useEffect(() => {
-    terminalRef.current?.scrollTo({ top: terminalRef.current.scrollHeight });
+    if (stickRef.current) {
+      terminalRef.current?.scrollTo({ top: terminalRef.current.scrollHeight });
+    }
   }, [lines]);
 
   function toggleCommands(value: boolean) {
@@ -164,47 +168,66 @@ export function DeployTab({
     localStorage.setItem(SHOW_COMMANDS_KEY, value ? "1" : "0");
   }
 
+  // Повторный запуск во время работы (двойной клик, двойной прогон эффекта
+  // autoDeploy в StrictMode) ломал бы деплой; ref срабатывает сразу,
+  // в отличие от состояния running
+  const busyRef = useRef(false);
+
   async function deploy() {
-    const password = await passwordFor(server, askPassword);
-    if (password === null) return;
-    setRunning(true);
-    setRollingBack(false);
-    setLines([]);
-    setUrl(null);
-    setDeployed(false);
-    setRolledBack(false);
-    setError(null);
-    const result = await window.plantar.deploy(project.id, password);
-    setRunning(false);
-    if (result.ok) {
-      setUrl(result.data.url ?? null);
-      setDeployed(true);
-      onDeployed();
-    } else {
-      setError(result.error);
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const password = await passwordFor(server, askPassword);
+      if (password === null) return;
+      setRunning(true);
+      setRollingBack(false);
+      setLines([]);
+      stickRef.current = true;
+      setUrl(null);
+      setDeployed(false);
+      setRolledBack(false);
+      setError(null);
+      const result = await window.plantar.deploy(project.id, password);
+      setRunning(false);
+      if (result.ok) {
+        setUrl(result.data.url ?? null);
+        setDeployed(true);
+        onDeployed();
+      } else {
+        setError(result.error);
+      }
+    } finally {
+      busyRef.current = false;
     }
   }
 
   async function rollback() {
-    if (!window.confirm(t("deploy.rollbackConfirm"))) return;
-    const password = await passwordFor(server, askPassword);
-    if (password === null) return;
-    setRunning(true);
-    setRollingBack(true);
-    setLines([]);
-    setUrl(null);
-    setDeployed(false);
-    setRolledBack(false);
-    setError(null);
-    const result = await window.plantar.rollback(project.id, password);
-    setRunning(false);
-    setRollingBack(false);
-    if (result.ok) {
-      setUrl(result.data.url ?? null);
-      setRolledBack(true);
-      onDeployed();
-    } else {
-      setError(result.error);
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      if (!window.confirm(t("deploy.rollbackConfirm"))) return;
+      const password = await passwordFor(server, askPassword);
+      if (password === null) return;
+      setRunning(true);
+      setRollingBack(true);
+      setLines([]);
+      stickRef.current = true;
+      setUrl(null);
+      setDeployed(false);
+      setRolledBack(false);
+      setError(null);
+      const result = await window.plantar.rollback(project.id, password);
+      setRunning(false);
+      setRollingBack(false);
+      if (result.ok) {
+        setUrl(result.data.url ?? null);
+        setRolledBack(true);
+        onDeployed();
+      } else {
+        setError(result.error);
+      }
+    } finally {
+      busyRef.current = false;
     }
   }
 
@@ -379,6 +402,11 @@ export function DeployTab({
 
       <div
         ref={terminalRef}
+        onScroll={() => {
+          const el = terminalRef.current;
+          if (!el) return;
+          stickRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
+        }}
         className="thin-scroll min-h-0 flex-1 overflow-y-auto rounded-xl bg-soil p-4 font-mono text-[12.5px] leading-relaxed text-sprout"
       >
         {visibleLines.length === 0 ? (

@@ -184,6 +184,14 @@ const MESSAGES = {
     ru: "✓ Возвращена версия {release}",
     en: "✓ Version {release} restored",
   },
+  goaccessMissing: {
+    ru: "На сервере не установлен инструмент статистики посещений (GoAccess).",
+    en: "The visit statistics tool (GoAccess) is not installed on the server.",
+  },
+  netdataNotResponding: {
+    ru: "Служба мониторинга нагрузки (Netdata) не отвечает на сервере.",
+    en: "The load monitoring service (Netdata) is not responding on the server.",
+  },
 } satisfies Messages<string>;
 
 export const t = createT(MESSAGES);

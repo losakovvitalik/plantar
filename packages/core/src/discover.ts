@@ -34,8 +34,8 @@ interface RawPm2Process {
   };
 }
 
-export function parsePm2Jlist(stdout: string): Pm2App[] {
-  // pm2 может напечатать служебные строки до JSON (например, при первом запуске)
+/** JSON-массив из вывода pm2 jlist; pm2 может напечатать служебные строки до JSON */
+export function extractPm2Json(stdout: string): unknown[] {
   const jsonStart = stdout.indexOf("[");
   if (jsonStart === -1) return [];
   let raw: unknown;
@@ -44,9 +44,11 @@ export function parsePm2Jlist(stdout: string): Pm2App[] {
   } catch {
     return [];
   }
-  if (!Array.isArray(raw)) return [];
+  return Array.isArray(raw) ? raw : [];
+}
 
-  return (raw as RawPm2Process[]).flatMap((proc) => {
+export function parsePm2Jlist(stdout: string): Pm2App[] {
+  return (extractPm2Json(stdout) as RawPm2Process[]).flatMap((proc) => {
     const env = proc.pm2_env ?? {};
     if (!proc.name) return [];
     // Модули pm2 (pm2-logrotate и т.п.) — служебные, не приложения пользователя

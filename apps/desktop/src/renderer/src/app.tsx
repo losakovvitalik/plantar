@@ -8,6 +8,7 @@ import type {
 } from "../../preload/index.d";
 import { AddProjectDialog } from "./components/add-project-dialog";
 import { AddServerDialog } from "./components/add-server-dialog";
+import { AppStatusTab } from "./components/app-status-tab";
 import { DiscoverAppsDialog } from "./components/discover-apps-dialog";
 import { ProjectSettingsDialog } from "./components/project-settings-dialog";
 import { CommitsTab } from "./components/commits-tab";
@@ -17,6 +18,7 @@ import { HistoryTab } from "./components/history-tab";
 import { LogsTab } from "./components/logs-tab";
 import { PasswordDialog } from "./components/password-dialog";
 import { RemoveProjectDialog } from "./components/remove-project-dialog";
+import { ServerMonitoring } from "./components/server-monitoring";
 import { SettingsDialog } from "./components/settings-dialog";
 import { Sidebar } from "./components/sidebar";
 import { StatusTab } from "./components/status-tab";
@@ -314,7 +316,19 @@ export default function App() {
                 />
               </TabsContent>
               <TabsContent value="status" className="h-full">
-                <StatusTab server={projectServer} askPassword={askPassword} />
+                <AppStatusTab
+                  project={selectedProject}
+                  server={projectServer}
+                  config={projectConfig}
+                  askPassword={askPassword}
+                  onOpenServer={() =>
+                    setSelection({ kind: "server", id: projectServer.id })
+                  }
+                  onDeploy={() => {
+                    setTab("deploy");
+                    setAutoDeploy(true);
+                  }}
+                />
               </TabsContent>
               <TabsContent value="logs" className="h-full">
                 <LogsTab
@@ -353,8 +367,15 @@ export default function App() {
                 {t("app.serverHint")}
               </p>
             </header>
-            <div className="min-h-0 flex-1 px-6 py-5">
-              <StatusTab server={selectedServer} askPassword={askPassword} />
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 thin-scroll">
+              <div className="flex flex-col gap-4 pb-4">
+                <StatusTab server={selectedServer} askPassword={askPassword} />
+                <ServerMonitoring
+                  key={selectedServer.id}
+                  server={selectedServer}
+                  askPassword={askPassword}
+                />
+              </div>
             </div>
           </div>
         ) : (

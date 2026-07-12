@@ -316,6 +316,62 @@ export const en: Record<MessageKey, string> = {
   "status.tools": "Tools",
   "status.notInstalled": "not installed",
 
+  "appStatus.check": "Check",
+  "appStatus.checking": "Checking…",
+  "appStatus.processTitle": "App process",
+  "appStatus.state.running": "Running",
+  "appStatus.state.stopped": "Stopped",
+  "appStatus.state.errored": "Error",
+  "appStatus.noProcess":
+    "The app was not found on the server. It will appear after the first deploy.",
+  "appStatus.staticNote":
+    "The site is served by the server as static files — it has no separate process or load.",
+  "appStatus.since": "Running since",
+  "appStatus.restarts": "Restarts",
+  "appStatus.restartsHint":
+    "Frequent restarts mean the app keeps crashing and starting again. Check the logs.",
+  "appStatus.memory": "Memory",
+  "appStatus.cpu": "CPU",
+  "appStatus.mb": "{mb} MB",
+  "appStatus.trafficTitle": "Visits",
+  "appStatus.trafficHint": "From the server log — roughly the last two weeks",
+  "appStatus.requests": "Requests",
+  "appStatus.visitors": "Visitors",
+  "appStatus.errors": "App errors",
+  "appStatus.byDay": "By day",
+  "appStatus.byHour": "By time of day",
+  "appStatus.topPaths": "Popular pages",
+  "appStatus.trafficEmpty":
+    "No visits recorded yet. They will appear once people start opening the site.",
+  "appStatus.trafficNoLog":
+    "The app does not have its own visit log yet, so site visits are not shown here. The log will appear after the first deploy through Plantar.",
+  "appStatus.needGoaccess":
+    "To see visits, install the “Visit statistics” tool on the server screen.",
+  "appStatus.openServer": "Open the server screen",
+
+  "monitoring.title": "Monitoring",
+  "monitoring.description":
+    "Optional tools. They are installed on the server and use its resources, so they are enabled on demand.",
+  "monitoring.check": "Check",
+  "monitoring.goaccessName": "Visit statistics (GoAccess)",
+  "monitoring.goaccessDescription":
+    "Counts visits from the server logs — charts on the “Status” tab of each app. Runs only during a check and uses almost no resources.",
+  "monitoring.netdataName": "Server load (Netdata)",
+  "monitoring.netdataDescription":
+    "Records CPU and memory load around the clock — a chart will appear on this page. Runs in the background all the time and takes 100–200 MB of server memory.",
+  "monitoring.install": "Install",
+  "monitoring.installing": "Installing…",
+  "monitoring.installed": "Installed",
+  "monitoring.start": "Start",
+  "monitoring.loadTitle": "Server load",
+  "monitoring.hour": "Hour",
+  "monitoring.day": "Day",
+  "monitoring.cpuChart": "CPU, %",
+  "monitoring.cpuSeries": "Load",
+  "monitoring.ramChart": "Memory, MB",
+  "monitoring.ramSeries": "Used",
+  "monitoring.ramSummary": "{used} of {total} MB used",
+
   "settings.title": "Settings",
   "settings.description": "Global Plantar settings",
   "settings.language": "Interface language",

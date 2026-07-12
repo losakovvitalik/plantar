@@ -316,6 +316,62 @@ export const ru = {
   "status.tools": "Инструменты",
   "status.notInstalled": "не установлен",
 
+  "appStatus.check": "Проверить",
+  "appStatus.checking": "Проверяю…",
+  "appStatus.processTitle": "Работа приложения",
+  "appStatus.state.running": "Работает",
+  "appStatus.state.stopped": "Остановлено",
+  "appStatus.state.errored": "Ошибка",
+  "appStatus.noProcess":
+    "Приложение на сервере не найдено. Оно появится после первого деплоя.",
+  "appStatus.staticNote":
+    "Сайт раздаётся сервером как готовые файлы — отдельного процесса и нагрузки у него нет.",
+  "appStatus.since": "Работает с",
+  "appStatus.restarts": "Перезапуски",
+  "appStatus.restartsHint":
+    "Частые перезапуски — признак того, что приложение падает и запускается снова. Загляните в логи.",
+  "appStatus.memory": "Память",
+  "appStatus.cpu": "Процессор",
+  "appStatus.mb": "{mb} МБ",
+  "appStatus.trafficTitle": "Посещаемость",
+  "appStatus.trafficHint": "По журналу сервера — примерно за две последние недели",
+  "appStatus.requests": "Запросы",
+  "appStatus.visitors": "Посетители",
+  "appStatus.errors": "Ошибки приложения",
+  "appStatus.byDay": "По дням",
+  "appStatus.byHour": "По времени суток",
+  "appStatus.topPaths": "Популярные страницы",
+  "appStatus.trafficEmpty":
+    "Записей о посещениях пока нет. Они появятся, когда сайт начнут открывать.",
+  "appStatus.trafficNoLog":
+    "У приложения пока нет собственного журнала посещений, поэтому заходы на сайт здесь не видны. Журнал появится после первого деплоя через Plantar.",
+  "appStatus.needGoaccess":
+    "Чтобы видеть посещаемость, установите инструмент «Статистика посещений» на экране сервера.",
+  "appStatus.openServer": "Открыть экран сервера",
+
+  "monitoring.title": "Мониторинг",
+  "monitoring.description":
+    "Дополнительные инструменты. Они устанавливаются на сервер и расходуют его ресурсы, поэтому включаются по желанию.",
+  "monitoring.check": "Проверить",
+  "monitoring.goaccessName": "Статистика посещений (GoAccess)",
+  "monitoring.goaccessDescription":
+    "Считает посещаемость по журналам сервера — графики на вкладке «Статус» каждого приложения. Работает только в момент проверки и почти не расходует ресурсы.",
+  "monitoring.netdataName": "Нагрузка сервера (Netdata)",
+  "monitoring.netdataDescription":
+    "Круглосуточно записывает нагрузку на процессор и память — график появится на этой странице. Постоянно работает в фоне и занимает 100–200 МБ памяти сервера.",
+  "monitoring.install": "Установить",
+  "monitoring.installing": "Устанавливаю…",
+  "monitoring.installed": "Установлен",
+  "monitoring.start": "Запустить",
+  "monitoring.loadTitle": "Нагрузка сервера",
+  "monitoring.hour": "Час",
+  "monitoring.day": "Сутки",
+  "monitoring.cpuChart": "Процессор, %",
+  "monitoring.cpuSeries": "Загрузка",
+  "monitoring.ramChart": "Память, МБ",
+  "monitoring.ramSeries": "Занято",
+  "monitoring.ramSummary": "Занято {used} из {total} МБ",
+
   "settings.title": "Настройки",
   "settings.description": "Глобальные настройки Plantar",
   "settings.language": "Язык интерфейса",

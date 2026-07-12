@@ -57,6 +57,16 @@ const api = {
   isServerConnected: (serverId: string) => invoke("server:isConnected", serverId),
   getAppStatuses: (serverId: string) => invoke("server:appStatuses", { serverId }),
   getAppStatusCache: () => invoke("server:appStatusesCache"),
+  getMonitoringStatus: (serverId: string, password?: string) =>
+    invoke("monitoring:status", { serverId, password }),
+  installMonitoringTool: (serverId: string, tool: string, password?: string) =>
+    invoke("monitoring:install", { serverId, tool, password }),
+  getAppHealth: (projectId: string, password?: string) =>
+    invoke("metrics:app", { projectId, password }),
+  getTrafficStats: (projectId: string, password?: string) =>
+    invoke("metrics:traffic", { projectId, password }),
+  getServerMetrics: (serverId: string, seconds: number, password?: string) =>
+    invoke("metrics:server", { serverId, seconds, password }),
   deploy: (projectId: string, password?: string) => invoke("deploy:run", { projectId, password }),
   rollback: (projectId: string, password?: string) =>
     invoke("deploy:rollback", { projectId, password }),

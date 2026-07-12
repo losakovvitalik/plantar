@@ -16,7 +16,22 @@ export {
   parsePm2Jlist,
 } from "./discover";
 export type { DiscoveredApp, NginxSite, Pm2App } from "./discover";
-export { pm2ProcessStatuses } from "./status";
+export { parsePm2Health, pm2ProcessHealth, pm2ProcessStatuses } from "./status";
+export type { Pm2ProcessHealth } from "./status";
+export {
+  getMonitoringStatus,
+  getServerMetrics,
+  getTrafficStats,
+  installMonitoringTool,
+  parseGoaccessReport,
+} from "./monitoring";
+export type {
+  MonitoringStatus,
+  MonitoringTool,
+  ServerMetricPoint,
+  ServerMetrics,
+  TrafficStats,
+} from "./monitoring";
 
 export interface ServerInfo {
   os: {

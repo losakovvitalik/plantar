@@ -52,6 +52,14 @@ const MESSAGES = {
     ru: "Недопустимый путь к файлу лога.",
     en: "Invalid log file path.",
   },
+  unknownMonitoringTool: {
+    ru: "Неизвестный инструмент мониторинга.",
+    en: "Unknown monitoring tool.",
+  },
+  deployAlreadyRunning: {
+    ru: "Деплой этого проекта уже выполняется.",
+    en: "A deploy of this project is already running.",
+  },
   installKeyFailed: {
     ru: "Не удалось установить ключ на сервер:\n{stderr}",
     en: "Failed to install the key on the server:\n{stderr}",
