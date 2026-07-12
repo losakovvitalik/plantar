@@ -196,13 +196,26 @@ export default function App() {
     };
   }, [selectedProjectId, showError]);
 
-  // Обновляет список проектов и конфиг открытого проекта — после деплоя
-  // (первый деплой закрепляет порт) и после привязки папки с кодом
+  // Обновляет список проектов и конфиг открытого проекта — после привязки
+  // папки с кодом или репозитория
   const refreshProject = useCallback(async () => {
     await refresh();
     if (!selectedProjectId) return;
     const result = await window.plantar.readProjectConfig(selectedProjectId);
     if (result.ok) setProjectConfig(result.data);
+  }, [refresh, selectedProjectId]);
+
+  // Завершение деплоя (любого проекта) — обновляем список и конфиг открытого
+  // проекта. Событие из main, а не колбэк вкладки: деплой переживает
+  // навигацию, и колбэк размонтированной вкладки обновил бы чужой конфиг
+  useEffect(() => {
+    return window.plantar.onDeployFinished(({ projectId }) => {
+      void refresh();
+      if (projectId !== selectedProjectId) return;
+      void window.plantar.readProjectConfig(projectId).then((result) => {
+        if (result.ok) setProjectConfig(result.data);
+      });
+    });
   }, [refresh, selectedProjectId]);
 
   return (
@@ -296,7 +309,7 @@ export default function App() {
                   askPassword={askPassword}
                   autoDeploy={autoDeploy}
                   onAutoDeployHandled={() => setAutoDeploy(false)}
-                  onDeployed={refreshProject}
+                  onProjectChanged={refreshProject}
                 />
               </TabsContent>
               {selectedProject.source === "git" && (

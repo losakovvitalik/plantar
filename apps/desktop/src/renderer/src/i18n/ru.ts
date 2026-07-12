@@ -120,6 +120,11 @@ export const ru = {
   "deploy.connectRepo": "Подключить репозиторий",
   "deploy.connectingRepo": "Подключаю…",
   "deploy.pickFolder": "Указать папку с кодом",
+  "deploy.lastRunDeploy": "Деплой от {when}",
+  "deploy.lastRunRollback": "Возврат версии от {when}",
+  "deploy.lastRunSuccess": "Успешно",
+  "deploy.lastRunError": "С ошибкой",
+  "deploy.lastRunInterrupted": "Был прерван",
 
   "discover.title": "Найдено на сервере",
   "discover.description":

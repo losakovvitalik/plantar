@@ -11,6 +11,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { Language } from "@plantar/storage";
 import type {
   ProjectConfig,
   ProjectRecord,
@@ -29,11 +30,36 @@ interface Props {
   /** Запустить деплой сразу — кнопка «Деплой» в настройках проекта */
   autoDeploy: boolean;
   onAutoDeployHandled: () => void;
-  /** Успешный деплой — родитель обновляет список (задеплоенный коммит git) */
-  onDeployed: () => void;
+  /** Проект изменился (привязана папка или репозиторий) — родитель
+   *  перечитывает список проектов и конфиг */
+  onProjectChanged: () => void;
 }
 
 const SHOW_COMMANDS_KEY = "plantar:showCommands";
+
+/** Лимит строк терминала — как у буфера прогона в main; длинный лог
+ *  восстановленного npm install не должен раздувать DOM */
+const MAX_TERMINAL_LINES = 2000;
+
+const DATE_LOCALES: Record<Language, string> = { ru: "ru-RU", en: "en-US" };
+
+function formatWhen(iso: string, lang: Language): string {
+  return new Date(iso).toLocaleString(DATE_LOCALES[lang], {
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Прогон деплоя глазами вкладки — зеркало состояния main */
+interface RunView {
+  status: "running" | "success" | "error" | "interrupted";
+  kind: "deploy" | "rollback";
+  startedAt: string;
+  url: string | null;
+  error: { message: string; code?: string } | null;
+}
 
 function DeployError({
   message,
@@ -142,26 +168,23 @@ export function DeployTab({
   askPassword,
   autoDeploy,
   onAutoDeployHandled,
-  onDeployed,
+  onProjectChanged,
 }: Props) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const isGit = project.source === "git";
   const isExternal = Boolean(project.external);
   const needsFolder = isExternal && !project.path;
   // Репозиторий, из которого приложение было задеплоено на сервер (если нашёлся)
   const externalRepo = project.external?.repoUrl;
   const [linkingRepo, setLinkingRepo] = useState(false);
+  // Ошибка привязки папки/репозитория — не относится к прогону деплоя
+  const [linkError, setLinkError] = useState<string | null>(null);
+  // Состояние прогона живёт в main; вкладка показывает его снимок + события
+  const [run, setRun] = useState<RunView | null>(null);
   const [lines, setLines] = useState<string[]>([]);
-  const [running, setRunning] = useState(false);
-  // Что именно выполняется — деплой или возврат версии (для подписей кнопок)
-  const [rollingBack, setRollingBack] = useState(false);
-  const [url, setUrl] = useState<string | null>(null);
-  // Успешный деплой без адреса (боты) — показываем текст вместо ссылки
-  const [deployed, setDeployed] = useState(false);
-  // Успешный возврат предыдущей версии — своя подпись результата
-  const [rolledBack, setRolledBack] = useState(false);
-  // code — машинный код ошибки: по npm-peer-conflict показывается кнопка режима совместимости
-  const [error, setError] = useState<{ message: string; code?: string } | null>(null);
+  // Пока снимок не получен, кнопки неактивны — иначе можно запустить второй деплой
+  const [stateLoaded, setStateLoaded] = useState(false);
+  const lastSeqRef = useRef(0);
   const [showCommands, setShowCommands] = useState(
     () => localStorage.getItem(SHOW_COMMANDS_KEY) !== "0",
   );
@@ -169,13 +192,107 @@ export function DeployTab({
   // Прилипание к низу: автоскролл только пока пользователь не проскроллил вверх
   const stickRef = useRef(true);
 
+  const running = run?.status === "running";
+  const rollingBack = running && run?.kind === "rollback";
+  const success = run?.status === "success";
+  const url = success ? (run?.url ?? null) : null;
+  const deployed = success && run?.kind === "deploy";
+  const rolledBack = success && run?.kind === "rollback";
+  const error = run?.status === "error" ? run.error : null;
+
+  // Длительность текущего шага: долгие команды (npm install, сборка) не пишут в лог
+  // до завершения, и без бегущего счётчика деплой выглядит зависшим.
+  // Точка отсчёта — время последней строки, она переживает перемонтирование вкладки.
+  const stepStartRef = useRef(Date.now());
+  const [stepSeconds, setStepSeconds] = useState(0);
   useEffect(() => {
-    const unsubscribe = window.plantar.onDeployLog((event) => {
-      if (event.projectId === project.id) {
-        setLines((prev) => [...prev, event.line]);
+    if (!running) return;
+    const id = window.setInterval(() => {
+      setStepSeconds(
+        Math.max(0, Math.floor((Date.now() - stepStartRef.current) / 1000)),
+      );
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [running]);
+
+  useEffect(() => {
+    setRun(null);
+    setLines([]);
+    setStateLoaded(false);
+    setLinkError(null);
+    lastSeqRef.current = 0;
+    stickRef.current = true;
+    let disposed = false;
+    let loaded = false;
+    // Строки, пришедшие между запросом снимка и ответом, — применяются после снимка
+    const pending: { seq: number; line: string }[] = [];
+
+    const append = (seq: number, line: string) => {
+      // Номера строк закрывают гонку снимка и подписки: дубли отбрасываются
+      if (seq <= lastSeqRef.current) return;
+      lastSeqRef.current = seq;
+      stepStartRef.current = Date.now();
+      setStepSeconds(0);
+      setLines((prev) => [...prev, line].slice(-MAX_TERMINAL_LINES));
+    };
+
+    const unsubscribeLog = window.plantar.onDeployLog((event) => {
+      if (event.projectId !== project.id) return;
+      if (!loaded) {
+        pending.push(event);
+        return;
       }
+      append(event.seq, event.line);
     });
-    return unsubscribe;
+    const unsubscribeFinished = window.plantar.onDeployFinished((event) => {
+      if (event.projectId !== project.id) return;
+      setRun(
+        (prev) =>
+          prev && {
+            ...prev,
+            status: event.status,
+            url: event.url ?? null,
+            error:
+              event.status === "error"
+                ? { message: event.error ?? "", code: event.code }
+                : null,
+          },
+      );
+    });
+
+    void window.plantar.getDeployState(project.id).then((result) => {
+      if (disposed) return;
+      loaded = true;
+      setStateLoaded(true);
+      if (!result.ok || !result.data) return;
+      const state = result.data;
+      lastSeqRef.current = state.lastSeq;
+      setLines(state.lines.slice(-MAX_TERMINAL_LINES));
+      setRun({
+        status: state.status,
+        kind: state.kind,
+        startedAt: state.startedAt,
+        url: state.url ?? null,
+        error: state.error
+          ? { message: state.error, code: state.errorCode }
+          : null,
+      });
+      if (state.status === "running") {
+        // Счётчик шага продолжается от последней строки, а не с нуля
+        stepStartRef.current =
+          Date.parse(state.lastLineAt || state.startedAt) || Date.now();
+        setStepSeconds(
+          Math.max(0, Math.floor((Date.now() - stepStartRef.current) / 1000)),
+        );
+      }
+      for (const event of pending) append(event.seq, event.line);
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribeLog();
+      unsubscribeFinished();
+    };
   }, [project.id]);
 
   useEffect(() => {
@@ -184,19 +301,26 @@ export function DeployTab({
     }
   }, [lines]);
 
-  // Длительность текущего шага: долгие команды (npm install, сборка) не пишут в лог
-  // до завершения, и без бегущего счётчика деплой выглядит зависшим
-  const [stepSeconds, setStepSeconds] = useState(0);
-  useEffect(() => {
-    if (!running) return;
-    setStepSeconds(0);
-    const id = window.setInterval(() => setStepSeconds((s) => s + 1), 1000);
-    return () => window.clearInterval(id);
-  }, [running, lines.length]);
-
   function toggleCommands(value: boolean) {
     setShowCommands(value);
     localStorage.setItem(SHOW_COMMANDS_KEY, value ? "1" : "0");
+  }
+
+  /** Сброс вкладки под новый прогон — до ответа main, чтобы клик отзывался мгновенно */
+  function startRunView(kind: "deploy" | "rollback") {
+    setRun({
+      status: "running",
+      kind,
+      startedAt: new Date().toISOString(),
+      url: null,
+      error: null,
+    });
+    setLines([]);
+    setLinkError(null);
+    lastSeqRef.current = 0;
+    stickRef.current = true;
+    stepStartRef.current = Date.now();
+    setStepSeconds(0);
   }
 
   // Повторный запуск во время работы (двойной клик, двойной прогон эффекта
@@ -205,27 +329,25 @@ export function DeployTab({
   const busyRef = useRef(false);
 
   async function deploy(legacyPeerDeps = false) {
-    if (busyRef.current) return;
+    if (busyRef.current || running) return;
     busyRef.current = true;
     try {
       const password = await passwordFor(server, askPassword);
       if (password === null) return;
-      setRunning(true);
-      setRollingBack(false);
-      setLines([]);
-      stickRef.current = true;
-      setUrl(null);
-      setDeployed(false);
-      setRolledBack(false);
-      setError(null);
+      startRunView("deploy");
       const result = await window.plantar.deploy(project.id, password, legacyPeerDeps);
-      setRunning(false);
-      if (result.ok) {
-        setUrl(result.data.url ?? null);
-        setDeployed(true);
-        onDeployed();
-      } else {
-        setError({ message: result.error, code: result.code });
+      // Успех и ошибки прогона приходят событием deploy:finished;
+      // здесь остаются только ошибки до старта прогона (валидация)
+      if (!result.ok) {
+        setRun((prev) =>
+          prev && prev.status === "running"
+            ? {
+                ...prev,
+                status: "error",
+                error: { message: result.error, code: result.code },
+              }
+            : prev,
+        );
       }
     } finally {
       busyRef.current = false;
@@ -233,29 +355,20 @@ export function DeployTab({
   }
 
   async function rollback() {
-    if (busyRef.current) return;
+    if (busyRef.current || running) return;
     busyRef.current = true;
     try {
       if (!window.confirm(t("deploy.rollbackConfirm"))) return;
       const password = await passwordFor(server, askPassword);
       if (password === null) return;
-      setRunning(true);
-      setRollingBack(true);
-      setLines([]);
-      stickRef.current = true;
-      setUrl(null);
-      setDeployed(false);
-      setRolledBack(false);
-      setError(null);
+      startRunView("rollback");
       const result = await window.plantar.rollback(project.id, password);
-      setRunning(false);
-      setRollingBack(false);
-      if (result.ok) {
-        setUrl(result.data.url ?? null);
-        setRolledBack(true);
-        onDeployed();
-      } else {
-        setError({ message: result.error });
+      if (!result.ok) {
+        setRun((prev) =>
+          prev && prev.status === "running"
+            ? { ...prev, status: "error", error: { message: result.error } }
+            : prev,
+        );
       }
     } finally {
       busyRef.current = false;
@@ -264,27 +377,27 @@ export function DeployTab({
 
   /** Привязка папки с кодом к импортированному проекту — открывает выбор папки */
   async function linkFolder() {
-    setError(null);
+    setLinkError(null);
     const result = await window.plantar.linkProjectFolder(project.id);
     if (!result.ok) {
-      setError({ message: result.error });
+      setLinkError(result.error);
       return;
     }
     if (!result.data) return; // выбор папки закрыли
-    onDeployed(); // родитель перечитает список проектов и конфиг
+    onProjectChanged(); // родитель перечитает список проектов и конфиг
   }
 
   /** Подключение обнаруженного репозитория: клонирует его и переводит проект в git-источник */
   async function linkRepo() {
-    setError(null);
+    setLinkError(null);
     setLinkingRepo(true);
     const result = await window.plantar.linkProjectRepo(project.id);
     setLinkingRepo(false);
     if (!result.ok) {
-      setError({ message: result.error });
+      setLinkError(result.error);
       return;
     }
-    onDeployed();
+    onProjectChanged();
   }
 
   useEffect(() => {
@@ -299,10 +412,29 @@ export function DeployTab({
     ? lines
     : lines.filter((line) => !line.startsWith("$"));
 
+  const lastRunLabel =
+    run && !running
+      ? `${t(
+          run.kind === "rollback"
+            ? "deploy.lastRunRollback"
+            : "deploy.lastRunDeploy",
+          { when: run.startedAt ? formatWhen(run.startedAt, lang) : "—" },
+        )} · ${
+          run.status === "success"
+            ? t("deploy.lastRunSuccess")
+            : run.status === "error"
+              ? t("deploy.lastRunError")
+              : t("deploy.lastRunInterrupted")
+        }`
+      : null;
+
   return (
     <div className="flex h-full flex-col gap-4">
       <div className="flex items-center gap-3">
-        <Button onClick={() => void deploy()} disabled={running || !config || needsFolder}>
+        <Button
+          onClick={() => void deploy()}
+          disabled={!stateLoaded || running || !config || needsFolder}
+        >
           <Rocket />
           {running && !rollingBack
             ? t("deploy.running")
@@ -314,7 +446,7 @@ export function DeployTab({
         <Button
           variant="outline"
           onClick={rollback}
-          disabled={running || !config || isExternal}
+          disabled={!stateLoaded || running || !config || isExternal}
           title={isExternal ? t("deploy.rollbackExternalHint") : undefined}
         >
           <Undo2 />
@@ -429,13 +561,21 @@ export function DeployTab({
         )
       )}
 
-      {error && (
-        <DeployError
-          message={error.message}
-          onCompatRetry={
-            error.code === "npm-peer-conflict" ? () => void deploy(true) : undefined
-          }
-        />
+      {linkError ? (
+        <DeployError message={linkError} />
+      ) : (
+        error && (
+          <DeployError
+            message={error.message}
+            onCompatRetry={
+              error.code === "npm-peer-conflict" ? () => void deploy(true) : undefined
+            }
+          />
+        )
+      )}
+
+      {lastRunLabel && (
+        <div className="text-[12px] text-ink-soft">{lastRunLabel}</div>
       )}
 
       <div
@@ -447,7 +587,7 @@ export function DeployTab({
         }}
         className="thin-scroll min-h-0 flex-1 overflow-y-auto rounded-xl bg-soil p-4 font-mono text-[12.5px] leading-relaxed text-sprout"
       >
-        {visibleLines.length === 0 ? (
+        {visibleLines.length === 0 && (running || !run) ? (
           <span className="inline-flex items-center gap-2 text-sprout/40">
             {running && <Loader2 className="size-3.5 shrink-0 animate-spin" />}
             {running ? t("common.connecting") : t("deploy.terminalEmpty")}

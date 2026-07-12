@@ -71,6 +71,7 @@ const api = {
     invoke("deploy:run", { projectId, password, legacyPeerDeps }),
   rollback: (projectId: string, password?: string) =>
     invoke("deploy:rollback", { projectId, password }),
+  getDeployState: (projectId: string) => invoke("deploy:state", projectId),
 
   startLogStream: (projectId: string, source: string, password?: string) =>
     invoke("logs:streamStart", { projectId, source, password }),
@@ -78,10 +79,40 @@ const api = {
 
   openExternal: (url: string) => invoke("open-external", url),
 
-  onDeployLog: (callback: (event: { projectId: string; line: string }) => void) => {
-    const handler = (_e: unknown, data: { projectId: string; line: string }) => callback(data);
+  onDeployLog: (
+    callback: (event: { projectId: string; seq: number; line: string }) => void,
+  ) => {
+    const handler = (
+      _e: unknown,
+      data: { projectId: string; seq: number; line: string },
+    ) => callback(data);
     ipcRenderer.on("deploy:log", handler);
     return () => ipcRenderer.removeListener("deploy:log", handler);
+  },
+
+  onDeployFinished: (
+    callback: (event: {
+      projectId: string;
+      kind: string;
+      status: string;
+      url?: string;
+      error?: string;
+      code?: string;
+    }) => void,
+  ) => {
+    const handler = (
+      _e: unknown,
+      data: {
+        projectId: string;
+        kind: string;
+        status: string;
+        url?: string;
+        error?: string;
+        code?: string;
+      },
+    ) => callback(data);
+    ipcRenderer.on("deploy:finished", handler);
+    return () => ipcRenderer.removeListener("deploy:finished", handler);
   },
 
   onLogStreamData: (

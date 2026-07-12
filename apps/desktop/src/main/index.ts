@@ -40,13 +40,17 @@ import {
   type DeployRecord,
   appendHistory,
   dataDir,
+  deployLogTimestamp,
+  listDeployLogs,
   readAppStatusCache,
   readCommitsCache,
   readHistory,
+  readLogTail,
   readProjects,
   readServers,
   readSettings,
   reposDir,
+  resolveLastRun,
   saveServerLogSnapshot,
   writeAppStatusCache,
   writeCommitsCache,
@@ -87,6 +91,7 @@ import {
   putSecrets,
 } from "./github-actions";
 import { setLanguage, t } from "./i18n";
+import { type DeployRunState, deployRunState, startDeployRun } from "./deploy-runs";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
 
@@ -427,7 +432,6 @@ function removeCloneDir(projectPath: string): void {
 
 /** Системное уведомление о результате деплоя; клик открывает окно на проекте */
 function notifyDeployResult(
-  win: BrowserWindow,
   projectId: string,
   projectName: string,
   success: boolean,
@@ -445,7 +449,9 @@ function notifyDeployResult(
         },
   );
   notification.on("click", () => {
-    if (win.isDestroyed()) return;
+    // Деплой не привязан к окну — берём живое окно на момент клика
+    const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+    if (!win) return;
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
@@ -454,27 +460,9 @@ function notifyDeployResult(
   notification.show();
 }
 
-/**
- * Не даёт запустить два деплоя (или деплой и откат) одного проекта
- * одновременно: параллельные запуски дерутся за git-клон (index.lock)
- * и staging-папку на сервере.
- */
-const activeDeploys = new Set<string>();
-
-async function withDeployLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
-  if (activeDeploys.has(projectId)) throw new Error(t("deployAlreadyRunning"));
-  activeDeploys.add(projectId);
-  try {
-    return await fn();
-  } finally {
-    activeDeploys.delete(projectId);
-  }
-}
-
 async function runDeploy(
   projectId: string,
   password: string | undefined,
-  win: BrowserWindow,
   // Режим совместимости (npm --legacy-peer-deps); пользователь подтвердил кнопкой в GUI
   legacyPeerDeps?: boolean,
 ): Promise<{ url?: string }> {
@@ -485,34 +473,39 @@ async function runDeploy(
   const dir = projectDir(project);
   let config = loadProjectConfig(dir);
 
-  const logWriter = new DeployLogWriter(config.name);
-  const log = (line: string) => {
-    logWriter.write(line);
-    win.webContents.send("deploy:log", { projectId, line });
-  };
+  // Прогон регистрируется до первого await — второй одновременный деплой
+  // одного проекта отсекается здесь же, не оставляя пустого файла лога
+  const run = startDeployRun(projectId, "deploy");
   const startedAt = new Date().toISOString();
 
   // git-проект: обновляем клон до свежего коммита ветки перед деплоем
   let deployedCommit: { hash: string; message: string } | undefined;
-  if (project.source === "git") {
-    log(t("deployUpdatingRepo"));
-    await updateRepo(project.path, project.branch!, getToken() ?? undefined);
-    // plantar.json лежит untracked и переживает reset; на всякий случай восстанавливаем конфиг
-    config = writeProjectConfig(dir, config);
-    // Коммит фиксируем до сборки — он нужен и в успешной, и в упавшей записи истории
-    try {
-      deployedCommit = await headCommit(project.path);
-    } catch {
-      /* не смогли прочитать коммит — деплой всё равно продолжаем */
+  let logWriter: DeployLogWriter | undefined;
+  try {
+    logWriter = new DeployLogWriter(config.name);
+    const writer = logWriter;
+    const log = (line: string) => {
+      writer.write(line);
+      run.log(line);
+    };
+    if (project.source === "git") {
+      log(t("deployUpdatingRepo"));
+      await updateRepo(project.path, project.branch!, getToken() ?? undefined);
+      // plantar.json лежит untracked и переживает reset; на всякий случай восстанавливаем конфиг
+      config = writeProjectConfig(dir, config);
+      // Коммит фиксируем до сборки — он нужен и в успешной, и в упавшей записи истории
+      try {
+        deployedCommit = await headCommit(project.path);
+      } catch {
+        /* не смогли прочитать коммит — деплой всё равно продолжаем */
+      }
     }
-  }
 
-  const settings = readSettings();
-  // Флаг не пишем в конфиг заранее: он закрепится ниже, только если деплой удался
-  const deployConfig = legacyPeerDeps ? { ...config, legacyPeerDeps: true } : config;
-  return withServer(server, password, async (conn) => {
-    try {
-      const result = await deployProject(conn, dir, deployConfig, log, {
+    const settings = readSettings();
+    // Флаг не пишем в конфиг заранее: он закрепится ниже, только если деплой удался
+    const deployConfig = legacyPeerDeps ? { ...config, legacyPeerDeps: true } : config;
+    const result = await withServer(server, password, (conn) =>
+      deployProject(conn, dir, deployConfig, log, {
         letsEncryptEmail: settings.letsEncryptEmail || undefined,
         // Первый деплой импортированного проекта снимает прежний процесс и конфиг nginx
         takeover: project.external
@@ -521,44 +514,52 @@ async function runDeploy(
               nginxConfFile: project.external.nginxConfFile,
             }
           : undefined,
-      });
-      // Закрепляем в конфиге порт (выбирается на сервере при первом деплое)
-      // и режим совместимости — подтверждённый выбор нужен и автодеплою из CI
-      const configUpdates: Partial<ProjectConfig> = {};
-      if (result.port && result.port !== config.port) configUpdates.port = result.port;
-      if (legacyPeerDeps && !config.legacyPeerDeps) configUpdates.legacyPeerDeps = true;
-      if (Object.keys(configUpdates).length > 0) {
-        writeProjectConfig(dir, { ...config, ...configUpdates });
-      }
-      appendHistory({
-        project: config.name,
-        host: server.host,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        status: "success",
-        url: result.url,
-        commit: deployedCommit?.hash,
-        logFile: logWriter.file,
-      });
-      // git-проект: запоминаем задеплоенный коммит для карточки проекта и вкладки «Коммиты»
-      // Внешний проект после успешного деплоя переходит на управляемую структуру —
-      // пометка «внешний» снимается, дальше он живёт как обычный проект
-      if (deployedCommit || project.external) {
-        const commit = deployedCommit;
-        writeProjects(
-          readProjects().map((p) =>
-            p.id === project.id
-              ? { ...p, ...(commit ? { deployedCommit: commit } : {}), external: undefined }
-              : p,
-          ),
-        );
-      }
-      if (settings.notifyOnDeploySuccess) {
-        notifyDeployResult(win, projectId, config.name, true);
-      }
-      return { url: result.url };
-    } catch (err) {
-      const message = (err as Error).message;
+      }),
+    );
+    // Закрепляем в конфиге порт (выбирается на сервере при первом деплое)
+    // и режим совместимости — подтверждённый выбор нужен и автодеплою из CI
+    const configUpdates: Partial<ProjectConfig> = {};
+    if (result.port && result.port !== config.port) configUpdates.port = result.port;
+    if (legacyPeerDeps && !config.legacyPeerDeps) configUpdates.legacyPeerDeps = true;
+    if (Object.keys(configUpdates).length > 0) {
+      writeProjectConfig(dir, { ...config, ...configUpdates });
+    }
+    appendHistory({
+      project: config.name,
+      host: server.host,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      status: "success",
+      url: result.url,
+      commit: deployedCommit?.hash,
+      logFile: logWriter.file,
+    });
+    // git-проект: запоминаем задеплоенный коммит для карточки проекта и вкладки «Коммиты»
+    // Внешний проект после успешного деплоя переходит на управляемую структуру —
+    // пометка «внешний» снимается, дальше он живёт как обычный проект
+    if (deployedCommit || project.external) {
+      const commit = deployedCommit;
+      writeProjects(
+        readProjects().map((p) =>
+          p.id === project.id
+            ? { ...p, ...(commit ? { deployedCommit: commit } : {}), external: undefined }
+            : p,
+        ),
+      );
+    }
+    if (settings.notifyOnDeploySuccess) {
+      notifyDeployResult(projectId, config.name, true);
+    }
+    run.finish({ status: "success", url: result.url });
+    return { url: result.url };
+  } catch (err) {
+    const message = (err as Error).message;
+    const code = (err as { code?: string }).code;
+    // Статус прогона обновляется первым: сбой записи на диск не должен
+    // оставить проект навсегда заблокированным «идущим» деплоем
+    run.finish({ status: "error", error: message, code });
+    notifyDeployResult(projectId, config.name, false);
+    if (logWriter) {
       logWriter.write(`\n${t("deployLogError")}: ${message}`);
       appendHistory({
         project: config.name,
@@ -567,20 +568,19 @@ async function runDeploy(
         finishedAt: new Date().toISOString(),
         status: "error",
         error: message,
+        code,
         commit: deployedCommit?.hash,
         logFile: logWriter.file,
       });
-      notifyDeployResult(win, projectId, config.name, false);
-      throw err;
     }
-  });
+    throw err;
+  }
 }
 
 /** Возврат предыдущей версии; лог идёт в тот же канал, что и лог деплоя */
 async function runRollback(
   projectId: string,
   password: string | undefined,
-  win: BrowserWindow,
 ): Promise<{ url?: string }> {
   const project = getProject(projectId);
   // До первого деплоя через Plantar на сервере нет сохранённых версий
@@ -588,29 +588,36 @@ async function runRollback(
   const server = getServer(project.serverId);
   const config = projectConfig(project);
 
-  const logWriter = new DeployLogWriter(config.name);
-  const log = (line: string) => {
-    logWriter.write(line);
-    win.webContents.send("deploy:log", { projectId, line });
-  };
+  const run = startDeployRun(projectId, "rollback");
   const startedAt = new Date().toISOString();
 
-  return withServer(server, password, async (conn) => {
-    try {
-      const result = await rollbackProject(conn, config, log);
-      appendHistory({
-        project: config.name,
-        host: server.host,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        status: "success",
-        kind: "rollback",
-        url: result.url,
-        logFile: logWriter.file,
-      });
-      return { url: result.url };
-    } catch (err) {
-      const message = (err as Error).message;
+  let logWriter: DeployLogWriter | undefined;
+  try {
+    logWriter = new DeployLogWriter(config.name);
+    const writer = logWriter;
+    const log = (line: string) => {
+      writer.write(line);
+      run.log(line);
+    };
+    const result = await withServer(server, password, (conn) =>
+      rollbackProject(conn, config, log),
+    );
+    appendHistory({
+      project: config.name,
+      host: server.host,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      status: "success",
+      kind: "rollback",
+      url: result.url,
+      logFile: logWriter.file,
+    });
+    run.finish({ status: "success", url: result.url });
+    return { url: result.url };
+  } catch (err) {
+    const message = (err as Error).message;
+    run.finish({ status: "error", error: message });
+    if (logWriter) {
       logWriter.write(`\n${t("deployLogError")}: ${message}`);
       appendHistory({
         project: config.name,
@@ -622,9 +629,49 @@ async function runRollback(
         error: message,
         logFile: logWriter.file,
       });
-      throw err;
     }
-  });
+    throw err;
+  }
+}
+
+/**
+ * Последний прогон проекта с диска — когда прогона нет в памяти
+ * (приложение перезапустили). Свежайший deploy-*.log сверяется с историей:
+ * есть запись — прогон завершён, файл новее последней записи — деплой
+ * был прерван.
+ */
+function restoredDeployState(project: ProjectRecord): DeployRunState | null {
+  const server = getServer(project.serverId);
+  let name = project.name;
+  try {
+    name = projectConfig(project).name;
+  } catch {
+    /* plantar.json недоступен — используем имя на момент добавления */
+  }
+  const history = readHistory().filter(
+    (r) => r.project === name && r.host === server.host,
+  );
+  const last = resolveLastRun(listDeployLogs(name), history);
+  if (!last) return null;
+  let text = "";
+  try {
+    text = readLogTail(last.logFile);
+  } catch {
+    /* файл лога удалён — показываем результат из истории без лога */
+  }
+  const record = last.record;
+  const startedAt = record?.startedAt ?? deployLogTimestamp(last.logFile) ?? "";
+  return {
+    kind: record?.kind ?? "deploy",
+    status: record ? record.status : "interrupted",
+    lines: text ? text.replace(/\n$/, "").split("\n") : [],
+    lastSeq: 0,
+    startedAt,
+    lastLineAt: record?.finishedAt ?? startedAt,
+    url: record?.url,
+    error: record?.error,
+    errorCode: record?.code,
+  };
 }
 
 /**
@@ -1044,7 +1091,8 @@ app.whenReady().then(() => {
       if (!resolved.startsWith(logsRoot)) {
         throw new Error(t("invalidLogPath"));
       }
-      return readFileSync(resolved, "utf8");
+      // Логи не ограничены по размеру — читаем только хвост
+      return readLogTail(resolved);
     }),
   );
 
@@ -1158,18 +1206,17 @@ app.whenReady().then(() => {
   ipcMain.handle(
     "deploy:run",
     (_e, args: { projectId: string; password?: string; legacyPeerDeps?: boolean }) =>
-      toResult(() =>
-        withDeployLock(args.projectId, () =>
-          runDeploy(args.projectId, args.password, win, args.legacyPeerDeps),
-        ),
-      ),
+      toResult(() => runDeploy(args.projectId, args.password, args.legacyPeerDeps)),
   );
   ipcMain.handle("deploy:rollback", (_e, args: { projectId: string; password?: string }) =>
-    toResult(() =>
-      withDeployLock(args.projectId, () =>
-        runRollback(args.projectId, args.password, win),
-      ),
-    ),
+    toResult(() => runRollback(args.projectId, args.password)),
+  );
+  // Состояние прогона деплоя для вкладки: из памяти, после перезапуска — с диска
+  ipcMain.handle("deploy:state", (_e, projectId: string) =>
+    toResult(async () => {
+      const project = getProject(projectId);
+      return deployRunState(projectId) ?? restoredDeployState(project);
+    }),
   );
 
   // Живые лог-стримы: id → остановка. Активный стрим держит соединение в пуле занятым

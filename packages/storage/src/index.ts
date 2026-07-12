@@ -1,9 +1,21 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { type Language, systemLanguage } from "@plantar/i18n";
 
 export type { Language } from "@plantar/i18n";
+export { type LastDeployRun, deployLogTimestamp, resolveLastRun } from "./last-run";
 
 /** Директория данных Plantar по конвенциям ОС */
 export function dataDir(): string {
@@ -42,6 +54,35 @@ export class DeployLogWriter {
 
   write(line: string): void {
     appendFileSync(this.file, line + "\n");
+  }
+}
+
+/** Файлы deploy-логов проекта (полные пути), от старых к новым */
+export function listDeployLogs(project: string): string[] {
+  const dir = path.join(dataDir(), "logs", project);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => /^deploy-.*\.log$/.test(f))
+    .sort()
+    .map((f) => path.join(dir, f));
+}
+
+/**
+ * Хвост файла лога, не длиннее maxBytes: логи не ограничены по размеру,
+ * и целиком их читать нельзя. Оборванная первая строка отбрасывается.
+ */
+export function readLogTail(file: string, maxBytes = 512_000): string {
+  const size = statSync(file).size;
+  if (size <= maxBytes) return readFileSync(file, "utf8");
+  const fd = openSync(file, "r");
+  try {
+    const buf = Buffer.alloc(maxBytes);
+    readSync(fd, buf, 0, maxBytes, size - maxBytes);
+    const text = buf.toString("utf8");
+    const firstNewline = text.indexOf("\n");
+    return firstNewline === -1 ? text : text.slice(firstNewline + 1);
+  } finally {
+    closeSync(fd);
   }
 }
 
@@ -195,6 +236,9 @@ export interface DeployRecord {
   kind?: "deploy" | "rollback";
   url?: string;
   error?: string;
+  /** Машинный код ошибки (например npm-peer-conflict) — по нему GUI
+   *  предлагает действие; у старых записей отсутствует */
+  code?: string;
   /** Хеш задеплоенного коммита (для git-проектов); свяжет деплой с коммитом */
   commit?: string;
   logFile: string;
@@ -206,7 +250,12 @@ function historyFile(): string {
 
 export function readHistory(): DeployRecord[] {
   if (!existsSync(historyFile())) return [];
-  return JSON.parse(readFileSync(historyFile(), "utf8")) as DeployRecord[];
+  // Битый history.json не должен ломать вкладки — деградируем до пустой истории
+  try {
+    return JSON.parse(readFileSync(historyFile(), "utf8")) as DeployRecord[];
+  } catch {
+    return [];
+  }
 }
 
 export function appendHistory(record: DeployRecord): void {

@@ -112,6 +112,34 @@ export type IpcResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string; code?: string };
 
+/** Снимок прогона деплоя из main (вкладка «Деплой»); interrupted — прогон,
+ *  оборванный закрытием приложения */
+export interface DeployRunState {
+  kind: "deploy" | "rollback";
+  status: "running" | "success" | "error" | "interrupted";
+  /** Хвост лога; полный лог — в файле истории */
+  lines: string[];
+  /** Номер последней строки снимка: события лога с номером не больше него отбрасываются */
+  lastSeq: number;
+  startedAt: string;
+  /** Время последней строки — счётчик текущего шага продолжается от неё */
+  lastLineAt: string;
+  url?: string;
+  error?: string;
+  /** Машинный код ошибки (например npm-peer-conflict) для действий в GUI */
+  errorCode?: string;
+}
+
+/** Завершение прогона деплоя (событие deploy:finished) */
+export interface DeployFinishedEvent {
+  projectId: string;
+  kind: "deploy" | "rollback";
+  status: "success" | "error";
+  url?: string;
+  error?: string;
+  code?: string;
+}
+
 export interface AddServerInput {
   name: string;
   host: string;
@@ -249,6 +277,11 @@ declare global {
         projectId: string,
         password?: string,
       ) => Promise<IpcResult<{ url?: string }>>;
+      /** Состояние прогона деплоя: живое из памяти main, после перезапуска —
+       *  последний прогон с диска; null — проект ни разу не деплоили */
+      getDeployState: (
+        projectId: string,
+      ) => Promise<IpcResult<DeployRunState | null>>;
 
       /** Живой хвост логов: события приходят в onLogStreamData до stopLogStream */
       startLogStream: (
@@ -261,7 +294,11 @@ declare global {
       openExternal: (url: string) => Promise<IpcResult<void>>;
 
       onDeployLog: (
-        callback: (event: { projectId: string; line: string }) => void,
+        callback: (event: { projectId: string; seq: number; line: string }) => void,
+      ) => () => void;
+      /** Завершение прогона деплоя или возврата версии (любого проекта) */
+      onDeployFinished: (
+        callback: (event: DeployFinishedEvent) => void,
       ) => () => void;
 
       onLogStreamData: (

@@ -120,6 +120,11 @@ export const en: Record<MessageKey, string> = {
   "deploy.connectRepo": "Connect repository",
   "deploy.connectingRepo": "Connecting…",
   "deploy.pickFolder": "Choose code folder",
+  "deploy.lastRunDeploy": "Deploy on {when}",
+  "deploy.lastRunRollback": "Version restore on {when}",
+  "deploy.lastRunSuccess": "Succeeded",
+  "deploy.lastRunError": "Failed",
+  "deploy.lastRunInterrupted": "Interrupted",
 
   "discover.title": "Found on the server",
   "discover.description":
