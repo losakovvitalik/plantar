@@ -457,7 +457,15 @@ export function DeployTab({
           <span className="inline-flex items-center gap-1.5 text-[13px] text-ink-soft">
             <Globe className="size-3.5" />
             {config.domain ? (
-              <span className="font-semibold text-ink">{config.domain}</span>
+              <button
+                type="button"
+                onClick={() =>
+                  void window.plantar.openExternal(`https://${config.domain}/`)
+                }
+                className="font-semibold text-ink underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-moss/50"
+              >
+                {config.domain}
+              </button>
             ) : (
               <span>
                 {t("deploy.viaIp")}{" "}

@@ -61,6 +61,8 @@ export const ru = {
   "sidebar.status.server.unreachable": "Нет связи с сервером",
   "sidebar.status.server.needsPassword": "Статус неизвестен — нужен пароль",
   "sidebar.status.checkedAt": "проверено {time}",
+  "sidebar.deploying.deploy": "Идёт деплой",
+  "sidebar.deploying.rollback": "Идёт возврат предыдущей версии",
 
   "addServer.title": "Добавить сервер",
   "addServer.description":

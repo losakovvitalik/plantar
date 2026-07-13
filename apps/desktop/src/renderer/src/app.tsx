@@ -26,6 +26,7 @@ import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { useI18n } from "./i18n";
 import { useAppStatuses } from "./lib/use-app-statuses";
+import { useDeploys } from "./lib/use-deploys";
 
 export type Selection = { kind: "server" | "project"; id: string } | null;
 
@@ -64,6 +65,9 @@ export default function App() {
     refreshing: statusesRefreshing,
     refresh: refreshStatuses,
   } = useAppStatuses(servers);
+
+  // Идущие деплои — спиннеры у проектов в сайдбаре
+  const activeDeploys = useDeploys();
 
   useEffect(() => {
     void refresh();
@@ -227,6 +231,7 @@ export default function App() {
         projects={projects}
         selection={selection}
         statuses={statuses}
+        activeDeploys={activeDeploys}
         refreshingStatuses={statusesRefreshing}
         onRefreshStatuses={() => void refreshStatuses()}
         onSelect={setSelection}

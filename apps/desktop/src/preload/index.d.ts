@@ -130,6 +130,12 @@ export interface DeployRunState {
   errorCode?: string;
 }
 
+/** Старт прогона деплоя или возврата версии (событие deploy:started) */
+export interface DeployStartedEvent {
+  projectId: string;
+  kind: "deploy" | "rollback";
+}
+
 /** Завершение прогона деплоя (событие deploy:finished) */
 export interface DeployFinishedEvent {
   projectId: string;
@@ -282,6 +288,8 @@ declare global {
       getDeployState: (
         projectId: string,
       ) => Promise<IpcResult<DeployRunState | null>>;
+      /** Идущие сейчас прогоны — начальное состояние индикаторов в сайдбаре */
+      getActiveDeploys: () => Promise<IpcResult<DeployStartedEvent[]>>;
 
       /** Живой хвост логов: события приходят в onLogStreamData до stopLogStream */
       startLogStream: (
@@ -295,6 +303,10 @@ declare global {
 
       onDeployLog: (
         callback: (event: { projectId: string; seq: number; line: string }) => void,
+      ) => () => void;
+      /** Старт прогона деплоя или возврата версии (любого проекта) */
+      onDeployStarted: (
+        callback: (event: DeployStartedEvent) => void,
       ) => () => void;
       /** Завершение прогона деплоя или возврата версии (любого проекта) */
       onDeployFinished: (

@@ -61,6 +61,8 @@ export const en: Record<MessageKey, string> = {
   "sidebar.status.server.unreachable": "No connection to the server",
   "sidebar.status.server.needsPassword": "Status unknown — password required",
   "sidebar.status.checkedAt": "checked {time}",
+  "sidebar.deploying.deploy": "Deploy in progress",
+  "sidebar.deploying.rollback": "Rolling back to the previous version",
 
   "addServer.title": "Add server",
   "addServer.description":

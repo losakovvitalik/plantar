@@ -72,6 +72,7 @@ const api = {
   rollback: (projectId: string, password?: string) =>
     invoke("deploy:rollback", { projectId, password }),
   getDeployState: (projectId: string) => invoke("deploy:state", projectId),
+  getActiveDeploys: () => invoke("deploy:active"),
 
   startLogStream: (projectId: string, source: string, password?: string) =>
     invoke("logs:streamStart", { projectId, source, password }),
@@ -88,6 +89,15 @@ const api = {
     ) => callback(data);
     ipcRenderer.on("deploy:log", handler);
     return () => ipcRenderer.removeListener("deploy:log", handler);
+  },
+
+  onDeployStarted: (
+    callback: (event: { projectId: string; kind: string }) => void,
+  ) => {
+    const handler = (_e: unknown, data: { projectId: string; kind: string }) =>
+      callback(data);
+    ipcRenderer.on("deploy:started", handler);
+    return () => ipcRenderer.removeListener("deploy:started", handler);
   },
 
   onDeployFinished: (

@@ -1,5 +1,6 @@
 import {
   FolderPlus,
+  Loader2,
   Package,
   Plus,
   RefreshCw,
@@ -9,7 +10,12 @@ import {
   Trash2,
 } from "lucide-react";
 import type { Language } from "@plantar/storage";
-import type { AppStatus, ProjectRecord, ServerRecord } from "../../../preload/index.d";
+import type {
+  AppStatus,
+  DeployStartedEvent,
+  ProjectRecord,
+  ServerRecord,
+} from "../../../preload/index.d";
 import type { Selection } from "../app";
 import { useI18n } from "../i18n";
 import type { ServerAppStatuses } from "../lib/use-app-statuses";
@@ -61,6 +67,8 @@ interface Props {
   projects: ProjectRecord[];
   selection: Selection;
   statuses: Record<string, ServerAppStatuses>;
+  /** projectId → вид идущего прогона; спиннер вместо иконки проекта */
+  activeDeploys: Record<string, DeployStartedEvent["kind"]>;
   refreshingStatuses: boolean;
   onRefreshStatuses: () => void;
   onSelect: (selection: Selection) => void;
@@ -76,6 +84,7 @@ export function Sidebar({
   projects,
   selection,
   statuses,
+  activeDeploys,
   refreshingStatuses,
   onRefreshStatuses,
   onSelect,
@@ -186,6 +195,7 @@ export function Sidebar({
               {serverProjects.map((project) => {
                 const active = selection?.kind === "project" && selection.id === project.id;
                 const dot = projectDotKind(status, project.id);
+                const deploying = activeDeploys[project.id];
                 return (
                   <div
                     key={project.id}
@@ -198,9 +208,25 @@ export function Sidebar({
                       onClick={() => onSelect({ kind: "project", id: project.id })}
                       className="flex min-w-0 flex-1 items-center gap-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-sprout/50"
                     >
-                      <Package
-                        className={cn("size-3.5 shrink-0", active ? "text-sprout" : "text-sage/60")}
-                      />
+                      {deploying ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            {/* Спиннер всегда text-sprout: приглушённый цвет невыбранных
+                                проектов прятал бы его, а деплой должно быть видно */}
+                            <Loader2 className="size-3.5 shrink-0 animate-spin text-sprout" />
+                          </TooltipTrigger>
+                          <TooltipContent side="right">
+                            {t(`sidebar.deploying.${deploying}`)}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Package
+                          className={cn(
+                            "size-3.5 shrink-0",
+                            active ? "text-sprout" : "text-sage/60",
+                          )}
+                        />
+                      )}
                       <span className="truncate text-[13px]">{project.name}</span>
                     </button>
                     <button

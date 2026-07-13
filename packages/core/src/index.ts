@@ -786,8 +786,10 @@ async function waitForApp(
   log: (line: string) => void,
 ): Promise<void> {
   log(t("checkingAppPort", { port }));
+  // 120 попыток: тяжёлым приложениям (например, Strapi через npm start)
+  // 30 секунд на запуск не хватает
   const check = await conn.exec(
-    `for i in $(seq 1 30); do ` +
+    `for i in $(seq 1 120); do ` +
       `code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://127.0.0.1:${port}/); ` +
       `if [ "$code" != "000" ]; then exit 0; fi; sleep 1; done; exit 1`,
   );
@@ -919,10 +921,11 @@ async function startWithPm2(
 
   log(t("startingPm2", { command: startCommand }));
   // Каждая версия живёт в своей папке (releases/<метка>), а pm2 restart не всегда
-  // применяет новые cwd/script из конфига — процесс пересоздаётся заново
+  // применяет новые cwd/script из конфига — процесс пересоздаётся заново.
+  // pm2 flush — иначе в отчёт об ошибке попадают строки логов прошлых релизов
   await run(
     conn,
-    `pm2 delete '${config.name}' >/dev/null 2>&1; pm2 start '${ecosystemPath}'`,
+    `pm2 delete '${config.name}' >/dev/null 2>&1; pm2 flush '${config.name}' >/dev/null 2>&1; pm2 start '${ecosystemPath}'`,
     log,
   );
   // pm2 startup + save: процесс переживёт перезагрузку сервера
@@ -1084,7 +1087,7 @@ export async function rollbackProject(
 
     await run(
       conn,
-      `pm2 delete '${config.name}' >/dev/null 2>&1; pm2 start '${ecosystemPath}'`,
+      `pm2 delete '${config.name}' >/dev/null 2>&1; pm2 flush '${config.name}' >/dev/null 2>&1; pm2 start '${ecosystemPath}'`,
       log,
     );
     await run(conn, "pm2 save", log);

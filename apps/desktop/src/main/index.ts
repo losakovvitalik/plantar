@@ -91,7 +91,12 @@ import {
   putSecrets,
 } from "./github-actions";
 import { setLanguage, t } from "./i18n";
-import { type DeployRunState, deployRunState, startDeployRun } from "./deploy-runs";
+import {
+  type DeployRunState,
+  activeDeployRuns,
+  deployRunState,
+  startDeployRun,
+} from "./deploy-runs";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
 
@@ -1211,6 +1216,8 @@ app.whenReady().then(() => {
   ipcMain.handle("deploy:rollback", (_e, args: { projectId: string; password?: string }) =>
     toResult(() => runRollback(args.projectId, args.password)),
   );
+  // Идущие сейчас прогоны — начальное состояние индикаторов деплоя в сайдбаре
+  ipcMain.handle("deploy:active", () => toResult(async () => activeDeployRuns()));
   // Состояние прогона деплоя для вкладки: из памяти, после перезапуска — с диска
   ipcMain.handle("deploy:state", (_e, projectId: string) =>
     toResult(async () => {

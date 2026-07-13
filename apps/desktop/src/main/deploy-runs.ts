@@ -82,6 +82,7 @@ export function startDeployRun(projectId: string, kind: DeployKind): DeployRunHa
     lastLineAt: now,
   };
   runs.set(projectId, run);
+  broadcast("deploy:started", { projectId, kind });
   return {
     log(line) {
       run.lastSeq += 1;
@@ -111,6 +112,13 @@ export function startDeployRun(projectId: string, kind: DeployKind): DeployRunHa
       });
     },
   };
+}
+
+/** Идущие сейчас прогоны — начальное состояние индикаторов в сайдбаре */
+export function activeDeployRuns(): Array<{ projectId: string; kind: DeployKind }> {
+  return [...runs]
+    .filter(([, run]) => run.status === "running")
+    .map(([projectId, run]) => ({ projectId, kind: run.kind }));
 }
 
 /** Снимок прогона из памяти; null — в этом запуске приложения прогонов не было */
