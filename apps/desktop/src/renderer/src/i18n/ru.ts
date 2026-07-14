@@ -47,6 +47,10 @@ export const ru = {
   "sidebar.empty":
     "Пока пусто. Добавь первый сервер — понадобятся IP и пароль от хостинга.",
   "sidebar.addProject": "Добавить проект",
+  "sidebar.search.placeholder": "Поиск",
+  "sidebar.search.empty": "Ничего не найдено",
+  "sidebar.collapseProjects": "Свернуть проекты",
+  "sidebar.expandProjects": "Развернуть проекты",
   "sidebar.removeServer": "Удалить сервер",
   "sidebar.removeProject": "Убрать проект из списка",
   "sidebar.settings": "Настройки",

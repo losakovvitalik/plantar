@@ -47,6 +47,10 @@ export const en: Record<MessageKey, string> = {
   "sidebar.empty":
     "Nothing here yet. Add your first server — you will need the IP and password from your hosting provider.",
   "sidebar.addProject": "Add project",
+  "sidebar.search.placeholder": "Search",
+  "sidebar.search.empty": "Nothing found",
+  "sidebar.collapseProjects": "Collapse projects",
+  "sidebar.expandProjects": "Expand projects",
   "sidebar.removeServer": "Remove server",
   "sidebar.removeProject": "Remove project from the list",
   "sidebar.settings": "Settings",
