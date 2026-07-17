@@ -58,6 +58,7 @@ export const en: Record<MessageKey, string> = {
   "sidebar.status.running": "Running",
   "sidebar.status.stopped": "Not running",
   "sidebar.status.error": "Error — the app is down",
+  "sidebar.status.unresponsive": "The site is not responding",
   "sidebar.status.unknown": "Status unknown",
   "sidebar.status.checking": "Checking…",
   "sidebar.status.server.checking": "Checking…",

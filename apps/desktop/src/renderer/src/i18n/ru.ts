@@ -58,6 +58,7 @@ export const ru = {
   "sidebar.status.running": "Работает",
   "sidebar.status.stopped": "Не запущено",
   "sidebar.status.error": "Ошибка — приложение не работает",
+  "sidebar.status.unresponsive": "Сайт не отвечает",
   "sidebar.status.unknown": "Статус неизвестен",
   "sidebar.status.checking": "Проверка…",
   "sidebar.status.server.checking": "Проверка…",

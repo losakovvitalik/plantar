@@ -296,8 +296,10 @@ export function writeCommitsCache(cache: Record<string, CommitsCacheEntry>): voi
   writeFileSync(commitsCacheFile(), JSON.stringify(cache, null, 2));
 }
 
-/** Статус приложения на сервере (по pm2-процессу); static — без живой проверки */
-export type AppStatus = "running" | "stopped" | "error" | "static";
+/** Статус приложения на сервере: pm2-процесс + HTTP-проверка сайта.
+ *  unresponsive — процесс/статика на месте, но сайт не отвечает;
+ *  static — статичный сайт, который ещё не проверялся (не был задеплоен) */
+export type AppStatus = "running" | "stopped" | "error" | "unresponsive" | "static";
 
 /** Снимок статусов приложений одного сервера */
 export interface AppStatusEntry {

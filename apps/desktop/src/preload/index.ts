@@ -6,8 +6,11 @@ const api = {
   listServers: () => invoke("servers:list"),
   addServer: (input: unknown) => invoke("servers:add", input),
   removeServer: (id: string) => invoke("servers:remove", id),
+  reorderServers: (ids: string[]) => invoke("servers:reorder", ids),
 
   listProjects: () => invoke("projects:list"),
+  reorderProjects: (serverId: string, ids: string[]) =>
+    invoke("projects:reorder", { serverId, ids }),
   pickProject: () => invoke("projects:pick"),
   listRepoBranches: (repoUrl: string) => invoke("repo:branches", repoUrl),
   cloneRepo: (repoUrl: string, branch: string) =>

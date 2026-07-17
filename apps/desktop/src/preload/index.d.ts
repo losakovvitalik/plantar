@@ -167,8 +167,12 @@ declare global {
       listServers: () => Promise<IpcResult<ServerRecord[]>>;
       addServer: (input: AddServerInput) => Promise<IpcResult<ServerRecord>>;
       removeServer: (id: string) => Promise<IpcResult<void>>;
+      /** Порядок серверов в сайдбаре, заданный перетаскиванием */
+      reorderServers: (ids: string[]) => Promise<IpcResult<void>>;
 
       listProjects: () => Promise<IpcResult<ProjectRecord[]>>;
+      /** Порядок проектов одного сервера в сайдбаре, заданный перетаскиванием */
+      reorderProjects: (serverId: string, ids: string[]) => Promise<IpcResult<void>>;
       pickProject: () => Promise<IpcResult<PickedProject | null>>;
       listRepoBranches: (repoUrl: string) => Promise<IpcResult<RemoteBranches>>;
       cloneRepo: (repoUrl: string, branch: string) => Promise<IpcResult<PickedProject>>;

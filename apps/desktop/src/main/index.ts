@@ -6,6 +6,7 @@ import { SshConnection } from "@plantar/ssh";
 import {
   type LogStreamSource,
   type MonitoringTool,
+  checkSitesRespond,
   deployProject,
   discoverApps,
   enableAppMetrics,
@@ -151,24 +152,38 @@ function projectHistory(project: ProjectRecord): DeployRecord[] {
     .reverse();
 }
 
-/** Статус приложения проекта по карте pm2-процессов сервера (имя → статус) */
-function appStatusOf(project: ProjectRecord, pm2: Map<string, string>): AppStatus {
+/** Статус приложения проекта по карте pm2-процессов сервера (имя → статус)
+ *  и адрес сайта для живой HTTP-проверки (у ботов и без конфига адреса нет) */
+function appStatusOf(
+  project: ProjectRecord,
+  pm2: Map<string, string>,
+  host: string,
+): { status: AppStatus; siteUrl?: string } {
   let name = project.name;
   let type: string | undefined;
+  let domain: string | undefined;
   try {
     const config = projectConfig(project);
     name = config.name;
     type = config.type;
+    domain = config.domain;
   } catch {
     /* plantar.json недоступен — используем имя на момент добавления */
   }
-  // Статичный сайт живёт без pm2-процесса — живой проверки для него нет
-  if (type === "static") return "static";
+  // Тот же адрес, что проверяет смоук-тест после деплоя
+  const siteUrl =
+    type && type !== "bot"
+      ? domain
+        ? `https://${domain}/`
+        : `http://${host}/`
+      : undefined;
+  // Статичный сайт живёт без pm2-процесса
+  if (type === "static") return { status: "static", siteUrl };
   // Внешнее приложение до первого деплоя работает под прежним именем pm2
   const status = pm2.get(project.external ? project.external.pm2Name : name);
-  if (status === "online" || status === "launching") return "running";
-  if (status === "errored") return "error";
-  return "stopped";
+  if (status === "online" || status === "launching") return { status: "running", siteUrl };
+  if (status === "errored") return { status: "error", siteUrl };
+  return { status: "stopped", siteUrl };
 }
 
 /**
@@ -817,7 +832,34 @@ app.whenReady().then(() => {
     }),
   );
 
+  // Порядок серверов в сайдбаре, заданный перетаскиванием; неизвестные
+  // ids игнорируются, недостающие серверы остаются в конце в прежнем порядке
+  ipcMain.handle("servers:reorder", (_e, ids: string[]) =>
+    toResult(async () => {
+      const servers = readServers();
+      const byId = new Map(servers.map((s) => [s.id, s]));
+      const ordered = ids.flatMap((id) => byId.get(id) ?? []);
+      const rest = servers.filter((s) => !ids.includes(s.id));
+      writeServers([...ordered, ...rest]);
+    }),
+  );
+
   ipcMain.handle("projects:list", () => toResult(async () => readProjects()));
+  // Порядок проектов одного сервера в сайдбаре; позиции проектов других
+  // серверов в общем списке не меняются
+  ipcMain.handle("projects:reorder", (_e, args: { serverId: string; ids: string[] }) =>
+    toResult(async () => {
+      const projects = readProjects();
+      const own = projects.filter((p) => p.serverId === args.serverId);
+      const byId = new Map(own.map((p) => [p.id, p]));
+      const ordered = [
+        ...args.ids.flatMap((id) => byId.get(id) ?? []),
+        ...own.filter((p) => !args.ids.includes(p.id)),
+      ];
+      let next = 0;
+      writeProjects(projects.map((p) => (p.serverId === args.serverId ? ordered[next++] : p)));
+    }),
+  );
   ipcMain.handle("projects:pick", () => toResult(() => pickProjectFolder(win)));
   // Список веток репозитория для выпадающего списка в форме добавления
   ipcMain.handle("repo:branches", (_e, repoUrl: string) =>
@@ -1112,16 +1154,37 @@ app.whenReady().then(() => {
   ipcMain.handle("server:isConnected", (_e, serverId: string) =>
     toResult(async () => isConnected(serverId)),
   );
-  // Статусы приложений сервера одним pm2-запросом; снимок кэшируется
+  // Статусы приложений сервера: pm2-процессы одним запросом плюс живая
+  // HTTP-проверка сайтов с самого сервера; снимок кэшируется
   // для мгновенного показа при следующем открытии приложения
   ipcMain.handle("server:appStatuses", (_e, args: { serverId: string }) =>
     toResult(async () => {
       const server = getServer(args.serverId);
-      const pm2 = await withServer(server, undefined, (conn) => pm2ProcessStatuses(conn));
       const apps: Record<string, AppStatus> = {};
-      for (const project of readProjects().filter((p) => p.serverId === args.serverId)) {
-        apps[project.id] = appStatusOf(project, pm2);
-      }
+      // Сайт проверяем там, где он должен отвечать: у работающих приложений
+      // и у статики, которая хотя бы раз успешно деплоилась
+      const sites: { projectId: string; url: string }[] = [];
+      await withServer(server, undefined, async (conn) => {
+        const pm2 = await pm2ProcessStatuses(conn);
+        for (const project of readProjects().filter((p) => p.serverId === args.serverId)) {
+          const { status, siteUrl } = appStatusOf(project, pm2, server.host);
+          apps[project.id] = status;
+          const deployedStatic =
+            status === "static" &&
+            projectHistory(project).some((r) => r.status === "success");
+          if (siteUrl && (status === "running" || deployedStatic)) {
+            sites.push({ projectId: project.id, url: siteUrl });
+          }
+        }
+        const responds = await checkSitesRespond(
+          conn,
+          sites.map((s) => s.url),
+        );
+        // Сайт отвечает — «работает» (в том числе статика), нет — «не отвечает»
+        sites.forEach((s, i) => {
+          apps[s.projectId] = responds[i] ? "running" : "unresponsive";
+        });
+      });
       const entry = { apps, checkedAt: new Date().toISOString() };
       const cache = readAppStatusCache();
       cache[args.serverId] = entry;

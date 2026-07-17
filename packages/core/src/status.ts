@@ -1,4 +1,4 @@
-import type { SshConnection } from "@plantar/ssh";
+import { type SshConnection, shellQuote } from "@plantar/ssh";
 import { extractPm2Json, parsePm2Jlist } from "./discover";
 
 /**
@@ -66,4 +66,45 @@ export async function pm2ProcessHealth(
   const jlist = await conn.exec("pm2 jlist 2>/dev/null");
   if (jlist.code !== 0) return new Map();
   return parsePm2Health(jlist.stdout);
+}
+
+/**
+ * Отвечает ли сайт по коду ответа: редиректы и коды авторизации — отвечает;
+ * 502/503/504 — прокси не достучался до приложения, пусто/000 — ответа нет.
+ * Та же логика, что в смоук-проверке после деплоя.
+ */
+export function siteResponds(code: string): boolean {
+  return !["", "000", "502", "503", "504"].includes(code);
+}
+
+/** Разбирает вывод проверки сайтов (строки «номер код») в ответы по порядку urls */
+export function parseSiteChecks(stdout: string, count: number): boolean[] {
+  const codes = new Map<number, string>();
+  for (const line of stdout.trim().split("\n")) {
+    const [index, code] = line.split(" ");
+    codes.set(Number(index), code ?? "");
+  }
+  return Array.from({ length: count }, (_, i) => siteResponds(codes.get(i) ?? ""));
+}
+
+/**
+ * Живая проверка сайтов приложений: запрос к каждому адресу с самого сервера,
+ * чтобы проверить всю цепочку nginx → приложение (без влияния DNS и сети
+ * пользователя). Все адреса проверяются параллельно одним ssh-вызовом.
+ */
+export async function checkSitesRespond(
+  conn: SshConnection,
+  urls: string[],
+): Promise<boolean[]> {
+  if (urls.length === 0) return [];
+  // -k: проверяем доступность, а не сертификат; каждая проверка печатает
+  // свою строку «номер код» — короткие echo пишутся атомарно
+  const checks = urls
+    .map(
+      (url, i) =>
+        `{ code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 ${shellQuote(url)} 2>/dev/null); echo "${i} $code"; } &`,
+    )
+    .join(" ");
+  const result = await conn.exec(`${checks} wait`);
+  return parseSiteChecks(result.stdout, urls.length);
 }

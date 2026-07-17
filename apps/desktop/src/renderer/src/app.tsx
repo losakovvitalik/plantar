@@ -102,6 +102,45 @@ export default function App() {
     };
   }, [showError, t]);
 
+  // Перетаскивание в сайдбаре: порядок меняем сразу, сохранение — в фоне;
+  // при ошибке записи возвращаем порядок с диска
+  const reorderServers = useCallback(
+    (ids: string[]) => {
+      const index = new Map(ids.map((id, i) => [id, i]));
+      setServers((prev) =>
+        [...prev].sort((a, b) => (index.get(a.id) ?? 0) - (index.get(b.id) ?? 0)),
+      );
+      void window.plantar.reorderServers(ids).then((result) => {
+        if (!result.ok) {
+          showError(result.error);
+          void refresh();
+        }
+      });
+    },
+    [refresh, showError],
+  );
+
+  const reorderProjects = useCallback(
+    (serverId: string, ids: string[]) => {
+      setProjects((prev) => {
+        const own = prev.filter((p) => p.serverId === serverId);
+        const index = new Map(ids.map((id, i) => [id, i]));
+        const ordered = [...own].sort(
+          (a, b) => (index.get(a.id) ?? 0) - (index.get(b.id) ?? 0),
+        );
+        let next = 0;
+        return prev.map((p) => (p.serverId === serverId ? ordered[next++] : p));
+      });
+      void window.plantar.reorderProjects(serverId, ids).then((result) => {
+        if (!result.ok) {
+          showError(result.error);
+          void refresh();
+        }
+      });
+    },
+    [refresh, showError],
+  );
+
   // Клик по «+» у сервера — выбор источника проекта (папка или репозиторий)
   const [addingForServer, setAddingForServer] = useState<string | null>(null);
 
@@ -240,6 +279,8 @@ export default function App() {
         onAddProject={setAddingForServer}
         onRemoveServer={removeServer}
         onRemoveProject={setRemovingProject}
+        onReorderServers={reorderServers}
+        onReorderProjects={reorderProjects}
       />
 
       <main className="flex min-w-0 flex-1 flex-col">

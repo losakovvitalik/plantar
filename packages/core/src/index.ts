@@ -21,7 +21,12 @@ export {
   readAppEnv,
 } from "./discover";
 export type { DiscoveredApp, NginxSite, Pm2App } from "./discover";
-export { parsePm2Health, pm2ProcessHealth, pm2ProcessStatuses } from "./status";
+export {
+  checkSitesRespond,
+  parsePm2Health,
+  pm2ProcessHealth,
+  pm2ProcessStatuses,
+} from "./status";
 export type { Pm2ProcessHealth } from "./status";
 export {
   appMetricsGroupName,
