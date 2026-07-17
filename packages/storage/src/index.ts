@@ -323,3 +323,29 @@ export function writeAppStatusCache(cache: Record<string, AppStatusEntry>): void
   mkdirSync(dataDir(), { recursive: true });
   writeFileSync(appStatusCacheFile(), JSON.stringify(cache, null, 2));
 }
+
+/** Кэш вкладки «Статус» одного проекта; форму полей задаёт вкладка (desktop),
+ *  хранилище их не интерпретирует. Поля пишутся независимо — каждая карточка
+ *  сохраняет своё по мере загрузки */
+export interface StatusTabCacheEntry {
+  snapshot?: unknown;
+  metricsHistory?: unknown;
+  logActivity?: unknown;
+  cachedAt: string;
+}
+
+function statusTabCacheFile(): string {
+  return path.join(dataDir(), "status-tab-cache.json");
+}
+
+/** Кэш вкладки «Статус» по projectId — для мгновенного показа при открытии */
+export function readStatusTabCache(): Record<string, StatusTabCacheEntry> {
+  const file = statusTabCacheFile();
+  if (!existsSync(file)) return {};
+  return JSON.parse(readFileSync(file, "utf8")) as Record<string, StatusTabCacheEntry>;
+}
+
+export function writeStatusTabCache(cache: Record<string, StatusTabCacheEntry>): void {
+  mkdirSync(dataDir(), { recursive: true });
+  writeFileSync(statusTabCacheFile(), JSON.stringify(cache, null, 2));
+}

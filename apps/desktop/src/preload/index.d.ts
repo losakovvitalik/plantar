@@ -99,6 +99,28 @@ export interface CommitsView {
   history: DeployRecord[];
 }
 
+/** Снимок вкладки «Статус»: здоровье процесса + посещаемость (что применимо к типу) */
+export interface AppStatusSnapshot {
+  /** undefined — тип без процесса (static); null — процесс на сервере не найден */
+  health?: Pm2ProcessHealth | null;
+  /** undefined — тип без сайта (bot) или не установлен GoAccess */
+  traffic?: TrafficStats;
+  goaccessMissing: boolean;
+  /** Включён ли на сервере сбор нагрузки приложений; undefined — тип без процесса */
+  appMetrics?: boolean;
+}
+
+/** Кэш вкладки «Статус»: устаревшие данные для мгновенного показа.
+ *  Поля пишутся независимо — каждая карточка сохраняет своё по мере загрузки */
+export interface AppStatusTabCache {
+  snapshot?: AppStatusSnapshot;
+  /** История нагрузки за час — окно, которое видно при открытии вкладки */
+  metricsHistory?: AppMetricsHistory;
+  /** Активность логов за сутки по часам */
+  logActivity?: AppLogPoint[];
+  cachedAt: string;
+}
+
 export interface DeviceLogin {
   userCode: string;
   verificationUri: string;
@@ -282,6 +304,15 @@ declare global {
         projectId: string,
         password?: string,
       ) => Promise<IpcResult<TrafficStats>>;
+      /** Кэш вкладки «Статус» проекта — данные прошлого открытия */
+      getStatusTabCache: (
+        projectId: string,
+      ) => Promise<IpcResult<AppStatusTabCache | null>>;
+      /** Дописывает загруженную часть вкладки в кэш для следующего открытия */
+      saveStatusTabCache: (
+        projectId: string,
+        patch: Partial<Omit<AppStatusTabCache, "cachedAt">>,
+      ) => Promise<IpcResult<void>>;
       /** История нагрузки сервера за час или сутки (нужен Netdata) */
       getServerMetrics: (
         serverId: string,

@@ -70,6 +70,9 @@ const api = {
     invoke("metrics:app", { projectId, password }),
   getTrafficStats: (projectId: string, password?: string) =>
     invoke("metrics:traffic", { projectId, password }),
+  getStatusTabCache: (projectId: string) => invoke("metrics:statusTabCache", projectId),
+  saveStatusTabCache: (projectId: string, patch: unknown) =>
+    invoke("metrics:statusTabCacheSave", { projectId, patch }),
   getServerMetrics: (serverId: string, seconds: number, password?: string) =>
     invoke("metrics:server", { serverId, seconds, password }),
   getAppMetricsHistory: (projectId: string, seconds: number, password?: string) =>

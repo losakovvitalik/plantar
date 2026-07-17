@@ -42,6 +42,7 @@ import {
   type ServerRecord,
   type AppSettings,
   type DeployRecord,
+  type StatusTabCacheEntry,
   appendHistory,
   dataDir,
   deployLogTimestamp,
@@ -53,6 +54,7 @@ import {
   readProjects,
   readServers,
   readSettings,
+  readStatusTabCache,
   reposDir,
   resolveLastRun,
   saveServerLogSnapshot,
@@ -61,6 +63,7 @@ import {
   writeProjects,
   writeServers,
   writeSettings,
+  writeStatusTabCache,
 } from "@plantar/storage";
 import {
   generateKeyPair,
@@ -976,6 +979,11 @@ app.whenReady().then(() => {
         delete cache[id];
         writeCommitsCache(cache);
       }
+      const statusCache = readStatusTabCache();
+      if (id in statusCache) {
+        delete statusCache[id];
+        writeStatusTabCache(statusCache);
+      }
     }),
   );
   // Кэш вкладки «Коммиты»: мгновенный показ устаревшего снимка при открытии
@@ -1269,6 +1277,25 @@ app.whenReady().then(() => {
         return withServer(server, args.password, (conn) =>
           getTrafficStats(conn, logPath),
         );
+      }),
+  );
+
+  // Кэш вкладки «Статус»: мгновенный показ устаревшего снимка при открытии
+  ipcMain.handle("metrics:statusTabCache", (_e, projectId: string) =>
+    toResult(async () => readStatusTabCache()[projectId] ?? null),
+  );
+  // Каждая карточка вкладки пишет своё поле по мере загрузки — патч, не замена
+  ipcMain.handle(
+    "metrics:statusTabCacheSave",
+    (_e, args: { projectId: string; patch: Partial<StatusTabCacheEntry> }) =>
+      toResult(async () => {
+        const cache = readStatusTabCache();
+        cache[args.projectId] = {
+          ...cache[args.projectId],
+          ...args.patch,
+          cachedAt: new Date().toISOString(),
+        };
+        writeStatusTabCache(cache);
       }),
   );
 

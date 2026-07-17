@@ -12,6 +12,7 @@ import {
 import type {
   AppLogPoint,
   AppMetricsHistory,
+  AppStatusSnapshot,
   Pm2ProcessHealth,
   ProjectConfig,
   ProjectRecord,
@@ -46,17 +47,6 @@ interface Props {
 const CHART_GREEN = "var(--color-chart-1)";
 const CHART_AMBER = "var(--color-chart-2)";
 
-/** Снимок вкладки: здоровье процесса + посещаемость (что применимо к типу) */
-interface Snapshot {
-  /** undefined — тип без процесса (static); null — процесс на сервере не найден */
-  health?: Pm2ProcessHealth | null;
-  /** undefined — тип без сайта (bot) или не установлен GoAccess */
-  traffic?: TrafficStats;
-  goaccessMissing: boolean;
-  /** Включён ли на сервере сбор нагрузки приложений; undefined — тип без процесса */
-  appMetrics?: boolean;
-}
-
 export function AppStatusTab({
   project,
   server,
@@ -66,7 +56,7 @@ export function AppStatusTab({
   onDeploy,
 }: Props) {
   const { t, lang } = useI18n();
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<AppStatusSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enableMetricsOpen, setEnableMetricsOpen] = useState(false);
@@ -79,7 +69,7 @@ export function AppStatusTab({
       setLoading(true);
       setError(null);
       try {
-        const next: Snapshot = { goaccessMissing: false };
+        const next: AppStatusSnapshot = { goaccessMissing: false };
         if (type !== "static") {
           const health = await window.plantar.getAppHealth(project.id, password);
           if (!health.ok) throw new Error(health.error);
@@ -99,6 +89,8 @@ export function AppStatusTab({
           }
         }
         setSnapshot(next);
+        // Снимок пригодится при следующем открытии вкладки — пишем в кэш
+        void window.plantar.saveStatusTabCache(project.id, { snapshot: next });
       } catch (err) {
         setError((err as Error).message);
       } finally {
@@ -108,14 +100,23 @@ export function AppStatusTab({
     [project.id, server.id, type],
   );
 
-  // Без запроса пароля (ключ или живое соединение) — загружаем сразу, иначе по кнопке
+  // Без запроса пароля (ключ или живое соединение) — мгновенно показываем
+  // прошлый снимок из кэша и параллельно тянем свежий; иначе всё по кнопке
   useEffect(() => {
     setSnapshot(null);
     setError(null);
     if (!type) return;
-    void canConnectSilently(server).then((ok) => {
-      if (ok) void load();
-    });
+    let active = true;
+    void (async () => {
+      if (!(await canConnectSilently(server))) return;
+      const cached = await window.plantar.getStatusTabCache(project.id);
+      if (!active) return;
+      if (cached.ok && cached.data?.snapshot) setSnapshot(cached.data.snapshot);
+      void load();
+    })();
+    return () => {
+      active = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, type, load]);
 
@@ -141,7 +142,12 @@ export function AppStatusTab({
       )}
 
       {snapshot && (
-        <div className="flex flex-col gap-4">
+        <div
+          className={cn(
+            "flex flex-col gap-4 transition-opacity",
+            loading && "opacity-60",
+          )}
+        >
           {type === "static" ? (
             <p className="rounded-xl border border-line bg-card px-5 py-4 text-[13px] leading-relaxed text-ink-soft">
               {t("appStatus.staticNote")}
@@ -223,8 +229,15 @@ function AppLoadCard({ project, lang }: { project: ProjectRecord; lang: string }
       // Соединение уже в пуле после снимка вкладки — пароль не нужен
       const result = await window.plantar.getAppMetricsHistory(project.id, seconds);
       setLoading(false);
-      if (result.ok) setHistory(result.data);
-      else setError(result.error);
+      if (result.ok) {
+        setHistory(result.data);
+        // Кэшируем только часовое окно — оно видно при открытии вкладки
+        if (seconds === 3600) {
+          void window.plantar.saveStatusTabCache(project.id, {
+            metricsHistory: result.data,
+          });
+        }
+      } else setError(result.error);
     },
     [project.id],
   );
@@ -232,8 +245,18 @@ function AppLoadCard({ project, lang }: { project: ProjectRecord; lang: string }
   useEffect(() => {
     setHistory(null);
     setWindow(3600);
-    void load(3600);
-  }, [load]);
+    let cancelled = false;
+    void (async () => {
+      // Прошлый график вместо «Загрузки», пока едет свежий
+      const cached = await window.plantar.getStatusTabCache(project.id);
+      if (cancelled) return;
+      if (cached.ok && cached.data?.metricsHistory) setHistory(cached.data.metricsHistory);
+      void load(3600);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id, load]);
 
   const empty =
     history !== null && history.cpu.length === 0 && history.memMb.length === 0;
@@ -289,12 +312,19 @@ function AppLogsCard({ project, lang }: { project: ProjectRecord; lang: string }
     setPoints(null);
     setError(null);
     let cancelled = false;
-    // Соединение уже в пуле после снимка вкладки — пароль не нужен
-    void window.plantar.getAppLogActivity(project.id).then((result) => {
+    void (async () => {
+      // Прошлый график вместо «Загрузки», пока едет свежий
+      const cached = await window.plantar.getStatusTabCache(project.id);
       if (cancelled) return;
-      if (result.ok) setPoints(result.data);
-      else setError(result.error);
-    });
+      if (cached.ok && cached.data?.logActivity) setPoints(cached.data.logActivity);
+      // Соединение уже в пуле после снимка вкладки — пароль не нужен
+      const result = await window.plantar.getAppLogActivity(project.id);
+      if (cancelled) return;
+      if (result.ok) {
+        setPoints(result.data);
+        void window.plantar.saveStatusTabCache(project.id, { logActivity: result.data });
+      } else setError(result.error);
+    })();
     return () => {
       cancelled = true;
     };
