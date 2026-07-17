@@ -10,6 +10,7 @@ import {
   deployProject,
   discoverApps,
   enableAppMetrics,
+  ensureAppMetricsScript,
   getAppLogActivity,
   getAppMetricsHistory,
   getMonitoringStatus,
@@ -1305,9 +1306,22 @@ app.whenReady().then(() => {
     (_e, args: { serverId: string; seconds: number; password?: string }) =>
       toResult(async () => {
         const seconds = args.seconds === 86400 ? 86400 : 3600;
-        return withServer(getServer(args.serverId), args.password, (conn) =>
-          getServerMetrics(conn, seconds),
-        );
+        // Проекты сервера подписывают ряды разбивки по приложениям
+        const apps = readProjects()
+          .filter((p) => p.serverId === args.serverId)
+          .map((p) => {
+            let name = p.name;
+            try {
+              name = projectConfig(p).name;
+            } catch {
+              /* plantar.json недоступен — используем имя на момент добавления */
+            }
+            return { pm2Name: p.external ? p.external.pm2Name : name, name: p.name };
+          });
+        return withServer(getServer(args.serverId), args.password, async (conn) => {
+          await ensureAppMetricsScript(conn);
+          return getServerMetrics(conn, seconds, apps);
+        });
       }),
   );
 

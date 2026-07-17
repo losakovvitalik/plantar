@@ -397,6 +397,9 @@ export const en: Record<MessageKey, string> = {
   "monitoring.ramChart": "Memory, MB",
   "monitoring.ramSeries": "Used",
   "monitoring.ramSummary": "{used} of {total} MB used",
+  "monitoring.otherSeries": "Other",
+  "monitoring.breakdownHint":
+    "“Other” is everything else on the server: the system, services, and static sites.",
   "monitoring.appMetricsName": "App load",
   "monitoring.appMetricsDescription":
     "CPU and memory history for each app — charts on the “Status” tab. Uses Netdata; samples are taken once a minute.",

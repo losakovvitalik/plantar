@@ -132,6 +132,7 @@ export function ServerMonitoring({ server, askPassword }: Props) {
               lang={lang}
               cpuMax={100}
               ramMax={metrics.ramTotalMb}
+              apps={metrics.apps}
               ramSummary={
                 metrics.ramUsed.length > 0
                   ? t("monitoring.ramSummary", {

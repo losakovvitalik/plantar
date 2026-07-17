@@ -77,6 +77,13 @@ export function ChartTooltipContent({
   const { config } = useChart();
   if (!active || !payload?.length) return null;
 
+  // Строки идут в порядке конфига — как в легенде, независимо от того,
+  // в каком порядке ряды нарисованы на графике
+  const keys = Object.keys(config);
+  const items = [...payload].sort(
+    (a, b) => keys.indexOf(String(a.dataKey)) - keys.indexOf(String(b.dataKey)),
+  );
+
   return (
     <div className="rounded-lg border border-line bg-card px-2.5 py-1.5 text-[11.5px] shadow-md">
       {label !== undefined && (
@@ -85,7 +92,7 @@ export function ChartTooltipContent({
         </p>
       )}
       <div className="flex flex-col gap-0.5">
-        {payload.map((item) => (
+        {items.map((item) => (
           <div key={String(item.dataKey)} className="flex items-center gap-1.5">
             <span
               className="size-2 shrink-0 rounded-[2px]"
@@ -109,7 +116,7 @@ export function ChartTooltipContent({
 /** Легенда серий: цветная метка + подпись; для двух и более серий обязательна */
 export function ChartLegend({ config }: { config: ChartConfig }) {
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
       {Object.entries(config).map(([key, item]) => (
         <span key={key} className="flex items-center gap-1.5 text-[11.5px] text-ink-soft">
           <span className="size-2 rounded-[2px]" style={{ background: item.color }} />

@@ -101,13 +101,14 @@ roots=$(
     [ -n "$pid" ] && [ -d "/proc/$pid" ] && printf '%s %s\\n' "$name" "$pid"
   done
 )
-[ -n "$roots" ] || exit 0
+# Пустой список — не повод выходить: приложения из прошлого замера надо обнулить
+[ -n "$roots" ] || [ -s "$state_file" ] || exit 0
 
 metrics=$(printf '%s\\n' "$roots" | awk \\
   -v now="$(date +%s)" -v clk="$(getconf CLK_TCK)" \\
   -v page_kb="$(( $(getconf PAGESIZE) / 1024 ))" -v state_file="$state_file" '
   # Вход: строки "имя pid" — корневые процессы приложений
-  { gsub(/[^a-zA-Z0-9]/, "_", $1); app[$2] = tolower($1) }
+  NF == 2 { gsub(/[^a-zA-Z0-9]/, "_", $1); app[$2] = tolower($1) }
   END {
     # Снимок всех процессов: ppid, jiffies (utime+stime) и RSS в страницах.
     # Имя процесса в /proc/*/stat может содержать пробелы и скобки —
@@ -145,6 +146,15 @@ metrics=$(printf '%s\\n' "$roots" | awk \\
         printf "plantar_apps.%s_cpu:%.1f|g\\n", name,
           (tj[name] - prev_j[name]) / clk / (now - prev_t[name]) * 100
       print name, tj[name], now > (state_file ".tmp")
+    }
+
+    # Приложение из прошлого замера исчезло (остановлено или удалено) —
+    # датчики обнуляются, иначе statsd вечно повторяет последнее значение
+    for (name in prev_j) {
+      if (name in done) continue
+      printf "plantar_apps.%s_mem:0|g\\n", name
+      printf "plantar_apps.%s_cpu:0|g\\n", name
+      print name, prev_j[name], now > (state_file ".tmp")
     }
   }')
 
@@ -184,7 +194,8 @@ for name in $(printf '%s\\n' "$roots" | cut -d' ' -f1 | sort -u); do
     [ -n "$total" ] && log_metrics+="plantar_apps.\${sane}_\${kind}_lines:$total|g"$'\\n'
   done
 done
-printf '%s' "$new_log_state" > "$logs_state"
+# Без работающих приложений смещения не трогаем — иначе пустая запись их сотрёт
+[ -n "$roots" ] && printf '%s' "$new_log_state" > "$logs_state"
 
 # Приёмник недоступен — UDP-датаграммы просто теряются, это не ошибка
 exec 3>/dev/udp/127.0.0.1/8125 2>/dev/null || exit 0
@@ -425,6 +436,16 @@ export interface ServerMetricPoint {
   value: number;
 }
 
+/** Потребление одного приложения в общей нагрузке сервера */
+export interface ServerAppUsage {
+  /** Имя проекта Plantar или имя метрики, если проект не добавлен */
+  name: string;
+  /** Загрузка процессора, % всех ядер — та же шкала, что у ряда сервера */
+  cpu: ServerMetricPoint[];
+  /** Занятая память дерева процессов, МБ */
+  memMb: ServerMetricPoint[];
+}
+
 /** История нагрузки сервера из Netdata */
 export interface ServerMetrics {
   /** Использование процессора, % (0–100) */
@@ -432,6 +453,8 @@ export interface ServerMetrics {
   /** Занятая память, МБ (без дискового кэша) */
   ramUsed: ServerMetricPoint[];
   ramTotalMb: number;
+  /** Разбивка по приложениям; пуста, пока не включён сбор метрик приложений */
+  apps: ServerAppUsage[];
 }
 
 interface NetdataData {
@@ -447,12 +470,17 @@ function netdataRows(raw: NetdataData): Array<number[]> {
 }
 
 /**
- * История нагрузки сервера за последние `seconds` секунд. Требует работающего
- * Netdata: без него бросает понятную ошибку.
+ * История нагрузки сервера за последние `seconds` секунд вместе с разбивкой
+ * по приложениям (если включён сбор их метрик). Все ряды выровнены по общим
+ * корзинам времени, поэтому их можно складывать в один стековый график.
+ * Требует работающего Netdata: без него бросает понятную ошибку.
+ *
+ * `apps` — проекты Plantar этого сервера: их имена подписывают ряды разбивки.
  */
 export async function getServerMetrics(
   conn: SshConnection,
   seconds: number,
+  apps: Array<{ pm2Name: string; name: string }> = [],
 ): Promise<ServerMetrics> {
   const query = (chart: string) =>
     conn.exec(
@@ -474,29 +502,70 @@ export async function getServerMetrics(
     throw new Error(t("netdataNotResponding"));
   }
 
+  const bucket = seconds / 120;
+
   // system.cpu — проценты по составляющим; занятость = 100 − idle
   const idleIndex = (cpuRaw.labels ?? []).indexOf("idle");
-  const cpu = netdataRows(cpuRaw).map((row) => ({
-    time: row[0],
-    value:
-      Math.round(
-        (idleIndex > 0
+  const cpu = downsampleAverage(
+    netdataRows(cpuRaw).map((row) => ({
+      time: row[0],
+      value:
+        idleIndex > 0
           ? Math.min(100, Math.max(0, 100 - row[idleIndex]))
-          : row.slice(1).reduce((sum, v) => sum + v, 0)) * 10,
-      ) / 10,
-  }));
+          : row.slice(1).reduce((sum, v) => sum + v, 0),
+    })),
+    bucket,
+  ).map((point) => ({ time: point.time, value: Math.round(point.value * 10) / 10 }));
 
   // system.ram в МиБ: free / used / cached / buffers; всего — их сумма
   const usedIndex = (ramRaw.labels ?? []).indexOf("used");
   const ramRows = netdataRows(ramRaw);
-  const ramUsed = ramRows.map((row) => ({
-    time: row[0],
-    value: usedIndex > 0 ? Math.round(row[usedIndex]) : 0,
-  }));
+  const ramUsed = downsampleAverage(
+    ramRows.map((row) => ({ time: row[0], value: usedIndex > 0 ? row[usedIndex] : 0 })),
+    bucket,
+  ).map((point) => ({ time: point.time, value: Math.round(point.value) }));
   const last = ramRows.at(-1);
   const ramTotalMb = last ? Math.round(last.slice(1).reduce((sum, v) => sum + v, 0)) : 0;
 
-  return { cpu, ramUsed, ramTotalMb };
+  return { cpu, ramUsed, ramTotalMb, apps: await queryAppsUsage(conn, seconds, apps) };
+}
+
+/**
+ * Разбивка нагрузки сервера по приложениям из чартов сборщика. Ряды приводятся
+ * к тем же корзинам времени, что и ряды сервера; CPU — из процентов одного
+ * ядра (как считает сборщик) в проценты всех ядер (как ряд сервера).
+ */
+async function queryAppsUsage(
+  conn: SshConnection,
+  seconds: number,
+  apps: Array<{ pm2Name: string; name: string }>,
+): Promise<ServerAppUsage[]> {
+  const chartIds = await fetchNetdataChartIds(conn);
+  const groups = appGroupsFromChartIds(chartIds);
+  if (groups.length === 0) return [];
+
+  const cores = Math.max(1, Number((await conn.exec("nproc")).stdout.trim()) || 1);
+  const titles = new Map(apps.map((app) => [appMetricsGroupName(app.pm2Name), app.name]));
+  const bucket = seconds / 120;
+
+  const usage: ServerAppUsage[] = [];
+  for (const group of groups) {
+    const cpu = await queryAppMetric(conn, chartIds, group, "cpu", seconds, 120);
+    const memMb = await queryAppMetric(conn, chartIds, group, "mem", seconds, 120);
+    if (cpu.length === 0 && memMb.length === 0) continue;
+    usage.push({
+      name: titles.get(group) ?? group,
+      cpu: downsampleAverage(cpu, bucket).map((point) => ({
+        time: point.time,
+        value: Math.round((point.value / cores) * 10) / 10,
+      })),
+      memMb: downsampleAverage(memMb, bucket).map((point) => ({
+        time: point.time,
+        value: Math.round(point.value),
+      })),
+    });
+  }
+  return usage;
 }
 
 /**
@@ -553,12 +622,48 @@ export async function enableAppMetrics(
   log(t("appMetricsEnabled"));
 }
 
+/**
+ * Обновляет установленный сборщик метрик до текущей версии: его поведение
+ * меняется вместе с Plantar (например, обнуление датчиков остановленных
+ * приложений), а кнопки переустановки в интерфейсе нет. Пока сбор метрик
+ * приложений не включён — ничего не делает.
+ */
+export async function ensureAppMetricsScript(conn: SshConnection): Promise<void> {
+  const cron = await conn.exec(`test -f ${APP_METRICS_CRON_PATH}`);
+  if (cron.code !== 0) return;
+  const installed = await conn.exec(`cat ${APP_METRICS_SCRIPT_PATH} 2>/dev/null`);
+  if (installed.code === 0 && installed.stdout.trimEnd() === APP_METRICS_SCRIPT.trimEnd()) {
+    return;
+  }
+  await run(
+    conn,
+    `cat > ${APP_METRICS_SCRIPT_PATH} <<'PLANTAR_EOF'\n${APP_METRICS_SCRIPT}\nPLANTAR_EOF\n` +
+      `chmod 755 ${APP_METRICS_SCRIPT_PATH}`,
+    () => {},
+  );
+}
+
 /** История потребления приложения из Netdata */
 export interface AppMetricsHistory {
   /** Загрузка процессора, % одного ядра (у многопроцессных может быть >100) */
   cpu: ServerMetricPoint[];
   /** Занятая память всего дерева процессов, МБ */
   memMb: ServerMetricPoint[];
+}
+
+/**
+ * Группы (приложения) из id чартов сборщика метрик. Схема имён отличается
+ * между версиями Netdata, поэтому разбор идёт по нормализованному id —
+ * как в findAppMetricsChart. Чарты активности логов не считаются группами.
+ */
+export function appGroupsFromChartIds(chartIds: string[]): string[] {
+  const groups = new Set<string>();
+  for (const id of chartIds) {
+    const normalized = id.toLowerCase().replace(/[^a-z0-9]/g, "_");
+    const match = normalized.match(/plantar_apps_(.+)_(?:cpu|mem)(?:_gauge)?$/);
+    if (match) groups.add(match[1]);
+  }
+  return [...groups].sort();
 }
 
 /**

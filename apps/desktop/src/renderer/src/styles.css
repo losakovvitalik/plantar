@@ -18,9 +18,14 @@
   --color-amber: #8a6420;
   --color-amber-bg: #f7efdd;
   /* Цвета серий графиков: насыщеннее фирменных — проверены на контраст
-     и различимость при цветослепоте (dataviz-валидатор, поверхность card) */
+     и различимость при цветослепоте (dataviz-валидатор, поверхность card).
+     Стек разбивки по приложениям идёт в порядке 1 → 3 → 2 → 4 (соседние
+     пары проверены в этом порядке), «Другое» — нейтральный серый */
   --color-chart-1: #20794f;
   --color-chart-2: #a06b10;
+  --color-chart-3: #2a78d6;
+  --color-chart-4: #4a3aa7;
+  --color-chart-other: #7f8a81;
 
   --font-sans: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;

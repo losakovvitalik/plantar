@@ -397,6 +397,9 @@ export const ru = {
   "monitoring.ramChart": "Память, МБ",
   "monitoring.ramSeries": "Занято",
   "monitoring.ramSummary": "Занято {used} из {total} МБ",
+  "monitoring.otherSeries": "Другое",
+  "monitoring.breakdownHint":
+    "«Другое» — всё остальное на сервере: система, службы и сайты из статических файлов.",
   "monitoring.appMetricsName": "Нагрузка приложений",
   "monitoring.appMetricsDescription":
     "История потребления процессора и памяти по каждому приложению — графики на вкладке «Статус». Использует Netdata; данные снимаются раз в минуту.",
