@@ -61,12 +61,18 @@ const api = {
     invoke("monitoring:status", { serverId, password }),
   installMonitoringTool: (serverId: string, tool: string, password?: string) =>
     invoke("monitoring:install", { serverId, tool, password }),
+  enableAppMetrics: (serverId: string, password?: string) =>
+    invoke("monitoring:enableAppMetrics", { serverId, password }),
   getAppHealth: (projectId: string, password?: string) =>
     invoke("metrics:app", { projectId, password }),
   getTrafficStats: (projectId: string, password?: string) =>
     invoke("metrics:traffic", { projectId, password }),
   getServerMetrics: (serverId: string, seconds: number, password?: string) =>
     invoke("metrics:server", { serverId, seconds, password }),
+  getAppMetricsHistory: (projectId: string, seconds: number, password?: string) =>
+    invoke("metrics:appHistory", { projectId, seconds, password }),
+  getAppLogActivity: (projectId: string, password?: string) =>
+    invoke("metrics:appLogActivity", { projectId, password }),
   deploy: (projectId: string, password?: string, legacyPeerDeps?: boolean) =>
     invoke("deploy:run", { projectId, password, legacyPeerDeps }),
   rollback: (projectId: string, password?: string) =>

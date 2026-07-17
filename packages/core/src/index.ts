@@ -24,6 +24,12 @@ export type { DiscoveredApp, NginxSite, Pm2App } from "./discover";
 export { parsePm2Health, pm2ProcessHealth, pm2ProcessStatuses } from "./status";
 export type { Pm2ProcessHealth } from "./status";
 export {
+  appMetricsGroupName,
+  downsampleAverage,
+  enableAppMetrics,
+  findAppMetricsChart,
+  getAppLogActivity,
+  getAppMetricsHistory,
   getMonitoringStatus,
   getServerMetrics,
   getTrafficStats,
@@ -31,6 +37,8 @@ export {
   parseGoaccessReport,
 } from "./monitoring";
 export type {
+  AppLogPoint,
+  AppMetricsHistory,
   MonitoringStatus,
   MonitoringTool,
   ServerMetricPoint,

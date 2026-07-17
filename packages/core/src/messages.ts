@@ -216,6 +216,14 @@ const MESSAGES = {
     ru: "Служба мониторинга нагрузки (Netdata) не отвечает на сервере.",
     en: "The load monitoring service (Netdata) is not responding on the server.",
   },
+  appMetricsInstalling: {
+    ru: "→ Настраиваю сбор нагрузки приложений…",
+    en: "→ Setting up app load collection…",
+  },
+  appMetricsEnabled: {
+    ru: "✓ Сбор нагрузки приложений включён",
+    en: "✓ App load collection is enabled",
+  },
 } satisfies Messages<string>;
 
 export const t = createT(MESSAGES);

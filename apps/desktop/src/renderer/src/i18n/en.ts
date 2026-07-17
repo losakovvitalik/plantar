@@ -363,6 +363,16 @@ export const en: Record<MessageKey, string> = {
   "appStatus.needGoaccess":
     "To see visits, install the “Visit statistics” tool on the server screen.",
   "appStatus.openServer": "Open the server screen",
+  "appStatus.loadTitle": "App load",
+  "appStatus.loadNeedSetup":
+    "Enable load collection to see the hourly and daily history here: how much CPU and memory the app uses and how actively it writes to the logs.",
+  "appStatus.loadEnable": "Enable charts",
+  "appStatus.loadCollecting":
+    "Data is being collected. The first points will appear in a minute or two.",
+  "appStatus.loadCpuHint": "100% is one CPU core",
+  "appStatus.logsTitle": "Logs over the day",
+  "appStatus.logsHint": "Each bar is one hour",
+  "appStatus.logsEmpty": "No log entries in the last day.",
 
   "monitoring.title": "Monitoring",
   "monitoring.description":
@@ -373,7 +383,7 @@ export const en: Record<MessageKey, string> = {
     "Counts visits from the server logs — charts on the “Status” tab of each app. Runs only during a check and uses almost no resources.",
   "monitoring.netdataName": "Server load (Netdata)",
   "monitoring.netdataDescription":
-    "Records CPU and memory load around the clock — a chart will appear on this page. Runs in the background all the time and takes 100–200 MB of server memory.",
+    "Records CPU and memory load around the clock — a chart will appear on this page. Runs in the background all the time and takes roughly 30–100 MB of server memory.",
   "monitoring.install": "Install",
   "monitoring.installing": "Installing…",
   "monitoring.installed": "Installed",
@@ -386,6 +396,20 @@ export const en: Record<MessageKey, string> = {
   "monitoring.ramChart": "Memory, MB",
   "monitoring.ramSeries": "Used",
   "monitoring.ramSummary": "{used} of {total} MB used",
+  "monitoring.appMetricsName": "App load",
+  "monitoring.appMetricsDescription":
+    "CPU and memory history for each app — charts on the “Status” tab. Uses Netdata; samples are taken once a minute.",
+
+  "appMetrics.dialogTitle": "Enable load charts?",
+  "appMetrics.dialogDescription":
+    "Collecting the history uses server resources, so it is only enabled manually.",
+  "appMetrics.dialogBody":
+    "The free Netdata program will be installed on the server — it keeps the load history. Once a minute it will record how much CPU and memory each app uses and how many entries appear in its logs.",
+  "appMetrics.dialogCost":
+    "Netdata takes roughly 30–100 MB of server memory. If it is already installed, only the per-app data collection will be added.",
+  "appMetrics.enable": "Enable",
+  "appMetrics.enabling": "Enabling…",
+  "appMetrics.enabled": "Enabled",
 
   "settings.title": "Settings",
   "settings.description": "Global Plantar settings",

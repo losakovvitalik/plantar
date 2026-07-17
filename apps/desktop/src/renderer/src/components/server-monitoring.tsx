@@ -1,6 +1,5 @@
 import { Download, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import type {
   MonitoringStatus,
   MonitoringTool,
@@ -10,13 +9,9 @@ import type {
 import { useI18n } from "../i18n";
 import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
+import { EnableAppMetricsDialog } from "./enable-app-metrics-dialog";
+import { MetricsCharts, WindowToggle } from "./metrics-charts";
 import { Button } from "./ui/button";
-import {
-  type ChartConfig,
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "./ui/chart";
 
 interface Props {
   server: ServerRecord;
@@ -35,6 +30,7 @@ export function ServerMonitoring({ server, askPassword }: Props) {
   const [status, setStatus] = useState<MonitoringStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [installing, setInstalling] = useState<MonitoringTool | null>(null);
+  const [appMetricsDialog, setAppMetricsDialog] = useState(false);
   const [metrics, setMetrics] = useState<ServerMetrics | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [window_, setWindow] = useState<typeof HOUR | typeof DAY>(HOUR);
@@ -123,26 +119,29 @@ export function ServerMonitoring({ server, askPassword }: Props) {
             <h3 className="text-[13px] font-bold tracking-wide text-ink-soft uppercase">
               {t("monitoring.loadTitle")}
             </h3>
-            <div className="flex items-center gap-1">
-              {([HOUR, DAY] as const).map((seconds) => (
-                <button
-                  key={seconds}
-                  type="button"
-                  onClick={() => void switchWindow(seconds)}
-                  disabled={metricsLoading}
-                  className={cn(
-                    "rounded-md px-2.5 py-1 text-[11.5px] font-semibold",
-                    window_ === seconds
-                      ? "bg-moss/10 text-moss"
-                      : "text-ink-soft hover:bg-line/50",
-                  )}
-                >
-                  {seconds === HOUR ? t("monitoring.hour") : t("monitoring.day")}
-                </button>
-              ))}
-            </div>
+            <WindowToggle
+              value={window_}
+              onChange={(seconds) => void switchWindow(seconds)}
+              disabled={metricsLoading}
+            />
           </div>
-          {metrics && <LoadCharts metrics={metrics} lang={lang} />}
+          {metrics && (
+            <MetricsCharts
+              cpu={metrics.cpu}
+              ram={metrics.ramUsed}
+              lang={lang}
+              cpuMax={100}
+              ramMax={metrics.ramTotalMb}
+              ramSummary={
+                metrics.ramUsed.length > 0
+                  ? t("monitoring.ramSummary", {
+                      used: metrics.ramUsed[metrics.ramUsed.length - 1].value,
+                      total: metrics.ramTotalMb,
+                    })
+                  : undefined
+              }
+            />
+          )}
           {!metrics && metricsLoading && (
             <p className="mt-3 text-[12.5px] text-ink-soft">{t("common.loading")}</p>
           )}
@@ -188,9 +187,26 @@ export function ServerMonitoring({ server, askPassword }: Props) {
               installing={installing === "netdata"}
               onInstall={() => void install("netdata")}
             />
+            <ToolRow
+              name={t("monitoring.appMetricsName")}
+              description={t("monitoring.appMetricsDescription")}
+              installed={status.appMetrics}
+              installing={false}
+              onInstall={() => setAppMetricsDialog(true)}
+              actionLabel={t("appMetrics.enable")}
+              installedLabel={t("appMetrics.enabled")}
+            />
           </ul>
         )}
       </div>
+
+      <EnableAppMetricsDialog
+        server={server}
+        open={appMetricsDialog}
+        onOpenChange={setAppMetricsDialog}
+        askPassword={askPassword}
+        onEnabled={() => load()}
+      />
     </div>
   );
 }
@@ -203,6 +219,8 @@ function ToolRow({
   needsStart,
   installing,
   onInstall,
+  actionLabel,
+  installedLabel,
 }: {
   name: string;
   description: string;
@@ -210,6 +228,9 @@ function ToolRow({
   needsStart?: boolean;
   installing: boolean;
   onInstall: () => void;
+  /** Подписи кнопки и бейджа; по умолчанию — «Установить»/«Установлен» */
+  actionLabel?: string;
+  installedLabel?: string;
 }) {
   const { t } = useI18n();
   const ready = installed && !needsStart;
@@ -227,7 +248,7 @@ function ToolRow({
       </div>
       {ready ? (
         <span className="shrink-0 rounded-full bg-moss/10 px-2.5 py-0.5 text-[11.5px] font-bold text-moss">
-          {t("monitoring.installed")}
+          {installedLabel ?? t("monitoring.installed")}
         </span>
       ) : (
         <Button
@@ -242,111 +263,9 @@ function ToolRow({
             ? t("monitoring.installing")
             : needsStart
               ? t("monitoring.start")
-              : t("monitoring.install")}
+              : (actionLabel ?? t("monitoring.install"))}
         </Button>
       )}
     </li>
-  );
-}
-
-/** Графики нагрузки: процессор (%) и память (МБ) за выбранное окно */
-function LoadCharts({ metrics, lang }: { metrics: ServerMetrics; lang: string }) {
-  const { t } = useI18n();
-
-  const time = (seconds: number) =>
-    new Date(seconds * 1000).toLocaleTimeString(lang, {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-  const cpuConfig: ChartConfig = {
-    value: { label: t("monitoring.cpuSeries"), color: "var(--color-chart-1)" },
-  };
-  const ramConfig: ChartConfig = {
-    value: { label: t("monitoring.ramSeries"), color: "var(--color-chart-2)" },
-  };
-
-  return (
-    <div className="mt-3 flex flex-col gap-4">
-      <div>
-        <h4 className="text-[12.5px] font-semibold">{t("monitoring.cpuChart")}</h4>
-        <ChartContainer config={cpuConfig} className="mt-2 h-36">
-          <AreaChart data={metrics.cpu} margin={{ top: 4, right: 8, left: -16 }}>
-            <CartesianGrid vertical={false} strokeWidth={1} />
-            <XAxis
-              dataKey="time"
-              tickLine={false}
-              axisLine={false}
-              tickMargin={6}
-              minTickGap={40}
-              tickFormatter={time}
-            />
-            <YAxis tickLine={false} axisLine={false} domain={[0, 100]} />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(v) => time(Number(v))}
-                  valueFormatter={(v) => `${v}%`}
-                />
-              }
-            />
-            <Area
-              dataKey="value"
-              stroke="var(--color-value)"
-              strokeWidth={2}
-              fill="var(--color-value)"
-              fillOpacity={0.1}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ChartContainer>
-      </div>
-
-      <div>
-        <div className="flex items-baseline justify-between">
-          <h4 className="text-[12.5px] font-semibold">{t("monitoring.ramChart")}</h4>
-          {metrics.ramUsed.length > 0 && (
-            <span className="text-[11.5px] text-ink-soft">
-              {t("monitoring.ramSummary", {
-                used: metrics.ramUsed[metrics.ramUsed.length - 1].value,
-                total: metrics.ramTotalMb,
-              })}
-            </span>
-          )}
-        </div>
-        <ChartContainer config={ramConfig} className="mt-2 h-36">
-          <AreaChart data={metrics.ramUsed} margin={{ top: 4, right: 8, left: -16 }}>
-            <CartesianGrid vertical={false} strokeWidth={1} />
-            <XAxis
-              dataKey="time"
-              tickLine={false}
-              axisLine={false}
-              tickMargin={6}
-              minTickGap={40}
-              tickFormatter={time}
-            />
-            <YAxis tickLine={false} axisLine={false} domain={[0, metrics.ramTotalMb]} />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(v) => time(Number(v))}
-                  valueFormatter={(v) => t("appStatus.mb", { mb: v })}
-                />
-              }
-            />
-            <Area
-              dataKey="value"
-              stroke="var(--color-value)"
-              strokeWidth={2}
-              fill="var(--color-value)"
-              fillOpacity={0.1}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ChartContainer>
-      </div>
-    </div>
   );
 }

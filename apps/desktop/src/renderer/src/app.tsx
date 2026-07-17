@@ -173,7 +173,7 @@ export default function App() {
     : undefined;
 
   // Активная вкладка проекта и его конфиг — нужны вкладке «Деплой» и диалогу настроек
-  const [tab, setTab] = useState("deploy");
+  const [tab, setTab] = useState("status");
   const [projectConfig, setProjectConfig] = useState<ProjectConfig | null>(
     null,
   );
@@ -185,7 +185,7 @@ export default function App() {
 
   const selectedProjectId = selectedProject?.id;
   useEffect(() => {
-    setTab("deploy");
+    setTab("status");
     setAutoDeploy(false);
     setProjectConfig(null);
     if (!selectedProjectId) return;
@@ -272,6 +272,9 @@ export default function App() {
               </div>
               <div className="mt-3 flex items-center">
                 <TabsList>
+                  <TabsTrigger className="px-4" value="status">
+                    {t("app.tabStatus")}
+                  </TabsTrigger>
                   <TabsTrigger className="px-4" value="deploy">
                     {t("app.tabDeploy")}
                   </TabsTrigger>
@@ -282,9 +285,6 @@ export default function App() {
                   )}
                   <TabsTrigger className="px-4" value="env">
                     {t("app.tabEnv")}
-                  </TabsTrigger>
-                  <TabsTrigger className="px-4" value="status">
-                    {t("app.tabStatus")}
                   </TabsTrigger>
                   <TabsTrigger className="px-4" value="logs">
                     {t("app.tabLogs")}

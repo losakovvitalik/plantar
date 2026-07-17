@@ -1,11 +1,14 @@
 import type { DetectedProject, ProjectConfig, ProjectConfigInput } from "@plantar/config";
 import type {
+  AppLogPoint,
+  AppMetricsHistory,
   DiscoveredApp,
   LogStreamSource,
   MonitoringStatus,
   MonitoringTool,
   Pm2ProcessHealth,
   ServerInfo,
+  ServerMetricPoint,
   ServerMetrics,
   TrafficStats,
 } from "@plantar/core";
@@ -19,6 +22,8 @@ import type {
 } from "@plantar/storage";
 
 export type {
+  AppLogPoint,
+  AppMetricsHistory,
   AppStatus,
   AppStatusEntry,
   DetectedProject,
@@ -30,6 +35,7 @@ export type {
   ProjectConfig,
   ProjectConfigInput,
   ServerInfo,
+  ServerMetricPoint,
   ServerMetrics,
   TrafficStats,
   ProjectRecord,
@@ -257,6 +263,11 @@ declare global {
         tool: MonitoringTool,
         password?: string,
       ) => Promise<IpcResult<void>>;
+      /** Включает сбор нагрузки приложений: Netdata + сборщик с cron */
+      enableAppMetrics: (
+        serverId: string,
+        password?: string,
+      ) => Promise<IpcResult<void>>;
       /** Здоровье pm2-процесса приложения; null — процесса на сервере нет */
       getAppHealth: (
         projectId: string,
@@ -273,6 +284,17 @@ declare global {
         seconds: number,
         password?: string,
       ) => Promise<IpcResult<ServerMetrics>>;
+      /** История нагрузки приложения за час или сутки; пустые ряды — данные копятся */
+      getAppMetricsHistory: (
+        projectId: string,
+        seconds: number,
+        password?: string,
+      ) => Promise<IpcResult<AppMetricsHistory>>;
+      /** Активность логов приложения за сутки по часам; пусто — данные копятся */
+      getAppLogActivity: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<AppLogPoint[]>>;
       deploy: (
         projectId: string,
         password?: string,

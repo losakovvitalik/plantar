@@ -1,4 +1,4 @@
-import { ArrowRight, RefreshCw, Rocket } from "lucide-react";
+import { Activity, ArrowRight, RefreshCw, Rocket } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
   Bar,
@@ -10,6 +10,8 @@ import {
   YAxis,
 } from "recharts";
 import type {
+  AppLogPoint,
+  AppMetricsHistory,
   Pm2ProcessHealth,
   ProjectConfig,
   ProjectRecord,
@@ -19,6 +21,8 @@ import type {
 import { useI18n } from "../i18n";
 import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
+import { EnableAppMetricsDialog } from "./enable-app-metrics-dialog";
+import { MetricsCharts, WindowToggle } from "./metrics-charts";
 import { Button } from "./ui/button";
 import {
   type ChartConfig,
@@ -49,6 +53,8 @@ interface Snapshot {
   /** undefined — тип без сайта (bot) или не установлен GoAccess */
   traffic?: TrafficStats;
   goaccessMissing: boolean;
+  /** Включён ли на сервере сбор нагрузки приложений; undefined — тип без процесса */
+  appMetrics?: boolean;
 }
 
 export function AppStatusTab({
@@ -63,6 +69,7 @@ export function AppStatusTab({
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [enableMetricsOpen, setEnableMetricsOpen] = useState(false);
 
   const type = config?.type;
 
@@ -78,10 +85,11 @@ export function AppStatusTab({
           if (!health.ok) throw new Error(health.error);
           next.health = health.data;
         }
+        // Пароль нужен только первому запросу — дальше соединение живёт в пуле
+        const monitoring = await window.plantar.getMonitoringStatus(server.id, password);
+        if (!monitoring.ok) throw new Error(monitoring.error);
+        if (type !== "static") next.appMetrics = monitoring.data.appMetrics;
         if (type !== "bot") {
-          // Пароль нужен только первому запросу — дальше соединение живёт в пуле
-          const monitoring = await window.plantar.getMonitoringStatus(server.id, password);
-          if (!monitoring.ok) throw new Error(monitoring.error);
           if (monitoring.data.goaccess === null) {
             next.goaccessMissing = true;
           } else {
@@ -142,6 +150,32 @@ export function AppStatusTab({
             <HealthCard health={snapshot.health ?? null} />
           )}
 
+          {type !== "static" &&
+            (snapshot.appMetrics ? (
+              <>
+                <AppLoadCard project={project} lang={lang} />
+                <AppLogsCard project={project} lang={lang} />
+              </>
+            ) : (
+              <div className="rounded-xl border border-line bg-card p-5">
+                <h3 className="text-[13px] font-bold tracking-wide text-ink-soft uppercase">
+                  {t("appStatus.loadTitle")}
+                </h3>
+                <p className="mt-2 max-w-md text-[13px] leading-relaxed text-ink-soft">
+                  {t("appStatus.loadNeedSetup")}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => setEnableMetricsOpen(true)}
+                >
+                  <Activity />
+                  {t("appStatus.loadEnable")}
+                </Button>
+              </div>
+            ))}
+
           {type !== "bot" &&
             (snapshot.goaccessMissing ? (
               <div className="rounded-xl border border-line bg-card p-5">
@@ -162,6 +196,183 @@ export function AppStatusTab({
               )
             ))}
         </div>
+      )}
+
+      <EnableAppMetricsDialog
+        server={server}
+        open={enableMetricsOpen}
+        onOpenChange={setEnableMetricsOpen}
+        askPassword={askPassword}
+        onEnabled={() => load()}
+      />
+    </div>
+  );
+}
+
+/** Графики нагрузки приложения: процессор и память за час или сутки */
+function AppLoadCard({ project, lang }: { project: ProjectRecord; lang: string }) {
+  const { t } = useI18n();
+  const [window_, setWindow] = useState<3600 | 86400>(3600);
+  const [history, setHistory] = useState<AppMetricsHistory | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(
+    async (seconds: number) => {
+      setLoading(true);
+      // Соединение уже в пуле после снимка вкладки — пароль не нужен
+      const result = await window.plantar.getAppMetricsHistory(project.id, seconds);
+      setLoading(false);
+      if (result.ok) setHistory(result.data);
+      else setError(result.error);
+    },
+    [project.id],
+  );
+
+  useEffect(() => {
+    setHistory(null);
+    setWindow(3600);
+    void load(3600);
+  }, [load]);
+
+  const empty =
+    history !== null && history.cpu.length === 0 && history.memMb.length === 0;
+
+  return (
+    <div className="rounded-xl border border-line bg-card p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-[13px] font-bold tracking-wide text-ink-soft uppercase">
+          {t("appStatus.loadTitle")}
+        </h3>
+        {!empty && (
+          <WindowToggle
+            value={window_}
+            onChange={(seconds) => {
+              setWindow(seconds);
+              void load(seconds);
+            }}
+            disabled={loading}
+          />
+        )}
+      </div>
+
+      {error && (
+        <p className="mt-2 rounded-lg bg-clay/10 px-3 py-2 text-[12.5px] leading-snug whitespace-pre-wrap text-clay">
+          {error}
+        </p>
+      )}
+      {empty ? (
+        <p className="mt-2 max-w-md text-[13px] leading-relaxed text-ink-soft">
+          {t("appStatus.loadCollecting")}
+        </p>
+      ) : history ? (
+        <MetricsCharts
+          cpu={history.cpu}
+          ram={history.memMb}
+          lang={lang}
+          cpuHint={t("appStatus.loadCpuHint")}
+        />
+      ) : (
+        loading && <p className="mt-3 text-[12.5px] text-ink-soft">{t("common.loading")}</p>
+      )}
+    </div>
+  );
+}
+
+/** Активность логов за сутки: строк в час, обычный вывод и ошибки одной стопкой */
+function AppLogsCard({ project, lang }: { project: ProjectRecord; lang: string }) {
+  const { t } = useI18n();
+  const [points, setPoints] = useState<AppLogPoint[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPoints(null);
+    setError(null);
+    let cancelled = false;
+    // Соединение уже в пуле после снимка вкладки — пароль не нужен
+    void window.plantar.getAppLogActivity(project.id).then((result) => {
+      if (cancelled) return;
+      if (result.ok) setPoints(result.data);
+      else setError(result.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id]);
+
+  const hour = (seconds: number) =>
+    new Date(seconds * 1000).toLocaleTimeString(lang, {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+  const config: ChartConfig = {
+    out: { label: t("logs.channelOutput"), color: "var(--color-chart-1)" },
+    err: { label: t("logs.channelErrors"), color: "var(--color-clay)" },
+  };
+
+  // Точки есть, но всё по нулям — приложение молчало все сутки
+  const silent = points !== null && points.every((p) => p.out === 0 && p.err === 0);
+
+  return (
+    <div className="rounded-xl border border-line bg-card p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-baseline gap-3">
+          <h3 className="text-[13px] font-bold tracking-wide text-ink-soft uppercase">
+            {t("appStatus.logsTitle")}
+          </h3>
+          <span className="text-[11.5px] text-ink-soft">{t("appStatus.logsHint")}</span>
+        </div>
+        {points !== null && points.length > 0 && !silent && <ChartLegend config={config} />}
+      </div>
+
+      {error ? (
+        <p className="mt-2 rounded-lg bg-clay/10 px-3 py-2 text-[12.5px] leading-snug whitespace-pre-wrap text-clay">
+          {error}
+        </p>
+      ) : points === null ? (
+        <p className="mt-3 text-[12.5px] text-ink-soft">{t("common.loading")}</p>
+      ) : points.length === 0 ? (
+        <p className="mt-2 max-w-md text-[13px] leading-relaxed text-ink-soft">
+          {t("appStatus.loadCollecting")}
+        </p>
+      ) : silent ? (
+        <p className="mt-2 max-w-md text-[13px] leading-relaxed text-ink-soft">
+          {t("appStatus.logsEmpty")}
+        </p>
+      ) : (
+        <ChartContainer config={config} className="mt-3 h-36">
+          <BarChart data={points} margin={{ top: 4, right: 8, left: -16 }}>
+            <CartesianGrid vertical={false} strokeWidth={1} />
+            <XAxis
+              dataKey="time"
+              tickLine={false}
+              axisLine={false}
+              tickMargin={6}
+              minTickGap={40}
+              tickFormatter={hour}
+            />
+            <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+            <ChartTooltip
+              content={<ChartTooltipContent labelFormatter={(v) => hour(Number(v))} />}
+            />
+            <Bar
+              dataKey="out"
+              stackId="log"
+              fill="var(--color-out)"
+              maxBarSize={24}
+              isAnimationActive={false}
+            />
+            <Bar
+              dataKey="err"
+              stackId="log"
+              fill="var(--color-err)"
+              radius={[4, 4, 0, 0]}
+              maxBarSize={24}
+              isAnimationActive={false}
+            />
+          </BarChart>
+        </ChartContainer>
       )}
     </div>
   );

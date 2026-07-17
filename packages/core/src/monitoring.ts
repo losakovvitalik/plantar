@@ -16,11 +16,181 @@ export interface MonitoringStatus {
   netdata: string | null;
   /** Netdata установлен, но служба не отвечает */
   netdataDown: boolean;
+  /** Включён сбор метрик приложений: сборщик с cron на месте и Netdata отвечает */
+  appMetrics: boolean;
 }
 
 // Netdata слушает только localhost — запросы идут по SSH, наружу порт не открыт
 const NETDATA_API = "http://127.0.0.1:19999/api/v1";
 const NETDATA_INFO = `curl -sf --max-time 5 '${NETDATA_API}/info'`;
+
+/** Конфиг Netdata, который писали прежние версии Plantar, — узнаём его, чтобы обновить */
+const NETDATA_LEGACY_CONF = `[web]\n    bind to = 127.0.0.1\n\n[ml]\n    enabled = no`;
+
+/**
+ * Облегчённый конфиг Netdata: только localhost, без ML-анализа, алертов и
+ * лишних сборщиков — служба заметно меньше ест память и процессор. Данные
+ * серверных графиков (раздел proc) и приёмник statsd остаются включёнными.
+ */
+const NETDATA_LEAN_CONF = `[web]
+    bind to = 127.0.0.1
+
+[ml]
+    enabled = no
+
+[health]
+    enabled = no
+
+[global]
+    update every = 2
+
+[db]
+    dbengine page cache size MB = 32
+
+[plugins]
+    statsd = yes
+    go.d = no
+    python.d = no
+    charts.d = no
+    apps = no
+    cgroups = no
+    tc = no
+    idlejitter = no
+    perf = no`;
+
+const APP_METRICS_DIR = "/usr/local/lib/plantar";
+const APP_METRICS_SCRIPT_PATH = `${APP_METRICS_DIR}/app-metrics.sh`;
+const APP_METRICS_CRON_PATH = "/etc/cron.d/plantar-app-metrics";
+
+/** Метрики приложения, которые пишет сборщик и читает Plantar */
+type AppMetricName = "cpu" | "mem" | "out_lines" | "err_lines";
+
+/**
+ * Сборщик метрик приложений. Командные строки pm2-приложений неотличимы друг
+ * от друга («npm start»), поэтому штатные средства Netdata не могут разнести
+ * их по приложениям — принадлежность процессов знает только pm2. Скрипт раз
+ * в минуту суммирует CPU/ОЗУ всего дерева процессов каждого приложения (сам
+ * pm2 показывает лишь обёртку npm), считает прирост строк в его логах и
+ * отдаёт в statsd-приёмник Netdata, который хранит историю и раздаёт её
+ * по HTTP API.
+ *
+ * Экспорт — для синтаксической проверки в тестах.
+ */
+export const APP_METRICS_SCRIPT = `#!/bin/bash
+# Потребление CPU/ОЗУ и активность логов pm2-приложений — в statsd-приёмник
+# Netdata (UDP 8125). Файл устанавливает Plantar; запускает cron
+# (${APP_METRICS_CRON_PATH}).
+set -u
+
+pids_dir="$HOME/.pm2/pids"
+logs_dir="$HOME/.pm2/logs"
+state_file="/var/lib/plantar/app-metrics.state"
+logs_state="/var/lib/plantar/app-logs.state"
+[ -d "$pids_dir" ] || exit 0
+mkdir -p /var/lib/plantar
+
+# Корни деревьев процессов: "имя pid" из pid-файлов pm2 (<имя>-<номер>.pid).
+# Имена с пробелами не поддерживаются — их не пронести через конвейеры ниже.
+roots=$(
+  for f in "$pids_dir"/*.pid; do
+    [ -e "$f" ] || continue
+    name=$(basename "$f" .pid)
+    name=\${name%-*}
+    case "$name" in (*[[:space:]]*) continue ;; esac
+    pid=$(tr -cd '0-9' < "$f" 2>/dev/null)
+    [ -n "$pid" ] && [ -d "/proc/$pid" ] && printf '%s %s\\n' "$name" "$pid"
+  done
+)
+[ -n "$roots" ] || exit 0
+
+metrics=$(printf '%s\\n' "$roots" | awk \\
+  -v now="$(date +%s)" -v clk="$(getconf CLK_TCK)" \\
+  -v page_kb="$(( $(getconf PAGESIZE) / 1024 ))" -v state_file="$state_file" '
+  # Вход: строки "имя pid" — корневые процессы приложений
+  { gsub(/[^a-zA-Z0-9]/, "_", $1); app[$2] = tolower($1) }
+  END {
+    # Снимок всех процессов: ppid, jiffies (utime+stime) и RSS в страницах.
+    # Имя процесса в /proc/*/stat может содержать пробелы и скобки —
+    # хвост полей отсчитывается от последней ")".
+    cmd = "cat /proc/[0-9]*/stat 2>/dev/null"
+    while ((cmd | getline line) > 0) {
+      pid = line + 0
+      tail = substr(line, match(line, /\\)[^)]*$/) + 1)
+      if (split(tail, f, " ") < 22) continue
+      ppid[pid] = f[2]; jiff[pid] = f[12] + f[13]; rss[pid] = f[22]
+    }
+    close(cmd)
+
+    # Процесс принадлежит приложению, чей корень встретился среди его предков
+    for (pid in ppid) {
+      p = pid
+      for (depth = 0; depth < 64 && p > 1; depth++) {
+        if (p in app) { tj[app[p]] += jiff[pid]; trss[app[p]] += rss[pid]; break }
+        p = ppid[p]
+      }
+    }
+
+    # Прошлые jiffies из state-файла — загрузка CPU считается за интервал
+    while ((getline line < state_file) > 0) {
+      split(line, s, " "); prev_j[s[1]] = s[2]; prev_t[s[1]] = s[3]
+    }
+    close(state_file)
+
+    for (pid in app) {
+      name = app[pid]
+      if (name in done) continue
+      done[name] = 1
+      printf "plantar_apps.%s_mem:%d|g\\n", name, trss[name] * page_kb / 1024
+      if ((name in prev_j) && prev_t[name] < now && tj[name] >= prev_j[name])
+        printf "plantar_apps.%s_cpu:%.1f|g\\n", name,
+          (tj[name] - prev_j[name]) / clk / (now - prev_t[name]) * 100
+      print name, tj[name], now > (state_file ".tmp")
+    }
+  }')
+
+[ -f "$state_file.tmp" ] && mv "$state_file.tmp" "$state_file"
+
+# Прирост строк в логах pm2 с прошлого запуска: читаются только новые байты
+# (по сохранённому смещению), большие файлы не перечитываются целиком.
+# Смещение больше файла — лог обрезали (ротация или деплой), считаем с нуля.
+declare -A offset
+if [ -f "$logs_state" ]; then
+  while read -r file off; do
+    [ -n "$file" ] && offset["$file"]=$off
+  done < "$logs_state"
+fi
+
+log_metrics=""
+new_log_state=""
+for name in $(printf '%s\\n' "$roots" | cut -d' ' -f1 | sort -u); do
+  sane=$(printf '%s' "$name" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '_')
+  for kind in out err; do
+    [ "$kind" = out ] && suffix=out || suffix=error
+    total=""
+    for f in "$logs_dir/$name-$suffix"*.log; do
+      [ -e "$f" ] || continue
+      size=$(wc -c < "$f" 2>/dev/null) || continue
+      if [ -n "\${offset[$f]:-}" ]; then
+        off=\${offset[$f]}
+        [ "$off" -gt "$size" ] && off=0
+        added=0
+        [ $(( size - off )) -gt 0 ] && \\
+          added=$(tail -c +$(( off + 1 )) "$f" | head -c $(( size - off )) | wc -l)
+        total=$(( \${total:-0} + added ))
+      fi
+      new_log_state+="$f $size"$'\\n'
+    done
+    # Пусто — ни у одного файла не было прежнего смещения (первое знакомство)
+    [ -n "$total" ] && log_metrics+="plantar_apps.\${sane}_\${kind}_lines:$total|g"$'\\n'
+  done
+done
+printf '%s' "$new_log_state" > "$logs_state"
+
+# Приёмник недоступен — UDP-датаграммы просто теряются, это не ошибка
+exec 3>/dev/udp/127.0.0.1/8125 2>/dev/null || exit 0
+printf '%s\\n' "$metrics" >&3
+[ -n "$log_metrics" ] && printf '%s' "$log_metrics" >&3
+exec 3>&-`;
 
 async function run(
   conn: SshConnection,
@@ -33,6 +203,14 @@ async function run(
     const output = [result.stdout, result.stderr].filter(Boolean).join("\n").slice(-3000);
     throw new Error(t("commandFailed", { code: result.code, command, stderr: output }));
   }
+}
+
+/** Ждёт, пока HTTP API Netdata поднимется после (пере)запуска службы */
+async function waitForNetdata(conn: SshConnection): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    if ((await conn.exec(`sleep 1; ${NETDATA_INFO}`)).code === 0) return;
+  }
+  throw new Error(t("netdataNotResponding"));
 }
 
 export async function getMonitoringStatus(conn: SshConnection): Promise<MonitoringStatus> {
@@ -51,10 +229,14 @@ export async function getMonitoringStatus(conn: SshConnection): Promise<Monitori
     } catch {
       /* нестандартный ответ — главное, что служба отвечает */
     }
+    const collector = await conn.exec(
+      `test -x ${APP_METRICS_SCRIPT_PATH} && test -f ${APP_METRICS_CRON_PATH}`,
+    );
     return {
       goaccess: goaccessVersion,
       netdata: version.replace(/^v/, ""),
       netdataDown: false,
+      appMetrics: collector.code === 0,
     };
   }
 
@@ -65,6 +247,7 @@ export async function getMonitoringStatus(conn: SshConnection): Promise<Monitori
     netdata:
       binary.code === 0 ? binary.stdout.trim().replace(/^netdata\s*v?/i, "") : null,
     netdataDown: binary.code === 0,
+    appMetrics: false,
   };
 }
 
@@ -93,11 +276,9 @@ export async function installMonitoringTool(
     await run(conn, `DEBIAN_FRONTEND=noninteractive apt-get install -y ${tool}`, log);
 
     if (tool === "netdata") {
-      // Минимальный конфиг: только localhost, без ML-анализа — экономим ресурсы
-      const conf = `[web]\n    bind to = 127.0.0.1\n\n[ml]\n    enabled = no`;
       await run(
         conn,
-        `cat > /etc/netdata/netdata.conf <<'PLANTAR_EOF'\n${conf}\nPLANTAR_EOF`,
+        `cat > /etc/netdata/netdata.conf <<'PLANTAR_EOF'\n${NETDATA_LEAN_CONF}\nPLANTAR_EOF`,
         log,
       );
     }
@@ -105,12 +286,7 @@ export async function installMonitoringTool(
 
   if (tool === "netdata") {
     await run(conn, "systemctl enable --now netdata && systemctl restart netdata", log);
-    // Службе нужно несколько секунд, чтобы поднять HTTP API
-    let up = false;
-    for (let attempt = 0; attempt < 10 && !up; attempt++) {
-      up = (await conn.exec(`sleep 1; ${NETDATA_INFO}`)).code === 0;
-    }
-    if (!up) throw new Error(t("netdataNotResponding"));
+    await waitForNetdata(conn);
   }
 
   const version = tool === "goaccess" ? (await getMonitoringStatus(conn)).goaccess : "";
@@ -321,4 +497,210 @@ export async function getServerMetrics(
   const ramTotalMb = last ? Math.round(last.slice(1).reduce((sum, v) => sum + v, 0)) : 0;
 
   return { cpu, ramUsed, ramTotalMb };
+}
+
+/**
+ * Имя метрики приложения в statsd: как его считает скрипт-сборщик
+ * (см. APP_METRICS_SCRIPT — правила должны совпадать)
+ */
+export function appMetricsGroupName(pm2Name: string): string {
+  return pm2Name.toLowerCase().replace(/[^a-z0-9]/g, "_");
+}
+
+/**
+ * Включает сбор метрик приложений: ставит Netdata (если его нет), обновляет
+ * старый конфиг Plantar до облегчённого профиля (чужой конфиг не трогает),
+ * кладёт скрипт-сборщик и запись cron, делает первый замер сразу.
+ */
+export async function enableAppMetrics(
+  conn: SshConnection,
+  log: (line: string) => void = () => {},
+): Promise<void> {
+  await installMonitoringTool(conn, "netdata", log);
+
+  // Netdata, установленный прежней версией Plantar, переводим на облегчённый
+  // профиль; конфиг, изменённый не Plantar, оставляем как есть
+  const current = await conn.exec("cat /etc/netdata/netdata.conf 2>/dev/null");
+  if (current.code === 0 && current.stdout.trim() === NETDATA_LEGACY_CONF.trim()) {
+    await run(
+      conn,
+      `cat > /etc/netdata/netdata.conf <<'PLANTAR_EOF'\n${NETDATA_LEAN_CONF}\nPLANTAR_EOF`,
+      () => {},
+    );
+    await run(conn, "systemctl restart netdata", log);
+    await waitForNetdata(conn);
+  }
+
+  log(t("appMetricsInstalling"));
+  const whoami = (await conn.exec("whoami")).stdout.trim();
+  // pm2 и его pid-файлы принадлежат пользователю подключения — cron работает от него же
+  const user = /^[a-z_][a-z0-9_-]*\$?$/.test(whoami) ? whoami : "root";
+  await run(
+    conn,
+    `mkdir -p ${APP_METRICS_DIR} && ` +
+      `cat > ${APP_METRICS_SCRIPT_PATH} <<'PLANTAR_EOF'\n${APP_METRICS_SCRIPT}\nPLANTAR_EOF\n` +
+      `chmod 755 ${APP_METRICS_SCRIPT_PATH}`,
+    () => {},
+  );
+  await run(
+    conn,
+    `cat > ${APP_METRICS_CRON_PATH} <<'PLANTAR_EOF'\n` +
+      `* * * * * ${user} ${APP_METRICS_SCRIPT_PATH} >/dev/null 2>&1\nPLANTAR_EOF`,
+    () => {},
+  );
+  // Первый замер сразу: точки памяти появляются мгновенно, CPU — со второго замера
+  await run(conn, APP_METRICS_SCRIPT_PATH, () => {});
+  log(t("appMetricsEnabled"));
+}
+
+/** История потребления приложения из Netdata */
+export interface AppMetricsHistory {
+  /** Загрузка процессора, % одного ядра (у многопроцессных может быть >100) */
+  cpu: ServerMetricPoint[];
+  /** Занятая память всего дерева процессов, МБ */
+  memMb: ServerMetricPoint[];
+}
+
+/**
+ * Ищет чарт метрики приложения среди чартов Netdata. Разные версии Netdata
+ * по-разному строят id statsd-чартов (например, добавляют суффикс «_gauge»),
+ * поэтому сравнение идёт по нормализованному имени метрики, а не по точному id.
+ * Имя группы зажато между «plantar_apps_» и «_cpu/_mem» — ложные совпадения
+ * с другими приложениями исключены.
+ */
+export function findAppMetricsChart(
+  chartIds: string[],
+  group: string,
+  metric: AppMetricName,
+): string | undefined {
+  const wanted = `plantar_apps_${group}_${metric}`;
+  return chartIds.find((id) => {
+    const normalized = id.toLowerCase().replace(/[^a-z0-9]/g, "_");
+    return normalized.endsWith(wanted) || normalized.includes(`${wanted}_`);
+  });
+}
+
+/** id всех чартов Netdata; ошибка — служба не отвечает */
+async function fetchNetdataChartIds(conn: SshConnection): Promise<string[]> {
+  const charts = await conn.exec(`curl -sf --max-time 10 '${NETDATA_API}/charts'`);
+  if (charts.code !== 0) throw new Error(t("netdataNotResponding"));
+  try {
+    return Object.keys(
+      (JSON.parse(charts.stdout) as { charts?: Record<string, unknown> }).charts ?? {},
+    );
+  } catch {
+    throw new Error(t("netdataNotResponding"));
+  }
+}
+
+/** Укрупняет ряд в корзины по bucketSeconds, усредняя значения корзины */
+export function downsampleAverage(
+  points: ServerMetricPoint[],
+  bucketSeconds: number,
+): ServerMetricPoint[] {
+  const buckets = new Map<number, { sum: number; count: number }>();
+  for (const point of points) {
+    const bucket = Math.floor(point.time / bucketSeconds) * bucketSeconds;
+    const entry = buckets.get(bucket) ?? { sum: 0, count: 0 };
+    entry.sum += point.value;
+    entry.count += 1;
+    buckets.set(bucket, entry);
+  }
+  return [...buckets.entries()]
+    .map(([time, { sum, count }]) => ({ time, value: sum / count }))
+    .sort((a, b) => a.time - b.time);
+}
+
+/**
+ * Ряд метрики приложения (единственная размерность gauge). Пустой ряд —
+ * не ошибка: чарт ещё не появился или точки не накопились.
+ *
+ * Крупные корзины Netdata отдаёт из грубых ярусов хранения, которые у
+ * свежего чарта пустуют часами, — поэтому запрашиваются мелкие корзины
+ * (30 секунд, ярус 0), а укрупнение до нужного числа точек делается здесь.
+ */
+async function queryAppMetric(
+  conn: SshConnection,
+  chartIds: string[],
+  group: string,
+  metric: AppMetricName,
+  seconds: number,
+  points: number,
+): Promise<ServerMetricPoint[]> {
+  const chart = findAppMetricsChart(chartIds, group, metric);
+  if (!chart) return [];
+  const fine = Math.max(points, Math.min(2880, Math.round(seconds / 30)));
+  const result = await conn.exec(
+    `curl -sf --max-time 10 '${NETDATA_API}/data?chart=${chart}` +
+      `&after=-${Math.round(seconds)}&points=${fine}&group=average&format=json'`,
+  );
+  if (result.code !== 0) return [];
+  let raw: NetdataData;
+  try {
+    raw = JSON.parse(result.stdout);
+  } catch {
+    return [];
+  }
+  const rows = netdataRows(raw).map((row) => ({ time: row[0], value: row[1] }));
+  return fine > points ? downsampleAverage(rows, seconds / points) : rows;
+}
+
+/**
+ * История потребления приложения за последние `seconds` секунд. Пустые ряды —
+ * не ошибка: сборщик включён недавно и точки ещё не накопились.
+ */
+export async function getAppMetricsHistory(
+  conn: SshConnection,
+  pm2Name: string,
+  seconds: number,
+): Promise<AppMetricsHistory> {
+  const group = appMetricsGroupName(pm2Name);
+  const chartIds = await fetchNetdataChartIds(conn);
+  // CPU — с десятыми, память — целые МБ
+  const cpu = (await queryAppMetric(conn, chartIds, group, "cpu", seconds, 120)).map(
+    (point) => ({ time: point.time, value: Math.round(point.value * 10) / 10 }),
+  );
+  const memMb = (await queryAppMetric(conn, chartIds, group, "mem", seconds, 120)).map(
+    (point) => ({ time: point.time, value: Math.round(point.value) }),
+  );
+  return { cpu, memMb };
+}
+
+/** Точка активности логов приложения */
+export interface AppLogPoint {
+  /** unix-секунды начала интервала */
+  time: number;
+  /** Строк обычного вывода за час */
+  out: number;
+  /** Строк в потоке ошибок за час */
+  err: number;
+}
+
+/**
+ * Активность логов приложения за последние сутки, по часам. Сборщик шлёт
+ * количество строк за минуту; среднее за час, умноженное на 60, даёт строки
+ * в час. Пустой массив — не ошибка: точки ещё не накопились.
+ */
+export async function getAppLogActivity(
+  conn: SshConnection,
+  pm2Name: string,
+): Promise<AppLogPoint[]> {
+  const group = appMetricsGroupName(pm2Name);
+  const chartIds = await fetchNetdataChartIds(conn);
+  const perHour = (points: ServerMetricPoint[]) =>
+    points.map((point) => ({ time: point.time, value: Math.round(point.value * 60) }));
+  const out = perHour(await queryAppMetric(conn, chartIds, group, "out_lines", 86400, 24));
+  const err = perHour(await queryAppMetric(conn, chartIds, group, "err_lines", 86400, 24));
+
+  // Ряды объединяются по времени: у часа может быть только один из потоков
+  const byTime = new Map<number, AppLogPoint>();
+  for (const point of out) {
+    byTime.set(point.time, { time: point.time, out: point.value, err: 0 });
+  }
+  for (const point of err) {
+    const existing = byTime.get(point.time);
+    if (existing) existing.err = point.value;
+    else byTime.set(point.time, { time: point.time, out: 0, err: point.value });
+  }
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
 }

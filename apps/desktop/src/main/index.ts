@@ -8,6 +8,9 @@ import {
   type MonitoringTool,
   deployProject,
   discoverApps,
+  enableAppMetrics,
+  getAppLogActivity,
+  getAppMetricsHistory,
   getMonitoringStatus,
   getServerInfo,
   getServerMetrics,
@@ -1153,6 +1156,16 @@ app.whenReady().then(() => {
         );
       }),
   );
+  // Включает сбор нагрузки приложений: Netdata + скрипт-сборщик с cron
+  ipcMain.handle(
+    "monitoring:enableAppMetrics",
+    (_e, args: { serverId: string; password?: string }) =>
+      toResult(async () => {
+        await withServer(getServer(args.serverId), args.password, (conn) =>
+          enableAppMetrics(conn),
+        );
+      }),
+  );
 
   // Здоровье pm2-процесса приложения; null — процесса на сервере нет
   ipcMain.handle(
@@ -1204,6 +1217,47 @@ app.whenReady().then(() => {
         const seconds = args.seconds === 86400 ? 86400 : 3600;
         return withServer(getServer(args.serverId), args.password, (conn) =>
           getServerMetrics(conn, seconds),
+        );
+      }),
+  );
+
+  // История нагрузки приложения из Netdata; окно — час или сутки
+  ipcMain.handle(
+    "metrics:appHistory",
+    (_e, args: { projectId: string; seconds: number; password?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        const server = getServer(project.serverId);
+        let name = project.name;
+        try {
+          name = projectConfig(project).name;
+        } catch {
+          /* plantar.json недоступен — используем имя на момент добавления */
+        }
+        const pm2Name = project.external ? project.external.pm2Name : name;
+        const seconds = args.seconds === 86400 ? 86400 : 3600;
+        return withServer(server, args.password, (conn) =>
+          getAppMetricsHistory(conn, pm2Name, seconds),
+        );
+      }),
+  );
+
+  // Активность логов приложения за сутки (нужен включённый сбор нагрузки)
+  ipcMain.handle(
+    "metrics:appLogActivity",
+    (_e, args: { projectId: string; password?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        const server = getServer(project.serverId);
+        let name = project.name;
+        try {
+          name = projectConfig(project).name;
+        } catch {
+          /* plantar.json недоступен — используем имя на момент добавления */
+        }
+        const pm2Name = project.external ? project.external.pm2Name : name;
+        return withServer(server, args.password, (conn) =>
+          getAppLogActivity(conn, pm2Name),
         );
       }),
   );
