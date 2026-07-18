@@ -156,9 +156,19 @@ describe("getServerMetrics", () => {
           "statsd_plantar_apps.web_app_cpu": {},
           "statsd_plantar_apps.web_app_mem": {},
           "statsd_plantar_apps.db_mem": {},
+          "statsd_plantar.server_disk_used_mb_gauge": {},
+          "statsd_plantar.server_disk_total_mb_gauge": {},
         },
       }),
       nproc: "2\n",
+      "chart=statsd_plantar.server_disk_used_mb_gauge": JSON.stringify({
+        labels: ["time", "gauge"],
+        data: [[990, 24576]],
+      }),
+      "chart=statsd_plantar.server_disk_total_mb_gauge": JSON.stringify({
+        labels: ["time", "gauge"],
+        data: [[990, 49152]],
+      }),
       "chart=statsd_plantar_apps.web_app_cpu": JSON.stringify({
         labels: ["time", "gauge"],
         data: [[990, 50]],
@@ -185,6 +195,8 @@ describe("getServerMetrics", () => {
       { time: 1020, value: 1219 },
     ]);
     expect(metrics.ramTotalMb).toBe(3019);
+    expect(metrics.diskUsedGb).toEqual([{ time: 990, value: 24 }]);
+    expect(metrics.diskTotalGb).toBe(48);
     expect(metrics.apps).toEqual([
       // Группа db не добавлена в Plantar — остаётся под именем метрики
       { name: "db", cpu: [], memMb: [{ time: 990, value: 512 }] },
@@ -196,13 +208,15 @@ describe("getServerMetrics", () => {
     ]);
   });
 
-  it("разбивка пуста, пока чартов приложений нет", async () => {
+  it("разбивка и диск пусты, пока чартов сборщика нет", async () => {
     const conn = fakeConn({
       ...system,
       "/charts": JSON.stringify({ charts: { "system.cpu": {} } }),
     });
     const metrics = await getServerMetrics(conn, 3600);
     expect(metrics.apps).toEqual([]);
+    expect(metrics.diskUsedGb).toEqual([]);
+    expect(metrics.diskTotalGb).toBe(0);
   });
 });
 

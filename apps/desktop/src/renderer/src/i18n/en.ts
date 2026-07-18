@@ -400,6 +400,10 @@ export const en: Record<MessageKey, string> = {
   "monitoring.otherSeries": "Other",
   "monitoring.breakdownHint":
     "“Other” is everything else on the server: the system, services, and static sites.",
+  "monitoring.diskChart": "Disk, GB",
+  "monitoring.diskSeries": "Used",
+  "monitoring.diskSummary": "{used} of {total} GB used",
+  "monitoring.gb": "{gb} GB",
   "monitoring.appMetricsName": "App load",
   "monitoring.appMetricsDescription":
     "CPU and memory history for each app — charts on the “Status” tab. Uses Netdata; samples are taken once a minute.",

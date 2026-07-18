@@ -400,6 +400,10 @@ export const ru = {
   "monitoring.otherSeries": "Другое",
   "monitoring.breakdownHint":
     "«Другое» — всё остальное на сервере: система, службы и сайты из статических файлов.",
+  "monitoring.diskChart": "Диск, ГБ",
+  "monitoring.diskSeries": "Занято",
+  "monitoring.diskSummary": "Занято {used} из {total} ГБ",
+  "monitoring.gb": "{gb} ГБ",
   "monitoring.appMetricsName": "Нагрузка приложений",
   "monitoring.appMetricsDescription":
     "История потребления процессора и памяти по каждому приложению — графики на вкладке «Статус». Использует Netdata; данные снимаются раз в минуту.",

@@ -22,6 +22,12 @@ interface Props {
   cpuHint?: string;
   /** Сводка справа от заголовка памяти */
   ramSummary?: string;
+  /** Занятое место на диске, ГБ; задан и не пуст — появляется третий график */
+  disk?: ServerMetricPoint[];
+  /** Верх оси диска; не задан — по данным */
+  diskMax?: number;
+  /** Сводка справа от заголовка диска */
+  diskSummary?: string;
   /** Разбивка по приложениям: вместо одного ряда — стек «приложения + другое» */
   apps?: ServerAppUsage[];
 }
@@ -90,6 +96,9 @@ export function MetricsCharts({
   ramMax,
   cpuHint,
   ramSummary,
+  disk,
+  diskMax,
+  diskSummary,
   apps,
 }: Props) {
   const { t } = useI18n();
@@ -115,6 +124,9 @@ export function MetricsCharts({
   const ramConfig: ChartConfig = stacked
     ? stackConfig
     : { value: { label: t("monitoring.ramSeries"), color: "var(--color-chart-2)" } };
+  const diskConfig: ChartConfig = {
+    value: { label: t("monitoring.diskSeries"), color: "var(--color-chart-3)" },
+  };
 
   const cpuData = stacked
     ? stackRows(cpu, stack.map((app, i) => ({ key: `app${i}`, points: app.cpu })), 1)
@@ -221,6 +233,48 @@ export function MetricsCharts({
           </AreaChart>
         </ChartContainer>
       </div>
+
+      {disk && disk.length > 0 && (
+        <div>
+          <div className="flex items-baseline justify-between">
+            <h4 className="text-[12.5px] font-semibold">{t("monitoring.diskChart")}</h4>
+            {diskSummary && (
+              <span className="text-[11.5px] text-ink-soft">{diskSummary}</span>
+            )}
+          </div>
+          <ChartContainer config={diskConfig} className="mt-2 h-36">
+            <AreaChart data={disk} margin={{ top: 4, right: 8, left: -16 }}>
+              <CartesianGrid vertical={false} strokeWidth={1} />
+              <XAxis
+                dataKey="time"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={6}
+                minTickGap={40}
+                tickFormatter={time}
+              />
+              <YAxis tickLine={false} axisLine={false} domain={[0, diskMax ?? "auto"]} />
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    labelFormatter={(v) => time(Number(v))}
+                    valueFormatter={(v) => t("monitoring.gb", { gb: v.toFixed(1) })}
+                  />
+                }
+              />
+              <Area
+                dataKey="value"
+                stroke="var(--color-value)"
+                strokeWidth={2}
+                fill="var(--color-value)"
+                fillOpacity={0.1}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </AreaChart>
+          </ChartContainer>
+        </div>
+      )}
     </div>
   );
 }

@@ -141,6 +141,19 @@ export function ServerMonitoring({ server, askPassword }: Props) {
                     })
                   : undefined
               }
+              disk={metrics.diskUsedGb}
+              diskMax={metrics.diskTotalGb || undefined}
+              diskSummary={
+                metrics.diskUsedGb.length > 0 && metrics.diskTotalGb > 0
+                  ? t("monitoring.diskSummary", {
+                      // всегда одна десятичная: «23.0», а не «23»
+                      used: metrics.diskUsedGb[
+                        metrics.diskUsedGb.length - 1
+                      ].value.toFixed(1),
+                      total: metrics.diskTotalGb.toFixed(1),
+                    })
+                  : undefined
+              }
             />
           )}
           {!metrics && metricsLoading && (

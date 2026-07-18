@@ -89,6 +89,10 @@ logs_state="/var/lib/plantar/app-logs.state"
 [ -d "$pids_dir" ] || exit 0
 mkdir -p /var/lib/plantar
 
+# Занятость диска (раздел с корнем) — история для графика на экране сервера
+disk_metrics=$(df -P -B 1048576 / 2>/dev/null | awk 'NR == 2 \\
+  { printf "plantar_server.disk_used_mb:%d|g\\nplantar_server.disk_total_mb:%d|g", $3, $2 }')
+
 # Корни деревьев процессов: "имя pid" из pid-файлов pm2 (<имя>-<номер>.pid).
 # Имена с пробелами не поддерживаются — их не пронести через конвейеры ниже.
 roots=$(
@@ -101,8 +105,9 @@ roots=$(
     [ -n "$pid" ] && [ -d "/proc/$pid" ] && printf '%s %s\\n' "$name" "$pid"
   done
 )
-# Пустой список — не повод выходить: приложения из прошлого замера надо обнулить
-[ -n "$roots" ] || [ -s "$state_file" ] || exit 0
+# Пустой список — не повод выходить: приложения из прошлого замера надо
+# обнулить, а замер диска — отправить
+[ -n "$roots" ] || [ -s "$state_file" ] || [ -n "$disk_metrics" ] || exit 0
 
 metrics=$(printf '%s\\n' "$roots" | awk \\
   -v now="$(date +%s)" -v clk="$(getconf CLK_TCK)" \\
@@ -200,6 +205,7 @@ done
 # Приёмник недоступен — UDP-датаграммы просто теряются, это не ошибка
 exec 3>/dev/udp/127.0.0.1/8125 2>/dev/null || exit 0
 printf '%s\\n' "$metrics" >&3
+[ -n "$disk_metrics" ] && printf '%s\\n' "$disk_metrics" >&3
 [ -n "$log_metrics" ] && printf '%s' "$log_metrics" >&3
 exec 3>&-`;
 
@@ -453,6 +459,10 @@ export interface ServerMetrics {
   /** Занятая память, МБ (без дискового кэша) */
   ramUsed: ServerMetricPoint[];
   ramTotalMb: number;
+  /** Занятое место на диске (раздел с корнем), ГБ; ряд пуст, пока не включён
+   *  сбор метрик приложений — занятость диска измеряет тот же сборщик */
+  diskUsedGb: ServerMetricPoint[];
+  diskTotalGb: number;
   /** Разбивка по приложениям; пуста, пока не включён сбор метрик приложений */
   apps: ServerAppUsage[];
 }
@@ -527,7 +537,48 @@ export async function getServerMetrics(
   const last = ramRows.at(-1);
   const ramTotalMb = last ? Math.round(last.slice(1).reduce((sum, v) => sum + v, 0)) : 0;
 
-  return { cpu, ramUsed, ramTotalMb, apps: await queryAppsUsage(conn, seconds, apps) };
+  const chartIds = await fetchNetdataChartIds(conn);
+  return {
+    cpu,
+    ramUsed,
+    ramTotalMb,
+    ...(await queryDiskUsage(conn, chartIds, seconds)),
+    apps: await queryAppsUsage(conn, chartIds, seconds, apps),
+  };
+}
+
+/**
+ * История занятости диска из датчиков сборщика метрик (plantar_server.*).
+ * Пустой ряд — не ошибка: сбор метрик приложений не включён или замеры
+ * ещё не накопились.
+ */
+async function queryDiskUsage(
+  conn: SshConnection,
+  chartIds: string[],
+  seconds: number,
+): Promise<{ diskUsedGb: ServerMetricPoint[]; diskTotalGb: number }> {
+  const findChart = (metric: string) => {
+    const wanted = `plantar_server_${metric}`;
+    return chartIds.find((id) => {
+      const normalized = id.toLowerCase().replace(/[^a-z0-9]/g, "_");
+      return normalized.endsWith(wanted) || normalized.includes(`${wanted}_`);
+    });
+  };
+  const usedChart = findChart("disk_used_mb");
+  const totalChart = findChart("disk_total_mb");
+  if (!usedChart || !totalChart) return { diskUsedGb: [], diskTotalGb: 0 };
+
+  const toGb = (mb: number) => Math.round((mb / 1024) * 10) / 10;
+  const bucket = seconds / 120;
+  const used = downsampleAverage(
+    await queryChartSeries(conn, usedChart, seconds, 120),
+    bucket,
+  );
+  const total = await queryChartSeries(conn, totalChart, seconds, 120);
+  return {
+    diskUsedGb: used.map((point) => ({ time: point.time, value: toGb(point.value) })),
+    diskTotalGb: total.length > 0 ? toGb(total.at(-1)!.value) : 0,
+  };
 }
 
 /**
@@ -537,10 +588,10 @@ export async function getServerMetrics(
  */
 async function queryAppsUsage(
   conn: SshConnection,
+  chartIds: string[],
   seconds: number,
   apps: Array<{ pm2Name: string; name: string }>,
 ): Promise<ServerAppUsage[]> {
-  const chartIds = await fetchNetdataChartIds(conn);
   const groups = appGroupsFromChartIds(chartIds);
   if (groups.length === 0) return [];
 
@@ -717,23 +768,19 @@ export function downsampleAverage(
 }
 
 /**
- * Ряд метрики приложения (единственная размерность gauge). Пустой ряд —
- * не ошибка: чарт ещё не появился или точки не накопились.
+ * Ряд одного чарта сборщика (единственная размерность gauge). Пустой ряд —
+ * не ошибка: точки ещё не накопились.
  *
  * Крупные корзины Netdata отдаёт из грубых ярусов хранения, которые у
  * свежего чарта пустуют часами, — поэтому запрашиваются мелкие корзины
  * (30 секунд, ярус 0), а укрупнение до нужного числа точек делается здесь.
  */
-async function queryAppMetric(
+async function queryChartSeries(
   conn: SshConnection,
-  chartIds: string[],
-  group: string,
-  metric: AppMetricName,
+  chart: string,
   seconds: number,
   points: number,
 ): Promise<ServerMetricPoint[]> {
-  const chart = findAppMetricsChart(chartIds, group, metric);
-  if (!chart) return [];
   const fine = Math.max(points, Math.min(2880, Math.round(seconds / 30)));
   const result = await conn.exec(
     `curl -sf --max-time 10 '${NETDATA_API}/data?chart=${chart}` +
@@ -748,6 +795,20 @@ async function queryAppMetric(
   }
   const rows = netdataRows(raw).map((row) => ({ time: row[0], value: row[1] }));
   return fine > points ? downsampleAverage(rows, seconds / points) : rows;
+}
+
+/** Ряд метрики приложения; пустой — чарт ещё не появился или точек нет */
+async function queryAppMetric(
+  conn: SshConnection,
+  chartIds: string[],
+  group: string,
+  metric: AppMetricName,
+  seconds: number,
+  points: number,
+): Promise<ServerMetricPoint[]> {
+  const chart = findAppMetricsChart(chartIds, group, metric);
+  if (!chart) return [];
+  return queryChartSeries(conn, chart, seconds, points);
 }
 
 /**
