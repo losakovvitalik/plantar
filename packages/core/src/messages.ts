@@ -188,6 +188,22 @@ const MESSAGES = {
     ru: "! Прежний конфиг nginx ({file}) лежит вне sites-enabled — Plantar его не трогает. Если сайт отвечает неправильно, отключите этот конфиг вручную.",
     en: "! The previous nginx config ({file}) is outside sites-enabled — Plantar leaves it untouched. If the site responds incorrectly, disable that config manually.",
   },
+  restoringPrevious: {
+    ru: "! Новая версия не запустилась — возвращаю прежнюю рабочую версию ({release})…",
+    en: "! The new version failed to start — bringing back the previous working version ({release})…",
+  },
+  previousRestored: {
+    ru: "✓ Прежняя версия ({release}) снова работает",
+    en: "✓ The previous version ({release}) is running again",
+  },
+  restorePreviousFailed: {
+    ru: "! Вернуть прежнюю версию не удалось: {error}",
+    en: "! Could not bring back the previous version: {error}",
+  },
+  restoreNoEcosystem: {
+    ru: "! У прежней версии {release} нет файла запуска — вернуть её автоматически не получится.",
+    en: "! The previous version {release} has no start file — it cannot be brought back automatically.",
+  },
   rollbackNotManaged: {
     ru: "На сервере пока нет сохранённых версий этого приложения — они появятся после следующего деплоя через Plantar.",
     en: "The server has no saved versions of this app yet — they will appear after the next deploy via Plantar.",
@@ -203,6 +219,10 @@ const MESSAGES = {
   rollbackStarting: {
     ru: "→ Возвращаю предыдущую версию ({release})…",
     en: "→ Restoring the previous version ({release})…",
+  },
+  rollbackToWorking: {
+    ru: "→ Приложение работает не с последней рабочей версии — возвращаю её ({release})…",
+    en: "→ The app is not running its last working version — bringing it back ({release})…",
   },
   rollbackDone: {
     ru: "✓ Возвращена версия {release}",
