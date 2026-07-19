@@ -153,6 +153,92 @@ export function detectUserSshKeys(): DetectedSshKey[] {
   return found;
 }
 
+/** Запись из ~/.ssh/config, пригодная для предзаполнения формы добавления сервера */
+export interface SshConfigHost {
+  /** Алиас из строки Host — идёт в название сервера */
+  name: string;
+  host: string;
+  port?: number;
+  user?: string;
+  /** Путь к ключу (IdentityFile), если файл существует */
+  identityFile?: string;
+}
+
+// Git-хостинги в ~/.ssh/config — не серверы для деплоя, их не предлагаем
+const GIT_HOSTS = new Set(["github.com", "ssh.github.com", "gitlab.com", "bitbucket.org"]);
+
+/**
+ * Разбирает простые Host-блоки из ~/.ssh/config для подсказок в форме
+ * добавления сервера. Сложные случаи (шаблоны с * и ?, Match, Include,
+ * подстановки %) пропускаются — лучше не предложить, чем предложить неверное.
+ */
+export function detectSshConfigHosts(): SshConfigHost[] {
+  let content: string;
+  try {
+    content = readFileSync(path.join(homedir(), ".ssh", "config"), "utf8");
+  } catch {
+    return [];
+  }
+
+  // Первое значение директивы; значение в кавычках может содержать пробелы
+  const firstToken = (v: string) =>
+    v.startsWith('"') ? v.slice(1, v.indexOf('"', 1)) : v.split(/\s+/)[0];
+  const hosts: SshConfigHost[] = [];
+  let current: { alias: string; props: Map<string, string> } | null = null;
+
+  const flush = () => {
+    if (!current) return;
+    const { alias, props } = current;
+    current = null;
+    const host = props.get("hostname") ?? alias;
+    if (host.includes("%") || GIT_HOSTS.has(host.toLowerCase())) return;
+
+    let identityFile = props.get("identityfile");
+    if (identityFile) {
+      identityFile = identityFile.replace(/^~(?=\/|$)/, homedir());
+      try {
+        if (!looksLikePrivateKey(readFileSync(identityFile, "utf8"))) identityFile = undefined;
+      } catch {
+        identityFile = undefined;
+      }
+    }
+
+    hosts.push({
+      name: alias,
+      host,
+      port: Number(props.get("port")) || undefined,
+      user: props.get("user"),
+      identityFile,
+    });
+  };
+
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    // Синтаксис директивы: «Ключ значение», допускается «Ключ=значение»
+    const match = line.match(/^(\S+?)(?:\s+|\s*=\s*)(.+)$/);
+    if (!match) continue;
+    const key = match[1].toLowerCase();
+    const value = match[2].trim();
+
+    if (key === "match") {
+      // Условный блок — прекращаем и его, и текущий Host-блок
+      flush();
+      continue;
+    }
+    if (key === "host") {
+      flush();
+      if (!/[*?!]/.test(value)) current = { alias: firstToken(value), props: new Map() };
+      continue;
+    }
+    if (current && !current.props.has(key)) {
+      current.props.set(key, firstToken(value));
+    }
+  }
+  flush();
+  return hosts;
+}
+
 /** Добавляет публичный ключ в authorized_keys на сервере (идемпотентно) */
 export async function installPublicKey(conn: SshConnection, publicKey: string): Promise<void> {
   // Ключ содержит комментарий с именем сервера — экранируем, имя ничем не ограничено

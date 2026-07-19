@@ -9,6 +9,7 @@ const api = {
   reorderServers: (ids: string[]) => invoke("servers:reorder", ids),
   detectSshKeys: () => invoke("ssh:detectKeys"),
   pickSshKeyFile: () => invoke("ssh:pickKey"),
+  listSshConfigHosts: () => invoke("ssh:configHosts"),
 
   listProjects: () => invoke("projects:list"),
   reorderProjects: (serverId: string, ids: string[]) =>

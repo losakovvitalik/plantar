@@ -202,6 +202,17 @@ export interface DetectedSshKey {
   label: string;
 }
 
+/** Запись из ~/.ssh/config — подсказка для предзаполнения формы добавления сервера */
+export interface SshConfigHost {
+  /** Алиас из строки Host — идёт в название сервера */
+  name: string;
+  host: string;
+  port?: number;
+  user?: string;
+  /** Путь к ключу (IdentityFile), если файл существует */
+  identityFile?: string;
+}
+
 declare global {
   interface Window {
     plantar: {
@@ -214,6 +225,8 @@ declare global {
       detectSshKeys: () => Promise<IpcResult<DetectedSshKey[]>>;
       /** Выбор файла приватного ключа в системном диалоге; null — выбор отменён */
       pickSshKeyFile: () => Promise<IpcResult<string | null>>;
+      /** Серверы из ~/.ssh/config — подсказки для предзаполнения формы */
+      listSshConfigHosts: () => Promise<IpcResult<SshConfigHost[]>>;
 
       listProjects: () => Promise<IpcResult<ProjectRecord[]>>;
       /** Порядок проектов одного сервера в сайдбаре, заданный перетаскиванием */

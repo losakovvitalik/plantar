@@ -74,6 +74,7 @@ import {
   writeStatusTabCache,
 } from "@plantar/storage";
 import {
+  detectSshConfigHosts,
   detectUserSshKeys,
   generateKeyPair,
   installPublicKey,
@@ -890,6 +891,8 @@ app.whenReady().then(() => {
   ipcMain.handle("servers:add", (_e, input: AddServerInput) => toResult(() => addServer(input)));
   // Готовые ключи пользователя из ~/.ssh — для способа входа «ключ уже настроен»
   ipcMain.handle("ssh:detectKeys", () => toResult(async () => detectUserSshKeys()));
+  // Серверы из ~/.ssh/config — подсказки для предзаполнения формы
+  ipcMain.handle("ssh:configHosts", () => toResult(async () => detectSshConfigHosts()));
   ipcMain.handle("ssh:pickKey", () =>
     toResult(async () => {
       const picked = await dialog.showOpenDialog(win, {

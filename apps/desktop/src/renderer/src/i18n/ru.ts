@@ -91,6 +91,7 @@ export const ru = {
     "Пароль нигде не сохраняется. Его придётся вводить при каждом подключении к серверу.",
   "addServer.serverPasswordOnce": "Пароль сервера (нужен один раз)",
   "addServer.serverPassword": "Пароль сервера",
+  "addServer.fromSshConfig": "Найдено в настройках SSH на этом компьютере",
   "addServer.existingKeyTitle": "Ключ уже настроен",
   "addServer.existingKeyDescription":
     "Вход по SSH-ключу уже работает — останется указать файл ключа.",

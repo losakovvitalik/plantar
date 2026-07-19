@@ -91,6 +91,7 @@ export const en: Record<MessageKey, string> = {
     "The password is not stored anywhere. You will have to enter it on every connection to the server.",
   "addServer.serverPasswordOnce": "Server password (needed once)",
   "addServer.serverPassword": "Server password",
+  "addServer.fromSshConfig": "Found in this computer's SSH settings",
   "addServer.existingKeyTitle": "Key already set up",
   "addServer.existingKeyDescription":
     "Signing in with an SSH key already works — just point to the key file.",

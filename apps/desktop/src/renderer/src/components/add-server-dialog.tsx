@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { DetectedSshKey, ServerRecord } from "../../../preload/index.d";
+import type { DetectedSshKey, ServerRecord, SshConfigHost } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
 import { Button } from "./ui/button";
 import {
@@ -34,12 +34,28 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [configHosts, setConfigHosts] = useState<SshConfigHost[]>([]);
+
   useEffect(() => {
     if (!open) return;
     window.plantar.detectSshKeys().then((result) => {
       if (result.ok) setDetectedKeys(result.data);
     });
+    window.plantar.listSshConfigHosts().then((result) => {
+      if (result.ok) setConfigHosts(result.data);
+    });
   }, [open]);
+
+  /** Подставляет сервер из ~/.ssh/config: вход по нему уже работает — способ «ключ уже настроен» */
+  function applyConfigHost(h: SshConfigHost) {
+    setHost(h.host);
+    setPort(String(h.port ?? 22));
+    if (h.user) setUser(h.user);
+    setName(h.name === h.host ? "" : h.name);
+    setAuth("existing-key");
+    setKeyPath(h.identityFile ?? "");
+    setError(null);
+  }
 
   // Найденный ключ подставляется сам — обычно он один
   useEffect(() => {
@@ -103,6 +119,30 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
         </DialogHeader>
 
         <form onSubmit={submit} className="flex flex-col gap-3">
+          {configHosts.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <Label>{t("addServer.fromSshConfig")}</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {configHosts.map((h) => (
+                  <Button
+                    key={h.name}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => applyConfigHost(h)}
+                  >
+                    {h.name}
+                    {h.name !== h.host && (
+                      <span className="font-normal text-muted-foreground">
+                        {h.user ? `${h.user}@${h.host}` : h.host}
+                      </span>
+                    )}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-[1fr_88px] gap-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="srv-host">{t("addServer.host")}</Label>
