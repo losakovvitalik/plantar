@@ -1,0 +1,105 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme {
+  --color-paper: #f6f7f2;
+  --color-card: #ffffff;
+  --color-line: #e3e7de;
+  --color-ink: #1b2620;
+  --color-ink-soft: #5c6b60;
+  --color-moss: #2f6f4f;
+  --color-moss-deep: #245740;
+  --color-pine: #1c2e24;
+  --color-pine-edge: #2c4536;
+  --color-sage: #a7bca9;
+  --color-sprout: #7fd49b;
+  --color-soil: #101b14;
+  --color-clay: #c2543f;
+  --color-amber: #8a6420;
+  --color-amber-bg: #f7efdd;
+  /* Цвета серий графиков: насыщеннее фирменных — проверены на контраст
+     и различимость при цветослепоте (dataviz-валидатор, поверхность card).
+     Стек разбивки по приложениям идёт в порядке 1 → 3 → 2 → 4 (соседние
+     пары проверены в этом порядке), «Другое» — нейтральный серый */
+  --color-chart-1: #20794f;
+  --color-chart-2: #a06b10;
+  --color-chart-3: #2a78d6;
+  --color-chart-4: #4a3aa7;
+  --color-chart-other: #7f8a81;
+
+  --font-sans: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+}
+
+/* Семантические токены shadcn, замапленные на палитру выше */
+:root {
+  --radius: 0.625rem;
+  --background: var(--color-paper);
+  --foreground: var(--color-ink);
+  --card: var(--color-card);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-card);
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-moss);
+  --primary-foreground: #ffffff;
+  --secondary: #e9ede3;
+  --secondary-foreground: var(--color-ink);
+  --muted: #edf0e9;
+  --muted-foreground: var(--color-ink-soft);
+  --accent: #edf0e9;
+  --accent-foreground: var(--color-ink);
+  --destructive: var(--color-clay);
+  --destructive-foreground: #ffffff;
+  --border: var(--color-line);
+  --input: var(--color-line);
+  --ring: var(--color-moss);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-moss) 25%, transparent);
+}
+
+/* Тонкие скроллбары — в терминале лога и сайдбаре */
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 4px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}

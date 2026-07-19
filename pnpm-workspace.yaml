@@ -1,7 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "examples/*"
 allowBuilds:
   cpu-features: false
   esbuild: false
   ssh2: false
+  electron: true
