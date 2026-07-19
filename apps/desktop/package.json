@@ -1,15 +1,20 @@
 {
   "name": "@plantar/desktop",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Деплой React-приложений на Ubuntu-серверы без терминала",
   "author": "Vitaliy Losakov",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/losakovvitalik/plantar.git"
+  },
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "dist": "electron-vite build && electron-builder --publish never"
+    "dist": "electron-vite build && electron-builder --publish never",
+    "release": "electron-vite build && electron-builder --publish always"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.3.0",
@@ -62,7 +67,12 @@
       "out/**"
     ],
     "mac": {
-      "target": "dmg",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64", "x64"]
+        }
+      ],
       "category": "public.app-category.developer-tools"
     },
     "win": {
@@ -71,6 +81,9 @@
     "linux": {
       "target": "AppImage",
       "category": "Development"
+    },
+    "publish": {
+      "provider": "github"
     }
   }
 }
