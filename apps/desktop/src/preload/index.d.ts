@@ -189,8 +189,17 @@ export interface AddServerInput {
   host: string;
   port: number;
   user: string;
-  auth: "key" | "password";
+  auth: "key" | "password" | "existing-key";
   password: string;
+  /** Для auth=existing-key: путь к готовому приватному ключу пользователя */
+  keyPath?: string;
+}
+
+/** Приватный ключ, найденный в стандартной папке ключей (~/.ssh) */
+export interface DetectedSshKey {
+  path: string;
+  /** Имя файла — для показа в списке выбора */
+  label: string;
 }
 
 declare global {
@@ -201,6 +210,10 @@ declare global {
       removeServer: (id: string) => Promise<IpcResult<void>>;
       /** Порядок серверов в сайдбаре, заданный перетаскиванием */
       reorderServers: (ids: string[]) => Promise<IpcResult<void>>;
+      /** Готовые приватные ключи из ~/.ssh — для способа входа «ключ уже настроен» */
+      detectSshKeys: () => Promise<IpcResult<DetectedSshKey[]>>;
+      /** Выбор файла приватного ключа в системном диалоге; null — выбор отменён */
+      pickSshKeyFile: () => Promise<IpcResult<string | null>>;
 
       listProjects: () => Promise<IpcResult<ProjectRecord[]>>;
       /** Порядок проектов одного сервера в сайдбаре, заданный перетаскиванием */

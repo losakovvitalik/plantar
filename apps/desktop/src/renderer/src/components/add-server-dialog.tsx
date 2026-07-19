@@ -1,5 +1,5 @@
-import { useState } from "react";
-import type { ServerRecord } from "../../../preload/index.d";
+import { useEffect, useState } from "react";
+import type { DetectedSshKey, ServerRecord } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
 import { Button } from "./ui/button";
 import {
@@ -13,6 +13,7 @@ import {
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { RadioCard, RadioGroup } from "./ui/radio-group";
+import { Select } from "./ui/select";
 
 interface Props {
   open: boolean;
@@ -26,10 +27,44 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
   const [host, setHost] = useState("");
   const [port, setPort] = useState("22");
   const [user, setUser] = useState("root");
-  const [auth, setAuth] = useState<"key" | "password">("key");
+  const [auth, setAuth] = useState<"key" | "password" | "existing-key">("key");
   const [password, setPassword] = useState("");
+  const [detectedKeys, setDetectedKeys] = useState<DetectedSshKey[]>([]);
+  const [keyPath, setKeyPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    window.plantar.detectSshKeys().then((result) => {
+      if (result.ok) setDetectedKeys(result.data);
+    });
+  }, [open]);
+
+  // Найденный ключ подставляется сам — обычно он один
+  useEffect(() => {
+    if (auth === "existing-key" && !keyPath && detectedKeys.length > 0) {
+      setKeyPath(detectedKeys[0].path);
+    }
+  }, [auth, keyPath, detectedKeys]);
+
+  // Выбранный вручную файл показываем в списке вместе с найденными
+  const keyOptions =
+    keyPath && !detectedKeys.some((k) => k.path === keyPath)
+      ? [...detectedKeys, { path: keyPath, label: keyPath.split(/[\\/]/).pop() ?? keyPath }]
+      : detectedKeys;
+
+  async function pickKeyFile() {
+    const result = await window.plantar.pickSshKeyFile();
+    if (result.ok) {
+      if (result.data) {
+        setKeyPath(result.data);
+        setError(null);
+      }
+    } else {
+      setError(result.error);
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,6 +77,7 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
       user: user.trim(),
       auth,
       password,
+      keyPath: auth === "existing-key" ? keyPath : undefined,
     });
     setBusy(false);
     if (result.ok) {
@@ -50,6 +86,7 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
       setPort("22");
       setUser("root");
       setPassword("");
+      setKeyPath("");
       onOpenChange(false);
       onAdded(result.data);
     } else {
@@ -104,7 +141,7 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
             <Label>{t("addServer.authMethod")}</Label>
             <RadioGroup
               value={auth}
-              onValueChange={(v) => setAuth(v as "key" | "password")}
+              onValueChange={(v) => setAuth(v as "key" | "password" | "existing-key")}
               className="grid grid-cols-2 gap-2"
             >
               <RadioCard
@@ -117,33 +154,74 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
                 title={t("addServer.passwordTitle")}
                 description={t("addServer.passwordDescription")}
               />
+              <RadioCard
+                value="existing-key"
+                className="col-span-2"
+                title={t("addServer.existingKeyTitle")}
+                description={t("addServer.existingKeyDescription")}
+              />
             </RadioGroup>
           </div>
 
-          {auth === "key" ? (
+          {auth === "key" && (
             <p className="rounded-lg bg-moss/8 px-3 py-2 text-[12.5px] leading-snug text-moss-deep">
               {t("addServer.keyNote")}
             </p>
-          ) : (
+          )}
+          {auth === "password" && (
             <p className="rounded-lg bg-amber-bg px-3 py-2 text-[12.5px] leading-snug text-amber">
               {t("addServer.passwordNote")}
             </p>
           )}
+          {auth === "existing-key" && (
+            <p className="rounded-lg bg-moss/8 px-3 py-2 text-[12.5px] leading-snug text-moss-deep">
+              {t("addServer.existingKeyNote")}
+            </p>
+          )}
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="srv-password">
-              {auth === "key"
-                ? t("addServer.serverPasswordOnce")
-                : t("addServer.serverPassword")}
-            </Label>
-            <Input
-              id="srv-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
+          {auth === "existing-key" ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="srv-key">{t("addServer.keyFile")}</Label>
+              <div className="flex items-center gap-2">
+                {keyOptions.length > 0 ? (
+                  <Select
+                    id="srv-key"
+                    value={keyPath}
+                    onChange={(e) => setKeyPath(e.target.value)}
+                    className="flex-1"
+                  >
+                    {keyOptions.map((k) => (
+                      <option key={k.path} value={k.path}>
+                        {k.label}
+                      </option>
+                    ))}
+                  </Select>
+                ) : (
+                  <p className="flex-1 text-[12.5px] leading-snug text-muted-foreground">
+                    {t("addServer.noKeysFound")}
+                  </p>
+                )}
+                <Button type="button" variant="outline" onClick={pickKeyFile}>
+                  {t("addServer.pickKeyFile")}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="srv-password">
+                {auth === "key"
+                  ? t("addServer.serverPasswordOnce")
+                  : t("addServer.serverPassword")}
+              </Label>
+              <Input
+                id="srv-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+          )}
 
           {error && (
             <p className="rounded-lg bg-clay/10 px-3 py-2 text-[12.5px] leading-snug whitespace-pre-wrap text-clay">
@@ -155,7 +233,10 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               {t("common.cancel")}
             </Button>
-            <Button type="submit" disabled={busy || !host || !user || !password}>
+            <Button
+              type="submit"
+              disabled={busy || !host || !user || (auth === "existing-key" ? !keyPath : !password)}
+            >
               {busy ? t("common.connecting") : t("addServer.submit")}
             </Button>
           </DialogFooter>

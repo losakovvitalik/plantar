@@ -91,6 +91,15 @@ export const en: Record<MessageKey, string> = {
     "The password is not stored anywhere. You will have to enter it on every connection to the server.",
   "addServer.serverPasswordOnce": "Server password (needed once)",
   "addServer.serverPassword": "Server password",
+  "addServer.existingKeyTitle": "Key already set up",
+  "addServer.existingKeyDescription":
+    "Signing in with an SSH key already works — just point to the key file.",
+  "addServer.existingKeyNote":
+    "For hosting providers that do not give out a password: the key was added via the hosting panel, and Plantar will sign in with it. No password needed.",
+  "addServer.keyFile": "Key file",
+  "addServer.pickKeyFile": "Choose file…",
+  "addServer.noKeysFound":
+    "No ready-made keys were found on this computer — choose the key file manually.",
   "addServer.submit": "Add server",
 
   "deploy.running": "Deploying…",

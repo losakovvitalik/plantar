@@ -91,6 +91,15 @@ export const ru = {
     "Пароль нигде не сохраняется. Его придётся вводить при каждом подключении к серверу.",
   "addServer.serverPasswordOnce": "Пароль сервера (нужен один раз)",
   "addServer.serverPassword": "Пароль сервера",
+  "addServer.existingKeyTitle": "Ключ уже настроен",
+  "addServer.existingKeyDescription":
+    "Вход по SSH-ключу уже работает — останется указать файл ключа.",
+  "addServer.existingKeyNote":
+    "Для хостингов, которые не выдают пароль: ключ добавлен через панель хостинга, и Plantar будет входить по нему. Пароль не понадобится.",
+  "addServer.keyFile": "Файл ключа",
+  "addServer.pickKeyFile": "Выбрать файл…",
+  "addServer.noKeysFound":
+    "Готовые ключи на этом компьютере не нашлись — укажите файл ключа вручную.",
   "addServer.submit": "Добавить сервер",
 
   "deploy.running": "Деплою…",

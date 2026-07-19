@@ -74,9 +74,11 @@ import {
   writeStatusTabCache,
 } from "@plantar/storage";
 import {
+  detectUserSshKeys,
   generateKeyPair,
   installPublicKey,
   loadPrivateKey,
+  looksLikePrivateKey,
   migratePlainKeys,
   removeKeysWithComment,
   storePrivateKey,
@@ -263,9 +265,19 @@ interface AddServerInput {
   host: string;
   port: number;
   user: string;
-  auth: "key" | "password";
+  auth: "key" | "password" | "existing-key";
   /** Для auth=key используется один раз — чтобы установить ключ; не сохраняется */
   password: string;
+  /** Для auth=existing-key: путь к готовому приватному ключу пользователя */
+  keyPath?: string;
+}
+
+/** Переводит технические ошибки ssh2 при входе по готовому ключу на язык пользователя */
+function friendlyKeyError(err: unknown): Error {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/passphrase/i.test(message)) return new Error(t("keyPassphraseUnsupported"));
+  if (/authentication/i.test(message)) return new Error(t("keyAuthFailed"));
+  return err instanceof Error ? err : new Error(message);
 }
 
 async function addServer(input: AddServerInput): Promise<ServerRecord> {
@@ -297,6 +309,29 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
     test.close();
     const keyPath = storePrivateKey(id, privateKeyPem);
     record = { ...base, auth: "key", keyPath };
+  } else if (input.auth === "existing-key") {
+    // Ключ уже добавлен на сервер (например, через панель хостинга) — пароля нет,
+    // просто проверяем, что подключение этим ключом проходит, и запоминаем путь
+    if (!input.keyPath) throw new Error(t("keyFileMissing"));
+    let pem: string;
+    try {
+      pem = readFileSync(input.keyPath, "utf8");
+    } catch {
+      throw new Error(t("keyFileInvalid"));
+    }
+    if (!looksLikePrivateKey(pem)) throw new Error(t("keyFileInvalid"));
+    try {
+      const test = await SshConnection.connect({
+        host: base.host,
+        port: base.port,
+        username: base.user,
+        privateKey: pem,
+      });
+      test.close();
+    } catch (err) {
+      throw friendlyKeyError(err);
+    }
+    record = { ...base, auth: "key", keyPath: input.keyPath };
   } else {
     const conn = await connectWithPassword(base, input.password);
     conn.close();
@@ -853,6 +888,27 @@ app.whenReady().then(() => {
 
   ipcMain.handle("servers:list", () => toResult(async () => readServers()));
   ipcMain.handle("servers:add", (_e, input: AddServerInput) => toResult(() => addServer(input)));
+  // Готовые ключи пользователя из ~/.ssh — для способа входа «ключ уже настроен»
+  ipcMain.handle("ssh:detectKeys", () => toResult(async () => detectUserSshKeys()));
+  ipcMain.handle("ssh:pickKey", () =>
+    toResult(async () => {
+      const picked = await dialog.showOpenDialog(win, {
+        title: t("pickKeyFileTitle"),
+        defaultPath: path.join(app.getPath("home"), ".ssh"),
+        properties: ["openFile", "showHiddenFiles"],
+      });
+      if (picked.canceled || picked.filePaths.length === 0) return null;
+      const keyPath = picked.filePaths[0];
+      let content: string;
+      try {
+        content = readFileSync(keyPath, "utf8");
+      } catch {
+        throw new Error(t("keyFileInvalid"));
+      }
+      if (!looksLikePrivateKey(content)) throw new Error(t("keyFileInvalid"));
+      return keyPath;
+    }),
+  );
   ipcMain.handle("servers:remove", (_e, id: string) =>
     toResult(async () => {
       dropConnection(id);

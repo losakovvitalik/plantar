@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { safeStorage } from "electron";
@@ -110,6 +111,46 @@ export async function removeKeysWithComment(
   if (result.code !== 0) {
     throw new Error(t("removeKeyFailed", { stderr: result.stderr }));
   }
+}
+
+/** Похоже ли содержимое файла на приватный SSH-ключ (OpenSSH или PEM) */
+export function looksLikePrivateKey(content: string): boolean {
+  return content.startsWith("-----BEGIN") && content.includes("PRIVATE KEY");
+}
+
+export interface DetectedSshKey {
+  path: string;
+  /** Имя файла — для показа в списке выбора */
+  label: string;
+}
+
+/**
+ * Ищет приватные ключи в ~/.ssh — для сценария «ключ уже настроен через
+ * панель хостинга». Нечитаемые и посторонние файлы (конфиги, .pub) пропускаются.
+ */
+export function detectUserSshKeys(): DetectedSshKey[] {
+  const dir = path.join(homedir(), ".ssh");
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [];
+  }
+
+  const found: DetectedSshKey[] = [];
+  for (const name of entries) {
+    if (name.endsWith(".pub")) continue;
+    const full = path.join(dir, name);
+    try {
+      if (!statSync(full).isFile()) continue;
+      if (looksLikePrivateKey(readFileSync(full, "utf8"))) {
+        found.push({ path: full, label: name });
+      }
+    } catch {
+      // нет прав на чтение — просто не показываем этот файл
+    }
+  }
+  return found;
 }
 
 /** Добавляет публичный ключ в authorized_keys на сервере (идемпотентно) */

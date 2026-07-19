@@ -68,6 +68,26 @@ const MESSAGES = {
     ru: "Не удалось установить ключ на сервер:\n{stderr}",
     en: "Failed to install the key on the server:\n{stderr}",
   },
+  pickKeyFileTitle: {
+    ru: "Выберите файл приватного ключа",
+    en: "Select the private key file",
+  },
+  keyFileMissing: {
+    ru: "Укажите файл ключа.",
+    en: "Choose the key file.",
+  },
+  keyFileInvalid: {
+    ru: "Этот файл не похож на приватный SSH-ключ. Обычно нужный файл называется id_ed25519 или id_rsa — без окончания .pub.",
+    en: "This file does not look like a private SSH key. The right file is usually named id_ed25519 or id_rsa — without the .pub ending.",
+  },
+  keyPassphraseUnsupported: {
+    ru: "Этот ключ защищён собственным паролем (passphrase) — такие ключи пока не поддерживаются. Выберите ключ без пароля.",
+    en: "This key is protected by its own passphrase — such keys are not supported yet. Choose a key without a passphrase.",
+  },
+  keyAuthFailed: {
+    ru: "Сервер не принял этот ключ. Проверьте, что на сервер добавлен именно он и что пользователь указан верно.",
+    en: "The server did not accept this key. Check that this exact key is added to the server and the user is correct.",
+  },
   deployUpdatingRepo: {
     ru: "Обновляю проект из репозитория…",
     en: "Updating the project from the repository…",

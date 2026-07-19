@@ -7,6 +7,8 @@ const api = {
   addServer: (input: unknown) => invoke("servers:add", input),
   removeServer: (id: string) => invoke("servers:remove", id),
   reorderServers: (ids: string[]) => invoke("servers:reorder", ids),
+  detectSshKeys: () => invoke("ssh:detectKeys"),
+  pickSshKeyFile: () => invoke("ssh:pickKey"),
 
   listProjects: () => invoke("projects:list"),
   reorderProjects: (serverId: string, ids: string[]) =>
