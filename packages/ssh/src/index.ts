@@ -55,6 +55,8 @@ export interface SftpDirEntry extends SftpEntryStat {
 
 export class SshConnection {
   private closed = false;
+  /** Мемоизированная детекция PATH: одна на соединение, стартует при первом exec */
+  private pathPrefixPromise?: Promise<string>;
 
   private constructor(
     private client: Client,
@@ -94,12 +96,60 @@ export class SshConnection {
   }
 
   /**
+   * Команды выполняются в неинтерактивной сессии, где профили shell'а
+   * не загружаются, поэтому инструменты, поставленные через nvm или pnpm,
+   * не находятся в PATH. Перед первой командой один раз спрашиваем PATH
+   * у login- и интерактивного bash (маркеры отсекают шум из .bashrc),
+   * сливаем и добавляем НАД PATH по умолчанию — «export PATH=…:"$PATH"; ».
+   * Не вышло (нет bash, канал завис, обрыв) — работаем без префикса.
+   * Ленивая детекция: соединения только под SFTP (вкладка «Файлы»)
+   * и проверочные коннекты её не оплачивают.
+   */
+  private pathPrefix(): Promise<string> {
+    this.pathPrefixPromise ??= this.detectShellPath();
+    return this.pathPrefixPromise;
+  }
+
+  private async detectShellPath(): Promise<string> {
+    const login = "__PLANTAR_LOGIN_PATH__:";
+    const interactive = "__PLANTAR_INTERACTIVE_PATH__:";
+    try {
+      // Таймаут обязателен: канал может не закрыться никогда (ForceCommand
+      // internal-sftp, фоновый процесс из .bashrc, держащий stdout)
+      const result = await this.rawExec(
+        `{ bash -lc 'echo "${login}$PATH"'; bash -ic 'echo "${interactive}$PATH"'; } </dev/null 2>/dev/null`,
+        7000,
+      );
+      // lastIndexOf, а не построчный разбор: вывод .bashrc без завершающего
+      // перевода строки приклеивает маркер к своему хвосту
+      const extract = (marker: string) => {
+        const at = result.stdout.lastIndexOf(marker);
+        if (at === -1) return [];
+        return result.stdout
+          .slice(at + marker.length)
+          .split("\n")[0]
+          .split(":")
+          .map((dir) => dir.trim())
+          .filter((dir) => dir.startsWith("/"));
+      };
+      // Интерактивные пути первыми: выбранную nvm версию задаёт .bashrc
+      const dirs = [...new Set([...extract(interactive), ...extract(login)])];
+      if (dirs.length === 0) return "";
+      return `export PATH=${shellQuote(dirs.join(":"))}:"$PATH"; `;
+    } catch {
+      // Ошибка всплывёт на настоящей команде — здесь просто без префикса
+      return "";
+    }
+  }
+
+  /**
    * Запускает команду и отдаёт её вывод по мере появления.
    * stop() закрывает канал — долгоживущая команда (tail -F) завершается.
    */
-  execStream(command: string, handlers: ExecStreamHandlers): Promise<ExecStreamHandle> {
+  async execStream(command: string, handlers: ExecStreamHandlers): Promise<ExecStreamHandle> {
+    const prefix = await this.pathPrefix();
     return new Promise((resolve, reject) => {
-      this.client.exec(command, (err, stream) => {
+      this.client.exec(prefix + command, (err, stream) => {
         if (err) return reject(err);
         // Отдельные декодеры на канал: граница чанка может резать многобайтный символ
         const stdoutDecoder = new TextDecoder();
@@ -122,19 +172,36 @@ export class SshConnection {
     });
   }
 
-  exec(command: string): Promise<ExecResult> {
+  async exec(command: string): Promise<ExecResult> {
+    const prefix = await this.pathPrefix();
+    return this.rawExec(prefix + command);
+  }
+
+  /** exec без префикса PATH; с timeoutMs принудительно закрывает зависший канал */
+  private rawExec(command: string, timeoutMs?: number): Promise<ExecResult> {
     return new Promise((resolve, reject) => {
       this.client.exec(command, (err, stream) => {
         if (err) return reject(err);
         let stdout = "";
         let stderr = "";
+        // Отдельные декодеры на канал: граница чанка может резать многобайтный символ
+        const stdoutDecoder = new TextDecoder();
+        const stderrDecoder = new TextDecoder();
+        const timer = timeoutMs
+          ? setTimeout(() => {
+              // Отдаём собранное к этому моменту — маркеры обычно уже пришли
+              stream.close();
+              resolve({ stdout, stderr, code: -1 });
+            }, timeoutMs)
+          : undefined;
         stream.on("data", (chunk: Buffer) => {
-          stdout += chunk;
+          stdout += stdoutDecoder.decode(chunk, { stream: true });
         });
         stream.stderr.on("data", (chunk: Buffer) => {
-          stderr += chunk;
+          stderr += stderrDecoder.decode(chunk, { stream: true });
         });
         stream.on("close", (code: number | null) => {
+          clearTimeout(timer);
           // null — канал закрылся без exit-кода (обрыв соединения, kill по сигналу);
           // считаем это ошибкой, иначе оборванная команда выглядит успешной
           resolve({ stdout, stderr, code: code ?? -1 });
