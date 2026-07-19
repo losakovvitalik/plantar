@@ -1,4 +1,5 @@
 import {
+  ArrowRightLeft,
   Check,
   Copy,
   ExternalLink,
@@ -19,6 +20,7 @@ import type {
 } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
 import { passwordFor } from "../lib/server-auth";
+import { MigrateProjectDialog } from "./migrate-project-dialog";
 import { Button } from "./ui/button";
 import { Switch } from "./ui/switch";
 
@@ -64,10 +66,13 @@ interface RunView {
 function DeployError({
   message,
   onCompatRetry,
+  onReturnPrevious,
 }: {
   message: string;
   /** Конфликт зависимостей npm — показывает подсказку и кнопку режима совместимости */
   onCompatRetry?: () => void;
+  /** Приложение не поднялось после деплоя — кнопка возврата предыдущей версии */
+  onReturnPrevious?: () => void;
 }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
@@ -157,6 +162,17 @@ function DeployError({
           </Button>
         </div>
       )}
+      {onReturnPrevious && (
+        <div className="flex items-center gap-3 border-t border-clay/20 pt-2">
+          <p className="min-w-0 flex-1 text-[12.5px] leading-snug">
+            {t("deploy.returnPreviousHint")}
+          </p>
+          <Button size="sm" className="shrink-0" onClick={onReturnPrevious}>
+            <Undo2 />
+            {t("deploy.returnPrevious")}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -174,9 +190,12 @@ export function DeployTab({
   const isGit = project.source === "git";
   const isExternal = Boolean(project.external);
   const needsFolder = isExternal && !project.path;
-  // Репозиторий, из которого приложение было задеплоено на сервер (если нашёлся)
+  // Репозиторий, из которого приложение было задеплоено на сервер (если нашёлся);
+  // без него бережный деплой (git pull на месте) невозможен
   const externalRepo = project.external?.repoUrl;
+  const externalGit = isExternal && Boolean(externalRepo);
   const [linkingRepo, setLinkingRepo] = useState(false);
+  const [migrateOpen, setMigrateOpen] = useState(false);
   // Ошибка привязки папки/репозитория — не относится к прогону деплоя
   const [linkError, setLinkError] = useState<string | null>(null);
   // Состояние прогона живёт в main; вкладка показывает его снимок + события
@@ -375,6 +394,59 @@ export function DeployTab({
     }
   }
 
+  /** Возврат предыдущей версии внешнего проекта после неудачного деплоя:
+   *  повторный деплой последнего успешно развёрнутого коммита */
+  async function returnPrevious() {
+    const commit = project.deployedCommit?.hash;
+    if (!commit || busyRef.current || running) return;
+    busyRef.current = true;
+    try {
+      if (!window.confirm(t("deploy.returnPreviousConfirm"))) return;
+      const password = await passwordFor(server, askPassword);
+      if (password === null) return;
+      startRunView("rollback");
+      const result = await window.plantar.rollbackExternalTo(project.id, commit, password);
+      if (!result.ok) {
+        setRun((prev) =>
+          prev && prev.status === "running"
+            ? { ...prev, status: "error", error: { message: result.error } }
+            : prev,
+        );
+      }
+    } finally {
+      busyRef.current = false;
+    }
+  }
+
+  /** Перенос под управление Plantar — прежний takeover-деплой, после подтверждения */
+  async function migrate() {
+    if (busyRef.current || running) return;
+    busyRef.current = true;
+    try {
+      const password = await passwordFor(server, askPassword);
+      if (password === null) return;
+      setMigrateOpen(false);
+      startRunView("deploy");
+      const result = await window.plantar.migrateProject(project.id, password);
+      if (!result.ok) {
+        setRun((prev) =>
+          prev && prev.status === "running"
+            ? {
+                ...prev,
+                status: "error",
+                error: { message: result.error, code: result.code },
+              }
+            : prev,
+        );
+        return;
+      }
+      // Пометка «внешний» снята — родитель перечитает проект и конфиг
+      onProjectChanged();
+    } finally {
+      busyRef.current = false;
+    }
+  }
+
   /** Привязка папки с кодом к импортированному проекту — открывает выбор папки */
   async function linkFolder() {
     setLinkError(null);
@@ -433,25 +505,31 @@ export function DeployTab({
       <div className="flex items-center gap-3">
         <Button
           onClick={() => void deploy()}
-          disabled={!stateLoaded || running || !config || needsFolder}
+          disabled={!stateLoaded || running || !config || (isExternal && !externalGit)}
+          title={
+            isExternal && !externalGit ? t("deploy.externalNoGitHint") : undefined
+          }
         >
           <Rocket />
           {running && !rollingBack
             ? t("deploy.running")
-            : isGit
+            : isGit || externalGit
               ? t("deploy.updateAndDeploy")
               : t("deploy.start")}
         </Button>
 
-        <Button
-          variant="outline"
-          onClick={rollback}
-          disabled={!stateLoaded || running || !config || isExternal}
-          title={isExternal ? t("deploy.rollbackExternalHint") : undefined}
-        >
-          <Undo2 />
-          {rollingBack ? t("deploy.rollingBack") : t("deploy.rollback")}
-        </Button>
+        {/* У внешних проектов возврат версии живёт на вкладке «Версии» (по git),
+            поэтому кнопки здесь честно нет, а не задизейблена */}
+        {!isExternal && (
+          <Button
+            variant="outline"
+            onClick={rollback}
+            disabled={!stateLoaded || running || !config}
+          >
+            <Undo2 />
+            {rollingBack ? t("deploy.rollingBack") : t("deploy.rollback")}
+          </Button>
+        )}
 
         {config && config.type !== "bot" && (
           <span className="inline-flex items-center gap-1.5 text-[13px] text-ink-soft">
@@ -483,57 +561,54 @@ export function DeployTab({
       </div>
 
       {isExternal && (
-        <div className="flex items-center gap-3 rounded-lg bg-amber-bg px-3 py-2 text-[12.5px] leading-snug text-ink">
-          <PackageSearch className="size-4 shrink-0" />
+        <div className="flex items-start gap-3 rounded-lg bg-amber-bg px-3 py-2 text-[12.5px] leading-snug text-ink">
+          <PackageSearch className="mt-0.5 size-4 shrink-0" />
           <span className="min-w-0 flex-1">
-            {!needsFolder ? (
-              t("deploy.externalHint")
-            ) : externalRepo ? (
-              <>
-                {t("deploy.externalRepoBefore")}{" "}
-                <button
-                  type="button"
-                  onClick={() => void window.plantar.openExternal(externalRepo)}
-                  className="break-all font-semibold text-moss underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-moss/50"
-                >
-                  {externalRepo}
-                </button>
-                {t("deploy.externalRepoAfter")}
-              </>
-            ) : (
-              t("deploy.externalNeedsFolder")
-            )}
+            {externalGit ? t("deploy.externalHint") : t("deploy.externalNoGitHint")}
+            {needsFolder && <> {t("deploy.externalLinkHint")}</>}
           </span>
-          {needsFolder && externalRepo && (
-            <Button
-              size="sm"
-              className="shrink-0"
-              onClick={() => void linkRepo()}
-              disabled={linkingRepo}
-            >
-              <GitBranch />
-              {linkingRepo ? t("deploy.connectingRepo") : t("deploy.connectRepo")}
-            </Button>
-          )}
-          {needsFolder && (
+          <div className="flex shrink-0 items-center gap-2">
+            {needsFolder && externalRepo && (
+              <Button
+                size="sm"
+                onClick={() => void linkRepo()}
+                disabled={linkingRepo}
+              >
+                <GitBranch />
+                {linkingRepo ? t("deploy.connectingRepo") : t("deploy.connectRepo")}
+              </Button>
+            )}
+            {needsFolder && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void linkFolder()}
+                disabled={linkingRepo}
+              >
+                <FolderOpen />
+                {t("deploy.pickFolder")}
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
-              className="shrink-0"
-              onClick={() => void linkFolder()}
-              disabled={linkingRepo}
+              onClick={() => setMigrateOpen(true)}
+              disabled={needsFolder || running}
+              title={needsFolder ? t("deploy.migrateNeedsFolder") : undefined}
             >
-              <FolderOpen />
-              {t("deploy.pickFolder")}
+              <ArrowRightLeft />
+              {t("deploy.migrate")}
             </Button>
-          )}
+          </div>
         </div>
       )}
 
-      {isGit && (
+      {(isGit || externalGit) && (
         <div className="flex items-center gap-2 rounded-lg bg-moss/5 px-3 py-2 text-[12.5px] text-ink-soft">
           <GitBranch className="size-3.5 shrink-0 text-moss" />
-          <span className="font-mono font-semibold text-ink">{project.branch}</span>
+          <span className="font-mono font-semibold text-ink">
+            {project.branch ?? project.external?.branch}
+          </span>
           {project.deployedCommit ? (
             <span className="min-w-0 truncate">
               <span className="font-mono text-moss">
@@ -577,6 +652,14 @@ export function DeployTab({
             message={error.message}
             onCompatRetry={
               error.code === "npm-peer-conflict" ? () => void deploy(true) : undefined
+            }
+            onReturnPrevious={
+              externalGit &&
+              project.deployedCommit &&
+              (error.code === "app-not-responding" ||
+                error.code === "process-unstable")
+                ? () => void returnPrevious()
+                : undefined
             }
           />
         )
@@ -622,6 +705,16 @@ export function DeployTab({
           </>
         )}
       </div>
+
+      {isExternal && config && (
+        <MigrateProjectDialog
+          open={migrateOpen}
+          onOpenChange={setMigrateOpen}
+          project={project}
+          configName={config.name}
+          onConfirm={() => void migrate()}
+        />
+      )}
     </div>
   );
 }

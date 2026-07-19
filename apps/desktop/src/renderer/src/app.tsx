@@ -23,6 +23,7 @@ import { ServerMonitoring } from "./components/server-monitoring";
 import { SettingsDialog } from "./components/settings-dialog";
 import { Sidebar } from "./components/sidebar";
 import { StatusTab } from "./components/status-tab";
+import { VersionsTab } from "./components/versions-tab";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { useI18n } from "./i18n";
@@ -325,6 +326,12 @@ export default function App() {
                       {t("app.tabCommits")}
                     </TabsTrigger>
                   )}
+                  {/* Версии внешнего git-проекта; без git вкладки честно нет */}
+                  {selectedProject.external?.repoUrl && (
+                    <TabsTrigger className="px-4" value="versions">
+                      {t("app.tabVersions")}
+                    </TabsTrigger>
+                  )}
                   <TabsTrigger className="px-4" value="env">
                     {t("app.tabEnv")}
                   </TabsTrigger>
@@ -368,6 +375,16 @@ export default function App() {
                     project={selectedProject}
                     server={projectServer}
                     askPassword={askPassword}
+                  />
+                </TabsContent>
+              )}
+              {selectedProject.external?.repoUrl && (
+                <TabsContent value="versions" className="h-full">
+                  <VersionsTab
+                    project={selectedProject}
+                    server={projectServer}
+                    askPassword={askPassword}
+                    onRollbackStarted={() => setTab("deploy")}
                   />
                 </TabsContent>
               )}

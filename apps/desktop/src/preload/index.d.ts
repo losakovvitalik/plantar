@@ -3,6 +3,7 @@ import type {
   AppLogPoint,
   AppMetricsHistory,
   DiscoveredApp,
+  ExternalVersions,
   LogStreamSource,
   MonitoringStatus,
   MonitoringTool,
@@ -33,6 +34,7 @@ export type {
   AppStatusEntry,
   DetectedProject,
   DiscoveredApp,
+  ExternalVersions,
   LogStreamSource,
   MonitoringStatus,
   MonitoringTool,
@@ -118,6 +120,8 @@ export interface AppStatusSnapshot {
   goaccessMissing: boolean;
   /** Включён ли на сервере сбор нагрузки приложений; undefined — тип без процесса */
   appMetrics?: boolean;
+  /** Внешний git-проект: развёрнут не последний коммит ветки на сервере */
+  behindTip?: boolean;
 }
 
 /** Кэш вкладки «Статус»: устаревшие данные для мгновенного показа.
@@ -397,6 +401,22 @@ declare global {
       ) => Promise<IpcResult<{ url?: string }>>;
       /** Возврат предыдущей версии; лог приходит в onDeployLog */
       rollback: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<{ url?: string }>>;
+      /** Git-версии внешнего проекта с сервера — вкладка «Версии» и индикатор */
+      externalVersions: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<ExternalVersions>>;
+      /** Возврат версии внешнего проекта: повторный деплой выбранного коммита */
+      rollbackExternalTo: (
+        projectId: string,
+        commit: string,
+        password?: string,
+      ) => Promise<IpcResult<{ url?: string }>>;
+      /** Перенос импортированного проекта под управление Plantar (takeover-деплой) */
+      migrateProject: (
         projectId: string,
         password?: string,
       ) => Promise<IpcResult<{ url?: string }>>;

@@ -75,6 +75,12 @@ export function AppStatusTab({
           if (!health.ok) throw new Error(health.error);
           next.health = health.data;
         }
+        // Внешний git-проект: показываем, если развёрнут не последний коммит
+        // ветки (например, после возврата версии); ошибка не роняет вкладку
+        if (project.external?.repoUrl) {
+          const versions = await window.plantar.externalVersions(project.id);
+          if (versions.ok) next.behindTip = versions.data.behindTip;
+        }
         // Пароль нужен только первому запросу — дальше соединение живёт в пуле
         const monitoring = await window.plantar.getMonitoringStatus(server.id, password);
         if (!monitoring.ok) throw new Error(monitoring.error);
@@ -148,6 +154,16 @@ export function AppStatusTab({
             loading && "opacity-60",
           )}
         >
+          {snapshot.behindTip && (
+            <p
+              title={t("appStatus.behindTipHint")}
+              className="rounded-xl bg-amber-bg px-5 py-3 text-[13px] leading-relaxed text-ink"
+            >
+              <span className="font-semibold">{t("appStatus.behindTip")}</span>{" "}
+              {t("appStatus.behindTipNote")}
+            </p>
+          )}
+
           {type === "static" ? (
             <p className="rounded-xl border border-line bg-card px-5 py-4 text-[13px] leading-relaxed text-ink-soft">
               {t("appStatus.staticNote")}

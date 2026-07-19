@@ -199,7 +199,8 @@ export function EnvTab({ project, server, askPassword }: Props) {
   return (
     <div className="flex h-full flex-col gap-4">
       <p className="rounded-lg bg-moss/8 px-3 py-2 text-[12.5px] leading-snug text-moss-deep">
-        {t("env.banner")}
+        {/* Внешний проект: переменные живут в .env его папки, а не в хранилище Plantar */}
+        {project.external ? t("env.bannerExternal") : t("env.banner")}
       </p>
 
       {error && (

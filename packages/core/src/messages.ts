@@ -252,6 +252,42 @@ const MESSAGES = {
     ru: "Файл не найден на сервере.",
     en: "The file was not found on the server.",
   },
+  externalAppDirMissing: {
+    ru: "Папка приложения {dir} не найдена на сервере.",
+    en: "The app folder {dir} was not found on the server.",
+  },
+  externalNoGit: {
+    ru: "В папке приложения на сервере нет git-репозитория, поэтому обновить код на месте не получится. Чтобы деплоить это приложение, переведите его под управление Plantar.",
+    en: "The app folder on the server is not a git repository, so the code cannot be updated in place. To deploy this app, move it under Plantar management.",
+  },
+  externalUpdatingRepo: {
+    ru: "→ Обновляю код в папке приложения на сервере…",
+    en: "→ Updating the code in the app folder on the server…",
+  },
+  externalGitFailed: {
+    ru: "Не удалось обновить код в папке приложения. Plantar не перезаписывает файлы принудительно: приведите репозиторий на сервере в порядок и повторите деплой.\n{output}",
+    en: "Failed to update the code in the app folder. Plantar never overwrites files by force: clean up the repository on the server and retry the deploy.\n{output}",
+  },
+  externalCheckingOut: {
+    ru: "→ Разворачиваю версию {commit}…",
+    en: "→ Deploying version {commit}…",
+  },
+  externalPipInstall: {
+    ru: "→ Обновляю зависимости: pip install -r requirements.txt",
+    en: "→ Updating dependencies: pip install -r requirements.txt",
+  },
+  externalRestarting: {
+    ru: "→ Перезапускаю приложение ({name})…",
+    en: "→ Restarting the app ({name})…",
+  },
+  externalDeployDone: {
+    ru: "✓ Приложение обновлено в своей папке. Настройки веб-сервера и портов не менялись.",
+    en: "✓ The app was updated in its own folder. Web server and port settings were left untouched.",
+  },
+  externalRollbackDone: {
+    ru: "✓ Выбранная версия развёрнута. Обычный деплой вернёт приложение на последнюю версию ветки.",
+    en: "✓ The selected version is deployed. A regular deploy will bring the app back to the latest version of the branch.",
+  },
 } satisfies Messages<string>;
 
 export const t = createT(MESSAGES);

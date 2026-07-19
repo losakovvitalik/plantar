@@ -95,6 +95,12 @@ const api = {
     invoke("deploy:run", { projectId, password, legacyPeerDeps }),
   rollback: (projectId: string, password?: string) =>
     invoke("deploy:rollback", { projectId, password }),
+  externalVersions: (projectId: string, password?: string) =>
+    invoke("versions:external", { projectId, password }),
+  rollbackExternalTo: (projectId: string, commit: string, password?: string) =>
+    invoke("deploy:rollbackExternal", { projectId, commit, password }),
+  migrateProject: (projectId: string, password?: string) =>
+    invoke("projects:migrate", { projectId, password }),
   getDeployState: (projectId: string) => invoke("deploy:state", projectId),
   getActiveDeploys: () => invoke("deploy:active"),
 

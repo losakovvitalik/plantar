@@ -26,6 +26,7 @@ export const en: Record<MessageKey, string> = {
   "app.tabFiles": "Files",
   "app.tabHistory": "History",
   "app.tabCommits": "Commits",
+  "app.tabVersions": "Versions",
   "app.projectSettings": "Project settings",
   "app.serverHint":
     "This is a server. Add a project via “+” in the list on the left to deploy.",
@@ -41,7 +42,7 @@ export const en: Record<MessageKey, string> = {
   "app.discoverApps": "Find apps",
   "app.externalBadge": "External",
   "app.externalBadgeHint":
-    "This app was running on the server before Plantar. Restoring the previous version becomes available after the first deploy via Plantar.",
+    "This app was running on the server before Plantar and is updated carefully: deploys happen in its own folder on the server, web server settings are left untouched.",
 
   "sidebar.servers": "Servers",
   "sidebar.addServer": "Add server",
@@ -124,17 +125,22 @@ export const en: Record<MessageKey, string> = {
   "deploy.rollingBack": "Restoring…",
   "deploy.rollbackConfirm":
     "Restore the previous version of the app on the server? The current version will be stopped.",
-  "deploy.rollbackExternalHint":
-    "Restoring the previous version becomes available after the first deploy via Plantar.",
   "deploy.rolledBackAt": "Previous version restored: {url}",
   "deploy.rolledBackDone": "Previous version restored.",
   "deploy.externalHint":
-    "This app was imported from the server. Logs and variables already work; after the first deploy Plantar starts keeping versions — restoring the previous version becomes available.",
-  "deploy.externalNeedsFolder":
-    "To deploy this app, choose the folder with its code on this computer.",
-  "deploy.externalRepoBefore": "This app was deployed from the repository",
-  "deploy.externalRepoAfter":
-    ". Connect it — updates will be pulled from GitHub on every deploy.",
+    "This app was imported from the server and is updated carefully: Plantar pulls fresh code from the repository right into the app folder, installs dependencies, builds and restarts the app under its old name. Web server settings and other apps are left untouched.",
+  "deploy.externalNoGitHint":
+    "The app folder on the server has no code repository, so deploys and version restores are unavailable: Plantar cannot update the code the way it would be done by hand. Moving the app under Plantar management is available.",
+  "deploy.externalLinkHint":
+    "To move the app under Plantar management, first connect the repository or choose the code folder.",
+  "deploy.migrate": "Move under Plantar management",
+  "deploy.migrateNeedsFolder":
+    "First connect the repository or choose the code folder.",
+  "deploy.returnPrevious": "Restore previous version",
+  "deploy.returnPreviousHint":
+    "The app did not come up after the deploy. You can restore the last successfully deployed version — it will be rebuilt and started again.",
+  "deploy.returnPreviousConfirm":
+    "Restore the last successfully deployed version? This is a full deploy: dependencies are installed and the app is rebuilt.",
   "deploy.connectRepo": "Connect repository",
   "deploy.connectingRepo": "Connecting…",
   "deploy.pickFolder": "Choose code folder",
@@ -148,7 +154,7 @@ export const en: Record<MessageKey, string> = {
   "discover.description":
     "Apps running on the server “{server}” that are not in Plantar yet.",
   "discover.hint":
-    "The project is added as external: logs and variables work right away, and restoring the previous version appears after the first deploy via Plantar.",
+    "The project is added as external and is updated carefully: deploys happen in its own folder on the server, web server settings are left untouched.",
   "discover.scanning": "Looking for running apps on the server…",
   "discover.empty":
     "No new apps found: everything running on the server is already in the list, or the server has no apps started via pm2.",
@@ -170,6 +176,40 @@ export const en: Record<MessageKey, string> = {
   "commits.badge.deployed": "Deployed",
   "commits.badge.failed": "Deploy failed",
   "commits.badge.notDeployed": "Not deployed",
+
+  "versions.banner":
+    "App versions from the repository history on the server. Restoring a version is a full deploy of the selected version — dependencies are installed and the app is rebuilt, so it takes time.",
+  "versions.behindTip": "The deployed version is not the latest one on the branch.",
+  "versions.behindTipHint":
+    "This happens after a version restore: the app folder is pinned to an older version of the code, and updating the code on the server by hand will fail. A regular deploy brings the app back to the latest version.",
+  "versions.loading": "Loading versions from the server…",
+  "versions.load": "Load versions",
+  "versions.passwordNeeded": "The server password will be required.",
+  "versions.refresh": "Refresh",
+  "versions.empty": "No versions yet.",
+  "versions.current": "Deployed",
+  "versions.restore": "Restore this version",
+  "versions.confirm":
+    "Deploy version {hash}? The app will be rebuilt and restarted.",
+  "versions.noGit":
+    "The app folder on the server has no code repository, so the version list is unavailable.",
+
+  "migrate.title": "Move the app under Plantar management?",
+  "migrate.description":
+    "Plantar will recreate the app in its own structure. Here is what changes on the server:",
+  "migrate.itemPath":
+    "The code moves from {oldDir} to {newDir} — each version gets its own folder, and restoring a version becomes instant.",
+  "migrate.itemPm2":
+    "The process is recreated under the name “{name}”; the previous process “{pm2Name}” is stopped and removed from autostart.",
+  "migrate.itemNginx":
+    "The previous web server configuration ({file}) is disabled — Plantar sets up its own.",
+  "migrate.itemEnv":
+    "Variables from the app's .env move into the Plantar store and keep applying on deploys.",
+  "migrate.itemData":
+    "Data in the old app folder (databases, uploaded files) is not migrated. If the app keeps data next to its code, take care of moving it beforehand.",
+  "migrate.after":
+    "After the move the project becomes a regular Plantar project: versions with instant restore, domain and HTTPS management.",
+  "migrate.confirm": "Move and deploy",
 
   "ciSetup.button": "Set up deploy on commit",
   "ciSetup.title": "Deploy on commit",
@@ -218,6 +258,8 @@ export const en: Record<MessageKey, string> = {
 
   "env.banner":
     "Variables are stored on the server and apply on the next deploy: for React and Next.js at build time, while Node.js apps and bots receive a .env file next to the app. Plantar manages NODE_ENV automatically — you do not need to add it here. Local .env files from the project folder are never uploaded to the server.",
+  "env.bannerExternal":
+    "Variables of this app are read and saved right in the .env file inside its folder on the server — no separate store is used. Changes apply after the app restarts, for example on the next deploy.",
   "env.confirmDiscard": "Unsaved changes will be lost. Continue?",
   "env.loading": "Loading variables from the server…",
   "env.load": "Load variables",
@@ -407,6 +449,11 @@ export const en: Record<MessageKey, string> = {
   "appStatus.logsTitle": "Logs over the day",
   "appStatus.logsHint": "Each bar is one hour",
   "appStatus.logsEmpty": "No log entries in the last day.",
+  "appStatus.behindTip": "The deployed version is not the latest one.",
+  "appStatus.behindTipNote":
+    "A regular deploy brings the app back to the latest version of the branch.",
+  "appStatus.behindTipHint":
+    "After a version restore the app folder is pinned to an older version of the code — updating the code on the server by hand will fail until the next deploy via Plantar.",
 
   "monitoring.title": "Monitoring",
   "monitoring.description":
