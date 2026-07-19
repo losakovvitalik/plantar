@@ -7,6 +7,10 @@ import type {
   MonitoringStatus,
   MonitoringTool,
   Pm2ProcessHealth,
+  RelatedFile,
+  RelatedFileId,
+  RemoteFileContent,
+  RemoteFileEntry,
   ServerAppUsage,
   ServerInfo,
   ServerMetricPoint,
@@ -35,6 +39,10 @@ export type {
   Pm2ProcessHealth,
   ProjectConfig,
   ProjectConfigInput,
+  RelatedFile,
+  RelatedFileId,
+  RemoteFileContent,
+  RemoteFileEntry,
   ServerAppUsage,
   ServerInfo,
   ServerMetricPoint,
@@ -263,6 +271,30 @@ declare global {
 
       listHistory: (projectId: string) => Promise<IpcResult<DeployRecord[]>>;
       readDeployLog: (logFile: string) => Promise<IpcResult<string>>;
+
+      /** Содержимое папки проекта на сервере; path — относительно корня проекта, "" — корень */
+      listProjectFiles: (
+        projectId: string,
+        path: string,
+        password?: string,
+      ) => Promise<IpcResult<RemoteFileEntry[]>>;
+      /** Текст файла из папки проекта; большой файл приходит хвостом, бинарный — без текста */
+      readProjectFile: (
+        projectId: string,
+        path: string,
+        password?: string,
+      ) => Promise<IpcResult<RemoteFileContent>>;
+      /** Текст связанного nginx-файла по его id */
+      readRelatedFile: (
+        projectId: string,
+        related: RelatedFileId,
+        password?: string,
+      ) => Promise<IpcResult<RemoteFileContent>>;
+      /** Связанные nginx-файлы сайта; у внешних приложений и ботов — пусто */
+      listRelatedFiles: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<RelatedFile[]>>;
 
       readEnv: (projectId: string, password?: string) => Promise<IpcResult<string>>;
       writeEnv: (

@@ -40,6 +40,19 @@ export interface ExecStreamHandle {
   stop: () => void;
 }
 
+export interface SftpEntryStat {
+  size: number;
+  /** мс с эпохи; SFTP отдаёт секунды */
+  mtimeMs: number;
+  isDirectory: boolean;
+  isFile: boolean;
+}
+
+export interface SftpDirEntry extends SftpEntryStat {
+  name: string;
+  isSymlink: boolean;
+}
+
 export class SshConnection {
   private closed = false;
 
@@ -130,10 +143,28 @@ export class SshConnection {
     });
   }
 
+  private sftpChannel?: Promise<SFTPWrapper>;
+
+  /**
+   * Один SFTP-канал на соединение: каждый client.sftp() открывает новый
+   * канал, а сервер ограничивает их число (MaxSessions) — открытие канала
+   * на каждый вызов копит их до «Channel open failure».
+   */
   private sftp(): Promise<SFTPWrapper> {
-    return new Promise((resolve, reject) => {
-      this.client.sftp((err, sftp) => (err ? reject(err) : resolve(sftp)));
+    this.sftpChannel ??= new Promise((resolve, reject) => {
+      this.client.sftp((err, sftp) => {
+        if (err) {
+          this.sftpChannel = undefined;
+          return reject(err);
+        }
+        // Канал закрылся (обрыв, таймаут) — следующий вызов откроет новый
+        sftp.on("close", () => {
+          this.sftpChannel = undefined;
+        });
+        resolve(sftp);
+      });
     });
+    return this.sftpChannel;
   }
 
   async listDirectories(remotePath: string): Promise<string[]> {
@@ -148,6 +179,61 @@ export class SshConnection {
             .sort(),
         );
       });
+    });
+  }
+
+  /** Содержимое папки с атрибутами; симлинки не разыменовываются */
+  async listEntries(remotePath: string): Promise<SftpDirEntry[]> {
+    const sftp = await this.sftp();
+    return new Promise((resolve, reject) => {
+      sftp.readdir(remotePath, (err, list) => {
+        if (err) return reject(err);
+        resolve(
+          list.map((entry) => ({
+            name: entry.filename,
+            size: entry.attrs.size,
+            mtimeMs: entry.attrs.mtime * 1000,
+            isDirectory: entry.attrs.isDirectory(),
+            isFile: entry.attrs.isFile(),
+            isSymlink: entry.attrs.isSymbolicLink(),
+          })),
+        );
+      });
+    });
+  }
+
+  /** Атрибуты файла; симлинки разыменовываются. null — файла нет */
+  async statEntry(remotePath: string): Promise<SftpEntryStat | null> {
+    const sftp = await this.sftp();
+    return new Promise((resolve, reject) => {
+      sftp.stat(remotePath, (err, stats) => {
+        if (err) {
+          // 2 — SFTP-код NO_SUCH_FILE
+          if ((err as { code?: number }).code === 2) return resolve(null);
+          return reject(err);
+        }
+        resolve({
+          size: stats.size,
+          mtimeMs: stats.mtime * 1000,
+          isDirectory: stats.isDirectory(),
+          isFile: stats.isFile(),
+        });
+      });
+    });
+  }
+
+  /** Читает length байт файла начиная с offset */
+  async readFileSlice(remotePath: string, offset: number, length: number): Promise<Buffer> {
+    const sftp = await this.sftp();
+    return new Promise((resolve, reject) => {
+      const stream = sftp.createReadStream(remotePath, {
+        start: offset,
+        end: offset + length - 1,
+      });
+      const chunks: Buffer[] = [];
+      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      stream.on("error", reject);
+      stream.on("end", () => resolve(Buffer.concat(chunks)));
     });
   }
 

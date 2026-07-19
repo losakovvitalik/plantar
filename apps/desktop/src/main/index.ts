@@ -6,6 +6,8 @@ import { SshConnection } from "@plantar/ssh";
 import {
   type LogStreamSource,
   type MonitoringTool,
+  type RelatedFileId,
+  appBaseDir,
   checkSitesRespond,
   deployProject,
   discoverApps,
@@ -15,15 +17,20 @@ import {
   getAppMetricsHistory,
   getMonitoringStatus,
   getServerInfo,
+  getRelatedFiles,
   getServerMetrics,
   getTrafficStats,
   installMonitoringTool,
+  listProjectDir,
   logStreamCommand,
+  nginxRelatedPaths,
   pm2ProcessHealth,
   pm2ProcessStatuses,
   readAppEnv,
   readProjectEnv,
+  readRemoteTextFile,
   removeDeployedProject,
+  resolveProjectPath,
   rollbackProject,
   writeProjectEnv,
 } from "@plantar/core";
@@ -140,6 +147,30 @@ function projectConfig(project: ProjectRecord): ProjectConfig {
     return parseProjectConfig(project.external.config);
   }
   return loadProjectConfig(projectDir(project));
+}
+
+/** Корень файлов проекта на сервере: у импортированного — его папка, иначе /var/www/<имя> */
+function projectRemoteRoot(project: ProjectRecord): string {
+  if (project.external) return project.external.appDir;
+  let name = project.name;
+  try {
+    name = projectConfig(project).name;
+  } catch {
+    /* plantar.json недоступен — используем имя на момент добавления */
+  }
+  return appBaseDir(name);
+}
+
+/** Абсолютный путь связанного nginx-файла; у внешних приложений и ботов nginx-файлов нет */
+function relatedFilePath(project: ProjectRecord, id: RelatedFileId): string {
+  if (project.external) throw new Error(t("fileNotFound"));
+  const config = projectConfig(project);
+  const found =
+    config.type === "bot"
+      ? undefined
+      : nginxRelatedPaths(config.name).find((file) => file.id === id);
+  if (!found) throw new Error(t("fileNotFound"));
+  return found.path;
 }
 
 /** Записи истории деплоев проекта, новыми вперёд (имя берём из plantar.json, с фолбэком) */
@@ -1136,6 +1167,51 @@ app.whenReady().then(() => {
     toResult(async () => {
       if (!ENV_FILE_RE.test(args.file)) throw new Error(t("invalidEnvFileName"));
       return readFileSync(path.join(projectDir(getProject(args.projectId)), args.file), "utf8");
+    }),
+  );
+
+  // Таб «Файлы»: просмотр папки проекта на сервере, строго на чтение
+  ipcMain.handle(
+    "files:list",
+    (_e, args: { projectId: string; path: string; password?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        return withServer(getServer(project.serverId), args.password, (conn) =>
+          listProjectDir(conn, projectRemoteRoot(project), args.path),
+        );
+      }),
+  );
+  ipcMain.handle(
+    "files:read",
+    (
+      _e,
+      args: { projectId: string; path?: string; related?: RelatedFileId; password?: string },
+    ) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        const absPath = args.related
+          ? relatedFilePath(project, args.related)
+          : resolveProjectPath(projectRemoteRoot(project), args.path ?? "");
+        return withServer(getServer(project.serverId), args.password, (conn) =>
+          readRemoteTextFile(conn, absPath),
+        );
+      }),
+  );
+  ipcMain.handle("files:related", (_e, args: { projectId: string; password?: string }) =>
+    toResult(async () => {
+      const project = getProject(args.projectId);
+      if (project.external) return [];
+      let config: ProjectConfig;
+      try {
+        config = projectConfig(project);
+      } catch {
+        // plantar.json недоступен — nginx-файлы этого проекта неизвестны
+        return [];
+      }
+      if (config.type === "bot") return [];
+      return withServer(getServer(project.serverId), args.password, (conn) =>
+        getRelatedFiles(conn, config.name),
+      );
     }),
   );
 

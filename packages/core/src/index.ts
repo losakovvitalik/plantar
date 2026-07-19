@@ -52,6 +52,20 @@ export type {
   ServerMetrics,
   TrafficStats,
 } from "./monitoring";
+export {
+  getRelatedFiles,
+  listProjectDir,
+  nginxRelatedPaths,
+  readRemoteTextFile,
+  resolveProjectPath,
+} from "./files";
+export type {
+  RelatedFile,
+  RelatedFileId,
+  RemoteFileContent,
+  RemoteFileEntry,
+  RemoteFileKind,
+} from "./files";
 
 export interface ServerInfo {
   os: {
@@ -392,7 +406,7 @@ export interface DeployResult {
  * /var/www/<name>/releases/<метка времени>, симлинк current указывает
  * на рабочую версию. Возврат предыдущей версии — переключение симлинка.
  */
-const appBaseDir = (name: string) => `/var/www/${name}`;
+export const appBaseDir = (name: string) => `/var/www/${name}`;
 const releasesDir = (name: string) => `${appBaseDir(name)}/releases`;
 const KEEP_RELEASES = 5;
 

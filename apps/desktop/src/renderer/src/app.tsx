@@ -14,6 +14,7 @@ import { ProjectSettingsDialog } from "./components/project-settings-dialog";
 import { CommitsTab } from "./components/commits-tab";
 import { DeployTab } from "./components/deploy-tab";
 import { EnvTab } from "./components/env-tab";
+import { FilesTab } from "./components/files-tab";
 import { HistoryTab } from "./components/history-tab";
 import { LogsTab } from "./components/logs-tab";
 import { PasswordDialog } from "./components/password-dialog";
@@ -330,6 +331,9 @@ export default function App() {
                   <TabsTrigger className="px-4" value="logs">
                     {t("app.tabLogs")}
                   </TabsTrigger>
+                  <TabsTrigger className="px-4" value="files">
+                    {t("app.tabFiles")}
+                  </TabsTrigger>
                   <TabsTrigger className="px-4" value="history">
                     {t("app.tabHistory")}
                   </TabsTrigger>
@@ -391,6 +395,14 @@ export default function App() {
               </TabsContent>
               <TabsContent value="logs" className="h-full">
                 <LogsTab
+                  project={selectedProject}
+                  server={projectServer}
+                  config={projectConfig}
+                  askPassword={askPassword}
+                />
+              </TabsContent>
+              <TabsContent value="files" className="h-full">
+                <FilesTab
                   project={selectedProject}
                   server={projectServer}
                   config={projectConfig}

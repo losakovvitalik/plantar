@@ -48,6 +48,15 @@ const api = {
   listHistory: (projectId: string) => invoke("history:list", projectId),
   readDeployLog: (logFile: string) => invoke("history:readLog", logFile),
 
+  listProjectFiles: (projectId: string, path: string, password?: string) =>
+    invoke("files:list", { projectId, path, password }),
+  readProjectFile: (projectId: string, path: string, password?: string) =>
+    invoke("files:read", { projectId, path, password }),
+  readRelatedFile: (projectId: string, related: string, password?: string) =>
+    invoke("files:read", { projectId, related, password }),
+  listRelatedFiles: (projectId: string, password?: string) =>
+    invoke("files:related", { projectId, password }),
+
   readEnv: (projectId: string, password?: string) => invoke("env:read", { projectId, password }),
   writeEnv: (projectId: string, content: string, password?: string) =>
     invoke("env:write", { projectId, content, password }),

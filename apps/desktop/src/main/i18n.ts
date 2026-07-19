@@ -52,6 +52,10 @@ const MESSAGES = {
     ru: "Недопустимый путь к файлу лога.",
     en: "Invalid log file path.",
   },
+  fileNotFound: {
+    ru: "Файл не найден на сервере.",
+    en: "The file was not found on the server.",
+  },
   unknownMonitoringTool: {
     ru: "Неизвестный инструмент мониторинга.",
     en: "Unknown monitoring tool.",

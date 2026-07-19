@@ -224,6 +224,14 @@ const MESSAGES = {
     ru: "✓ Сбор нагрузки приложений включён",
     en: "✓ App load collection is enabled",
   },
+  fileOutsideProject: {
+    ru: "Файл находится вне папки проекта.",
+    en: "The file is outside the project folder.",
+  },
+  fileNotFound: {
+    ru: "Файл не найден на сервере.",
+    en: "The file was not found on the server.",
+  },
 } satisfies Messages<string>;
 
 export const t = createT(MESSAGES);
