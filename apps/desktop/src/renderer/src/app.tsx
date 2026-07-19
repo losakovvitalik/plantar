@@ -437,6 +437,13 @@ export default function App() {
               <p className="mt-0.5 text-[13px] text-ink-soft">
                 {t("app.serverHint")}
               </p>
+              {/* Background monitoring never asks for a password, so password
+                  servers are not watched — say it instead of failing silently */}
+              {selectedServer.auth === "password" && (
+                <p className="mt-1 text-[13px] text-soil">
+                  {t("app.monitoringPasswordHint")}
+                </p>
+              )}
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 thin-scroll">
               <div className="flex flex-col gap-4 pb-4">

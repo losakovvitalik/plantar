@@ -185,6 +185,8 @@ export interface AppSettings {
   letsEncryptEmail: string;
   /** Показывать системное уведомление об успешном деплое (об ошибке — всегда) */
   notifyOnDeploySuccess: boolean;
+  /** Фоновая проверка приложений с уведомлениями о падениях и восстановлениях */
+  notifyOnAppDown: boolean;
   /** Язык интерфейса */
   language: Language;
 }
@@ -193,6 +195,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   saveServerLogCopies: true,
   letsEncryptEmail: "",
   notifyOnDeploySuccess: true,
+  notifyOnAppDown: true,
   language: systemLanguage(),
 };
 

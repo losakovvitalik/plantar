@@ -167,10 +167,24 @@ const api = {
   },
 
   onOpenProject: (callback: (event: { projectId: string }) => void) => {
-    const handler = (_e: unknown, data: { projectId: string }) => callback(data);
-    ipcRenderer.on("deploy:open-project", handler);
-    return () => ipcRenderer.removeListener("deploy:open-project", handler);
+    openProjectCallback = callback;
+    if (pendingOpenProject) {
+      callback(pendingOpenProject);
+      pendingOpenProject = null;
+    }
+    return () => {
+      if (openProjectCallback === callback) openProjectCallback = null;
+    };
   },
 };
+
+// A notification click can create the window anew; the event then arrives
+// before the renderer mounts and subscribes — buffer it until it does
+let openProjectCallback: ((event: { projectId: string }) => void) | null = null;
+let pendingOpenProject: { projectId: string } | null = null;
+ipcRenderer.on("deploy:open-project", (_e, data: { projectId: string }) => {
+  if (openProjectCallback) openProjectCallback(data);
+  else pendingOpenProject = data;
+});
 
 contextBridge.exposeInMainWorld("plantar", api);

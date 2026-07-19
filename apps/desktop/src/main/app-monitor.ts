@@ -1,0 +1,196 @@
+import { Notification, net, powerMonitor } from "electron";
+import {
+  type AppStatusEntry,
+  type ServerRecord,
+  readAppStatusCache,
+  readProjects,
+  readServers,
+  readSettings,
+} from "@plantar/storage";
+import { activeDeployRuns } from "./deploy-runs";
+import { t } from "./i18n";
+import {
+  type MonitorNotification,
+  type PendingCheck,
+  type ServerMonitorState,
+  type ServerObservation,
+  detectTransitions,
+  stateFromCache,
+} from "./monitor-transitions";
+import { isConnected } from "./ssh-pool";
+
+/**
+ * Background monitor: every MONITOR_INTERVAL_MS sweeps the servers reachable
+ * without a password prompt and notifies about apps going down and coming
+ * back. A fall is confirmed by a re-check MONITOR_CONFIRM_DELAY_MS later
+ * before notifying — pm2 restarts and blips must not wake the user.
+ *
+ * Only servers with key auth are monitored (plus password servers while their
+ * pooled connection is still alive) — passwords are never stored, and the
+ * monitor must never prompt. The UI explains this for password servers.
+ */
+
+/** How often the background sweep runs; a deliberate constant, not a setting */
+export const MONITOR_INTERVAL_MS = 5 * 60 * 1000;
+/** Pause before the confirmation re-check of a suspected fall */
+export const MONITOR_CONFIRM_DELAY_MS = 30 * 1000;
+/** Delay before the first sweep after waking from sleep — let the network settle */
+const RESUME_GRACE_MS = 60 * 1000;
+
+interface AppMonitorDeps {
+  /** One-round-trip statuses of all server apps (same path as the sidebar) */
+  collectStatuses(server: ServerRecord): Promise<AppStatusEntry>;
+  /** Brings the window up (creating it if needed); with a projectId — opens it */
+  openFromBackground(projectId?: string): void;
+}
+
+let deps: AppMonitorDeps | null = null;
+/** serverId → last confirmed state */
+const states = new Map<string, ServerMonitorState>();
+let cycleTimer: NodeJS.Timeout | null = null;
+const recheckTimers = new Map<string, NodeJS.Timeout>();
+let suspended = false;
+let stopped = false;
+
+export function startAppMonitor(d: AppMonitorDeps): void {
+  deps = d;
+  // Statuses of the previous session are the "last known" baseline — an app
+  // that fell while Plantar was not running still gets its notification
+  for (const [serverId, entry] of Object.entries(readAppStatusCache())) {
+    const state = stateFromCache(entry.apps);
+    if (state) states.set(serverId, state);
+  }
+  // A sweep firing mid-wake would see a dead network and cry wolf — pause the
+  // cycle for sleep and give the network a grace period after resume
+  powerMonitor.on("suspend", () => {
+    suspended = true;
+    clearTimers();
+  });
+  powerMonitor.on("resume", () => {
+    suspended = false;
+    schedule(RESUME_GRACE_MS);
+  });
+  schedule(MONITOR_INTERVAL_MS);
+}
+
+export function stopAppMonitor(): void {
+  stopped = true;
+  clearTimers();
+}
+
+function clearTimers(): void {
+  if (cycleTimer) clearTimeout(cycleTimer);
+  cycleTimer = null;
+  // Pending confirmations die with the timers: after sleep they would compare
+  // against a pre-sleep snapshot and confirm phantom falls
+  for (const timer of recheckTimers.values()) clearTimeout(timer);
+  recheckTimers.clear();
+}
+
+function schedule(delay: number): void {
+  if (stopped || suspended) return;
+  if (cycleTimer) clearTimeout(cycleTimer);
+  cycleTimer = setTimeout(() => {
+    void runCycle()
+      .catch((err) => console.error("[monitor] sweep failed:", err))
+      .finally(() => schedule(MONITOR_INTERVAL_MS));
+  }, delay);
+}
+
+async function runCycle(): Promise<void> {
+  if (!readSettings().notifyOnAppDown) return;
+  // No local network — nothing can be checked and nothing should be blamed
+  // on the servers; stay silent until connectivity is back
+  if (!net.isOnline()) return;
+  const servers = readServers();
+  for (const id of [...states.keys()]) {
+    if (!servers.some((s) => s.id === id)) states.delete(id);
+  }
+  const eligible = servers.filter(
+    (server) => server.auth === "key" || isConnected(server.id),
+  );
+  await Promise.all(eligible.map((server) => checkServer(server, null)));
+}
+
+async function checkServer(
+  server: ServerRecord,
+  pending: PendingCheck | null,
+): Promise<void> {
+  if (!deps || stopped || suspended) return;
+  if (!readSettings().notifyOnAppDown) return;
+  // A password server is only checkable while its pooled connection lives;
+  // once the pool drops it, skipping silently is correct — needing a password
+  // is not a server incident (also guards the confirmation re-check)
+  if (server.auth === "password" && !isConnected(server.id)) return;
+
+  let observation: ServerObservation;
+  try {
+    observation = { reachable: true, apps: (await deps.collectStatuses(server)).apps };
+  } catch {
+    // The user's own connectivity vanishing is not a server incident
+    if (!net.isOnline()) return;
+    // The pooled connection died mid-flight and reconnecting needs a password
+    if (server.auth === "password" && !isConnected(server.id)) return;
+    observation = { reachable: false };
+  }
+
+  const deploying = new Set(activeDeployRuns().map((run) => run.projectId));
+  const result = detectTransitions(
+    states.get(server.id) ?? null,
+    observation,
+    pending,
+    deploying,
+  );
+  states.set(server.id, result.state);
+
+  for (const notification of result.notifications) notify(server, notification);
+
+  if (result.recheck) {
+    console.log(
+      `[monitor] suspected on ${server.name}: ` +
+        (result.recheck.unreachableCandidate
+          ? "server unreachable"
+          : `apps down [${result.recheck.downCandidates.join(", ")}]`) +
+        ", re-checking",
+    );
+    const existing = recheckTimers.get(server.id);
+    if (existing) clearTimeout(existing);
+    const recheck = result.recheck;
+    recheckTimers.set(
+      server.id,
+      setTimeout(() => {
+        recheckTimers.delete(server.id);
+        void checkServer(server, recheck).catch((err) =>
+          console.error("[monitor] re-check failed:", err),
+        );
+      }, MONITOR_CONFIRM_DELAY_MS),
+    );
+  }
+}
+
+function notify(server: ServerRecord, notification: MonitorNotification): void {
+  const project = notification.projectId
+    ? readProjects().find((p) => p.id === notification.projectId)
+    : undefined;
+  console.log(
+    `[monitor] ${notification.kind} on ${server.name}` +
+      (project ? `: ${project.name}` : ""),
+  );
+  if (!Notification.isSupported()) return;
+  if (notification.projectId && !project) return;
+
+  const params = { name: project?.name ?? "", server: server.name };
+  const shown = new Notification(
+    notification.kind === "appDown"
+      ? { title: t("notifyAppDownTitle"), body: t("notifyAppDownBody", params) }
+      : notification.kind === "appUp"
+        ? { title: t("notifyAppUpTitle"), body: t("notifyAppUpBody", params) }
+        : {
+            title: t("notifyServerUnreachableTitle"),
+            body: t("notifyServerUnreachableBody", { name: server.name }),
+          },
+  );
+  const projectId = notification.projectId;
+  shown.on("click", () => deps?.openFromBackground(projectId));
+  shown.show();
+}

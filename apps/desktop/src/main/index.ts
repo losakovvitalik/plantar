@@ -115,6 +115,8 @@ import {
   deployRunState,
   startDeployRun,
 } from "./deploy-runs";
+import { startAppMonitor, stopAppMonitor } from "./app-monitor";
+import { createAppTray, destroyTray, refreshTrayMenu } from "./tray";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
 
@@ -222,6 +224,47 @@ function appStatusOf(
   if (status === "online" || status === "launching") return { status: "running", siteUrl };
   if (status === "errored") return { status: "error", siteUrl };
   return { status: "stopped", siteUrl };
+}
+
+/**
+ * Statuses of every app on a server in one SSH round trip: a batched
+ * `pm2 jlist` plus parallel curl checks of the sites, on one pooled
+ * connection. Used by the sidebar refresh and the background monitor; the
+ * snapshot is cached for an instant display on the next app start.
+ */
+async function collectServerAppStatuses(
+  server: ServerRecord,
+): Promise<{ apps: Record<string, AppStatus>; checkedAt: string }> {
+  const apps: Record<string, AppStatus> = {};
+  // Сайт проверяем там, где он должен отвечать: у работающих приложений
+  // и у статики, которая хотя бы раз успешно деплоилась
+  const sites: { projectId: string; url: string }[] = [];
+  await withServer(server, undefined, async (conn) => {
+    const pm2 = await pm2ProcessStatuses(conn);
+    for (const project of readProjects().filter((p) => p.serverId === server.id)) {
+      const { status, siteUrl } = appStatusOf(project, pm2, server.host);
+      apps[project.id] = status;
+      const deployedStatic =
+        status === "static" &&
+        projectHistory(project).some((r) => r.status === "success");
+      if (siteUrl && (status === "running" || deployedStatic)) {
+        sites.push({ projectId: project.id, url: siteUrl });
+      }
+    }
+    const responds = await checkSitesRespond(
+      conn,
+      sites.map((s) => s.url),
+    );
+    // Сайт отвечает — «работает» (в том числе статика), нет — «не отвечает»
+    sites.forEach((s, i) => {
+      apps[s.projectId] = responds[i] ? "running" : "unresponsive";
+    });
+  });
+  const entry = { apps, checkedAt: new Date().toISOString() };
+  const cache = readAppStatusCache();
+  cache[server.id] = entry;
+  writeAppStatusCache(cache);
+  return entry;
 }
 
 /**
@@ -528,6 +571,20 @@ function removeCloneDir(projectPath: string): void {
   }
 }
 
+/**
+ * Brings the window up from the background (creating it if it was closed into
+ * the tray) and, if a project is given, opens it. The open-project event for a
+ * freshly created window is buffered by the preload until the renderer mounts.
+ */
+function openFromBackground(projectId?: string): void {
+  const win =
+    BrowserWindow.getAllWindows().find((w) => !w.isDestroyed()) ?? createWindow();
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  if (projectId) win.webContents.send("deploy:open-project", { projectId });
+}
+
 /** Системное уведомление о результате деплоя; клик открывает окно на проекте */
 function notifyDeployResult(
   projectId: string,
@@ -546,15 +603,7 @@ function notifyDeployResult(
           body: t("notifyErrorBody", { name: projectName }),
         },
   );
-  notification.on("click", () => {
-    // Деплой не привязан к окну — берём живое окно на момент клика
-    const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
-    if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
-    win.webContents.send("deploy:open-project", { projectId });
-  });
+  notification.on("click", () => openFromBackground(projectId));
   notification.show();
 }
 
@@ -894,12 +943,20 @@ app.whenReady().then(() => {
   setLanguage(readSettings().language);
   migratePlainKeys();
   createWindow();
+  // The tray keeps the app alive with the window closed — the background
+  // monitor works on every platform, and the app can be reopened or quit
+  createAppTray(() => openFromBackground());
+  startAppMonitor({
+    collectStatuses: collectServerAppStatuses,
+    openFromBackground,
+  });
 
   ipcMain.handle("settings:get", () => toResult(async () => readSettings()));
   ipcMain.handle("settings:set", (_e, settings: AppSettings) =>
     toResult(async () => {
       writeSettings(settings);
       setLanguage(settings.language);
+      refreshTrayMenu();
     }),
   );
 
@@ -1336,39 +1393,7 @@ app.whenReady().then(() => {
   // HTTP-проверка сайтов с самого сервера; снимок кэшируется
   // для мгновенного показа при следующем открытии приложения
   ipcMain.handle("server:appStatuses", (_e, args: { serverId: string }) =>
-    toResult(async () => {
-      const server = getServer(args.serverId);
-      const apps: Record<string, AppStatus> = {};
-      // Сайт проверяем там, где он должен отвечать: у работающих приложений
-      // и у статики, которая хотя бы раз успешно деплоилась
-      const sites: { projectId: string; url: string }[] = [];
-      await withServer(server, undefined, async (conn) => {
-        const pm2 = await pm2ProcessStatuses(conn);
-        for (const project of readProjects().filter((p) => p.serverId === args.serverId)) {
-          const { status, siteUrl } = appStatusOf(project, pm2, server.host);
-          apps[project.id] = status;
-          const deployedStatic =
-            status === "static" &&
-            projectHistory(project).some((r) => r.status === "success");
-          if (siteUrl && (status === "running" || deployedStatic)) {
-            sites.push({ projectId: project.id, url: siteUrl });
-          }
-        }
-        const responds = await checkSitesRespond(
-          conn,
-          sites.map((s) => s.url),
-        );
-        // Сайт отвечает — «работает» (в том числе статика), нет — «не отвечает»
-        sites.forEach((s, i) => {
-          apps[s.projectId] = responds[i] ? "running" : "unresponsive";
-        });
-      });
-      const entry = { apps, checkedAt: new Date().toISOString() };
-      const cache = readAppStatusCache();
-      cache[args.serverId] = entry;
-      writeAppStatusCache(cache);
-      return entry;
-    }),
+    toResult(() => collectServerAppStatuses(getServer(args.serverId))),
   );
   // Кэш статусов прошлой проверки — показывается сразу, пока идёт живая
   ipcMain.handle("server:appStatusesCache", () =>
@@ -1644,6 +1669,21 @@ app.whenReady().then(() => {
   });
 });
 
+// Closing the window no longer quits the app: the background monitor keeps
+// working from the tray. On Windows/Linux this changes the familiar behavior,
+// so the first close of a session is explained with a notification.
+let trayNoticeShown = false;
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform === "darwin" || trayNoticeShown) return;
+  trayNoticeShown = true;
+  if (!Notification.isSupported()) return;
+  new Notification({
+    title: t("trayBackgroundTitle"),
+    body: t("trayBackgroundBody"),
+  }).show();
+});
+
+app.on("before-quit", () => {
+  stopAppMonitor();
+  destroyTray();
 });
