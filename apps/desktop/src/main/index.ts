@@ -357,7 +357,9 @@ function connectWithPassword(
 }
 
 /** Выбор папки проекта: возвращает путь, конфиг (если plantar.json уже есть) и автоопределённые настройки */
-async function pickProjectFolder(win: BrowserWindow) {
+async function pickProjectFolder() {
+  const win = activeWindow();
+  if (!win) return null;
   const picked = await dialog.showOpenDialog(win, {
     title: t("pickProjectFolder"),
     properties: ["openDirectory"],
@@ -496,10 +498,12 @@ async function cloneRepoForProject(repoUrl: string, branch: string) {
  * Выбор подпапки проекта внутри клона: открывает диалог в корне клона,
  * возвращает repo-относительный путь и настройки, определённые в этой папке.
  */
-async function pickSubdir(win: BrowserWindow, root: string) {
+async function pickSubdir(root: string) {
   const reposRoot = reposDir() + path.sep;
   if (!path.resolve(root).startsWith(reposRoot)) throw new Error(t("subdirOutside"));
 
+  const win = activeWindow();
+  if (!win) return null;
   const picked = await dialog.showOpenDialog(win, {
     title: t("pickProjectFolder"),
     defaultPath: root,
@@ -835,6 +839,26 @@ async function setupGithubActions(
   };
 }
 
+/**
+ * Живое окно на момент вызова. IPC-обработчики регистрируются один раз,
+ * а окно на macOS может быть закрыто и создано заново из дока — захваченная
+ * в замыкание ссылка после этого указывает на уничтоженное окно.
+ */
+function activeWindow(): BrowserWindow | null {
+  return (
+    BrowserWindow.getFocusedWindow() ??
+    BrowserWindow.getAllWindows().find((w) => !w.isDestroyed()) ??
+    null
+  );
+}
+
+// Живые лог-стримы: id → остановка. Активный стрим держит соединение в пуле занятым
+const logStreams = new Map<string, () => void>();
+
+function stopAllLogStreams(): void {
+  for (const stop of logStreams.values()) stop();
+}
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1080,
@@ -848,6 +872,12 @@ function createWindow(): BrowserWindow {
       sandbox: false,
     },
   });
+
+  // При перезагрузке renderer или закрытии окна подписчики пропадают —
+  // останавливаем осиротевшие стримы, чтобы не держать SSH-соединения занятыми.
+  // Вешаем при создании: окно на macOS может пересоздаваться
+  win.webContents.on("did-navigate", stopAllLogStreams);
+  win.on("closed", stopAllLogStreams);
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
@@ -863,7 +893,7 @@ if (process.platform === "win32") app.setAppUserModelId("com.plantar.desktop");
 app.whenReady().then(() => {
   setLanguage(readSettings().language);
   migratePlainKeys();
-  const win = createWindow();
+  createWindow();
 
   ipcMain.handle("settings:get", () => toResult(async () => readSettings()));
   ipcMain.handle("settings:set", (_e, settings: AppSettings) =>
@@ -895,6 +925,8 @@ app.whenReady().then(() => {
   ipcMain.handle("ssh:configHosts", () => toResult(async () => detectSshConfigHosts()));
   ipcMain.handle("ssh:pickKey", () =>
     toResult(async () => {
+      const win = activeWindow();
+      if (!win) return null;
       const picked = await dialog.showOpenDialog(win, {
         title: t("pickKeyFileTitle"),
         defaultPath: path.join(app.getPath("home"), ".ssh"),
@@ -954,7 +986,7 @@ app.whenReady().then(() => {
       writeProjects(projects.map((p) => (p.serverId === args.serverId ? ordered[next++] : p)));
     }),
   );
-  ipcMain.handle("projects:pick", () => toResult(() => pickProjectFolder(win)));
+  ipcMain.handle("projects:pick", () => toResult(() => pickProjectFolder()));
   // Список веток репозитория для выпадающего списка в форме добавления
   ipcMain.handle("repo:branches", (_e, repoUrl: string) =>
     toResult(() => listRemoteBranches(repoUrl, getToken() ?? undefined)),
@@ -998,6 +1030,8 @@ app.whenReady().then(() => {
     toResult(async () => {
       const project = getProject(projectId);
       if (!project.external || project.path) throw new Error(t("linkFolderUnavailable"));
+      const win = activeWindow();
+      if (!win) return null;
       const picked = await dialog.showOpenDialog(win, {
         title: t("pickProjectFolder"),
         properties: ["openDirectory"],
@@ -1119,7 +1153,7 @@ app.whenReady().then(() => {
   );
   // Открывает выбор подпапки внутри клона и определяет настройки в ней
   ipcMain.handle("projects:pickSubdir", (_e, root: string) =>
-    toResult(() => pickSubdir(win, root)),
+    toResult(() => pickSubdir(root)),
   );
   ipcMain.handle(
     "projects:writeConfig",
@@ -1519,13 +1553,6 @@ app.whenReady().then(() => {
     }),
   );
 
-  // Живые лог-стримы: id → остановка. Активный стрим держит соединение в пуле занятым
-  const logStreams = new Map<string, () => void>();
-  // При перезагрузке renderer подписчики пропадают — останавливаем осиротевшие стримы
-  win.webContents.on("did-navigate", () => {
-    for (const stop of logStreams.values()) stop();
-  });
-
   ipcMain.handle(
     "logs:streamStart",
     (_e, args: { projectId: string; source: LogStreamSource; password?: string }) =>
@@ -1554,7 +1581,7 @@ app.whenReady().then(() => {
 
         const streamId = randomUUID();
         const send = (channel: string, payload: unknown) => {
-          if (!win.isDestroyed()) win.webContents.send(channel, payload);
+          activeWindow()?.webContents.send(channel, payload);
         };
         // Просмотренные nginx-логи сохраняются локально при закрытии стрима (настройка)
         const snapshot =
