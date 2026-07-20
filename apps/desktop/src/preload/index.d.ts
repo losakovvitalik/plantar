@@ -3,6 +3,7 @@ import type {
   AppLogPoint,
   AppMetricsHistory,
   DiscoveredApp,
+  ExternalSyncState,
   ExternalVersions,
   LogStreamSource,
   MonitoringStatus,
@@ -34,6 +35,7 @@ export type {
   AppStatusEntry,
   DetectedProject,
   DiscoveredApp,
+  ExternalSyncState,
   ExternalVersions,
   LogStreamSource,
   MonitoringStatus,
@@ -120,8 +122,9 @@ export interface AppStatusSnapshot {
   goaccessMissing: boolean;
   /** Включён ли на сервере сбор нагрузки приложений; undefined — тип без процесса */
   appMetrics?: boolean;
-  /** Внешний git-проект: развёрнут не последний коммит ветки на сервере */
-  behindTip?: boolean;
+  /** Внешний git-проект: папка на сервере закреплена на старой версии
+   *  (отвязанный HEAD после возврата версии) */
+  detachedHead?: boolean;
 }
 
 /** Кэш вкладки «Статус»: устаревшие данные для мгновенного показа.
@@ -404,11 +407,16 @@ declare global {
         projectId: string,
         password?: string,
       ) => Promise<IpcResult<{ url?: string }>>;
-      /** Git-версии внешнего проекта с сервера — вкладка «Версии» и индикатор */
+      /** Git-версии внешнего проекта с сервера — вкладка «Версии» */
       externalVersions: (
         projectId: string,
         password?: string,
       ) => Promise<IpcResult<ExternalVersions>>;
+      /** Лёгкая локальная проверка (без fetch) для индикатора на «Статусе» */
+      externalSyncState: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<ExternalSyncState>>;
       /** Возврат версии внешнего проекта: повторный деплой выбранного коммита */
       rollbackExternalTo: (
         projectId: string,

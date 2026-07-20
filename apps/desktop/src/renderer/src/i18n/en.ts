@@ -182,6 +182,9 @@ export const en: Record<MessageKey, string> = {
   "versions.behindTip": "The deployed version is not the latest one on the branch.",
   "versions.behindTipHint":
     "This happens after a version restore: the app folder is pinned to an older version of the code, and updating the code on the server by hand will fail. A regular deploy brings the app back to the latest version.",
+  "versions.updatesAvailable": "The branch has new changes.",
+  "versions.updatesAvailableHint":
+    "This is a normal state: updating the code on the server by hand still works. A regular deploy will roll out the latest version.",
   "versions.loading": "Loading versions from the server…",
   "versions.load": "Load versions",
   "versions.passwordNeeded": "The server password will be required.",

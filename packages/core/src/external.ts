@@ -29,6 +29,14 @@ export interface ServerCommit {
 /** Поля разделены \x1f, коммиты — \x1e: темы коммитов бывают с переводами строк */
 const GIT_LOG_FORMAT = "%H%x1f%h%x1f%s%x1f%cI%x1f%an%x1e";
 
+/**
+ * Env prefix for git commands that may touch the network: without it a repo
+ * with missing https credentials (or a passphrase-protected ssh key) makes
+ * git prompt for input and hang the SSH channel forever. With the prefix git
+ * fails fast with a readable error instead.
+ */
+const GIT_BATCH = "GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND='ssh -o BatchMode=yes' ";
+
 export function parseServerCommits(stdout: string): ServerCommit[] {
   return stdout
     .split("\x1e")
@@ -59,8 +67,13 @@ export interface ExternalVersions {
   head: string | null;
   /** Вершина ветки (после fetch, если он удался) */
   branchTip: string | null;
-  /** Развёрнут не последний коммит ветки — например, после возврата версии */
+  /** Развёрнут не последний коммит ветки */
   behindTip: boolean;
+  /** HEAD is pinned to a commit instead of the branch (after a version
+   *  restore): a manual git pull in the app folder fails until the next
+   *  regular deploy. behindTip without detached just means the branch has
+   *  new commits — a normal state where manual updates still work */
+  detached: boolean;
 }
 
 /** Ветка попадает в shell-команды — пропускаем только безопасные имена */
@@ -80,13 +93,24 @@ export async function getExternalVersions(
   const dir = shellQuote(appDir);
   const headResult = await conn.exec(`git -C ${dir} rev-parse --verify HEAD 2>/dev/null`);
   if (headResult.code !== 0) {
-    return { hasGit: false, commits: [], head: null, branchTip: null, behindTip: false };
+    return {
+      hasGit: false,
+      commits: [],
+      head: null,
+      branchTip: null,
+      behindTip: false,
+      detached: false,
+    };
   }
   const head = headResult.stdout.trim() || null;
 
+  // "HEAD" instead of a branch name means detached HEAD (after a version restore)
+  const ref = await conn.exec(`git -C ${dir} rev-parse --abbrev-ref HEAD 2>/dev/null`);
+  const detached = ref.stdout.trim() === "HEAD";
+
   // fetch может не пройти (нет сети или доступа) — тогда список строится
   // по локальной истории; это не ошибка
-  await conn.exec(`git -C ${dir} fetch --quiet 2>/dev/null`);
+  await conn.exec(`${GIT_BATCH}git -C ${dir} fetch --quiet 2>/dev/null`);
 
   // Вершину ветки ищем сначала в remote-tracking ссылке: после fetch она
   // содержит коммиты, которых ещё нет в локальной ветке
@@ -116,7 +140,31 @@ export async function getExternalVersions(
     head,
     branchTip,
     behindTip: Boolean(head && branchTip && head !== branchTip),
+    detached,
   };
+}
+
+/** Лёгкое состояние синхронизации для индикатора на вкладке «Статус» */
+export interface ExternalSyncState {
+  hasGit: boolean;
+  /** HEAD отвязан от ветки — развёрнута не последняя версия (после возврата) */
+  detached: boolean;
+}
+
+/**
+ * Cheap local-only check (single exec, no network fetch, no log): whether the
+ * app folder is pinned to an old commit after a version restore. Used by the
+ * Status tab on every load, so it must not depend on a slow git remote.
+ */
+export async function getExternalSyncState(
+  conn: SshConnection,
+  appDir: string,
+): Promise<ExternalSyncState> {
+  const ref = await conn.exec(
+    `git -C ${shellQuote(appDir)} rev-parse --abbrev-ref HEAD 2>/dev/null`,
+  );
+  if (ref.code !== 0) return { hasGit: false, detached: false };
+  return { hasGit: true, detached: ref.stdout.trim() === "HEAD" };
 }
 
 /** Импортированное приложение на сервере — куда и как деплоить на месте */
@@ -213,7 +261,11 @@ export async function deployExternalInPlace(
 
   if (options.checkout) {
     log(t("externalCheckingOut", { commit: options.checkout.slice(0, 7) }));
-    await runGit(conn, `git -C ${dir} checkout --detach ${shellQuote(options.checkout)}`, log);
+    await runGit(
+      conn,
+      `${GIT_BATCH}git -C ${dir} checkout --detach ${shellQuote(options.checkout)}`,
+      log,
+    );
   } else {
     log(t("externalUpdatingRepo"));
     const branch = safeBranch(target.branch);
@@ -221,8 +273,8 @@ export async function deployExternalInPlace(
     await runGit(
       conn,
       branch
-        ? `git -C ${dir} checkout ${shellQuote(branch)} && git -C ${dir} pull --ff-only`
-        : `git -C ${dir} pull --ff-only`,
+        ? `git -C ${dir} checkout ${shellQuote(branch)} && ${GIT_BATCH}git -C ${dir} pull --ff-only`
+        : `${GIT_BATCH}git -C ${dir} pull --ff-only`,
       log,
     );
   }
@@ -298,11 +350,22 @@ export async function writeExternalEnv(
   appDir: string,
   content: string,
 ): Promise<void> {
-  const file = `${appDir}/${await externalEnvFile(conn, appDir)}`;
-  // base64 избавляет от экранирования произвольных значений; 600 — файл с секретами
+  // base64 избавляет от экранирования произвольных значений; 600 — файл с секретами.
+  // The target file is picked and written in one server-side command: no extra
+  // round-trip and no race between choosing the file and writing it. The
+  // selection mirrors envFileRank: .env first, then other env files, *.local
+  // last; ties resolve to the alphabetically first name (glob order).
   const encoded = Buffer.from(content, "utf8").toString("base64");
   const result = await conn.exec(
-    `echo '${encoded}' | base64 -d > ${shellQuote(file)} && chmod 600 ${shellQuote(file)}`,
+    `cd ${shellQuote(appDir)} || exit 1; target=''; best=9; ` +
+      `for f in .env*; do ` +
+      `[ -f "$f" ] || continue; ` +
+      `case "$f" in *.example|*.sample|*.template|.envrc) continue;; esac; ` +
+      `case "$f" in .env) r=0;; *.local*) r=2;; *) r=1;; esac; ` +
+      `if [ "$r" -lt "$best" ]; then best=$r; target=$f; fi; ` +
+      `done; ` +
+      `target="\${target:-.env}"; ` +
+      `echo '${encoded}' | base64 -d > "$target" && chmod 600 "$target"`,
   );
   if (result.code !== 0) {
     throw new Error(t("envSaveFailed", { stderr: result.stderr.slice(-2000) }));

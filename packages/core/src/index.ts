@@ -22,6 +22,7 @@ export {
 } from "./process-checks";
 export {
   deployExternalInPlace,
+  getExternalSyncState,
   getExternalVersions,
   parseServerCommits,
   readExternalEnv,
@@ -29,6 +30,7 @@ export {
 } from "./external";
 export type {
   ExternalDeployResult,
+  ExternalSyncState,
   ExternalTarget,
   ExternalVersions,
   ServerCommit,

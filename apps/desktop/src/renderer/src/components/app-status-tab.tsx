@@ -75,12 +75,12 @@ export function AppStatusTab({
           if (!health.ok) throw new Error(health.error);
           next.health = health.data;
         }
-        // Внешний git-проект: показываем, если развёрнут не последний коммит
-        // ветки (например, после возврата версии); ошибка не роняет вкладку
-        if (project.external?.repoUrl) {
-          const versions = await window.plantar.externalVersions(project.id);
-          if (versions.ok) next.behindTip = versions.data.behindTip;
-        }
+        // External git project: cheap local-only check (no network fetch),
+        // started here and awaited after the heavy requests so it runs in
+        // parallel and never delays the snapshot; errors don't fail the tab
+        const syncPromise = project.external?.repoUrl
+          ? window.plantar.externalSyncState(project.id)
+          : null;
         // Пароль нужен только первому запросу — дальше соединение живёт в пуле
         const monitoring = await window.plantar.getMonitoringStatus(server.id, password);
         if (!monitoring.ok) throw new Error(monitoring.error);
@@ -93,6 +93,10 @@ export function AppStatusTab({
             if (!traffic.ok) throw new Error(traffic.error);
             next.traffic = traffic.data;
           }
+        }
+        if (syncPromise) {
+          const sync = await syncPromise;
+          if (sync.ok && sync.data.hasGit) next.detachedHead = sync.data.detached;
         }
         setSnapshot(next);
         // Снимок пригодится при следующем открытии вкладки — пишем в кэш
@@ -154,7 +158,7 @@ export function AppStatusTab({
             loading && "opacity-60",
           )}
         >
-          {snapshot.behindTip && (
+          {snapshot.detachedHead && (
             <p
               title={t("appStatus.behindTipHint")}
               className="rounded-xl bg-amber-bg px-5 py-3 text-[13px] leading-relaxed text-ink"

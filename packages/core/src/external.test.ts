@@ -4,8 +4,10 @@ import type { SshConnection } from "@plantar/ssh";
 import {
   type ExternalTarget,
   deployExternalInPlace,
+  getExternalSyncState,
   getExternalVersions,
   parseServerCommits,
+  writeExternalEnv,
 } from "./external";
 import { t } from "./messages";
 
@@ -83,12 +85,14 @@ describe("getExternalVersions", () => {
       head: null,
       branchTip: null,
       behindTip: false,
+      detached: false,
     });
   });
 
-  it("HEAD отстаёт от вершины ветки — behindTip=true", async () => {
+  it("HEAD отстаёт от вершины ветки, но на ветке — behindTip без detached", async () => {
     const conn = fakeConn(
       [
+        [/rev-parse --abbrev-ref HEAD/, { stdout: "main\n" }],
         [/rev-parse --verify HEAD/, { stdout: "a".repeat(40) + "\n" }],
         [/rev-parse --verify 'origin\/main'/, { stdout: "b".repeat(40) + "\n" }],
         [/git .* log /, { stdout: logRecord("b".repeat(40), "feat: new") }],
@@ -97,14 +101,31 @@ describe("getExternalVersions", () => {
     );
     const versions = await getExternalVersions(conn, "/opt/apps/site", "main");
     expect(versions.behindTip).toBe(true);
+    expect(versions.detached).toBe(false);
     expect(versions.head).toBe("a".repeat(40));
     expect(versions.branchTip).toBe("b".repeat(40));
     expect(versions.commits[0].subject).toBe("feat: new");
   });
 
+  it("после возврата версии HEAD отвязан — detached=true", async () => {
+    const conn = fakeConn(
+      [
+        [/rev-parse --abbrev-ref HEAD/, { stdout: "HEAD\n" }],
+        [/rev-parse --verify HEAD/, { stdout: "a".repeat(40) + "\n" }],
+        [/rev-parse --verify 'origin\/main'/, { stdout: "b".repeat(40) + "\n" }],
+        [/git .* log /, { stdout: logRecord("b".repeat(40), "feat") }],
+      ],
+      [],
+    );
+    const versions = await getExternalVersions(conn, "/opt/apps/site", "main");
+    expect(versions.detached).toBe(true);
+    expect(versions.behindTip).toBe(true);
+  });
+
   it("HEAD на вершине ветки — behindTip=false", async () => {
     const conn = fakeConn(
       [
+        [/rev-parse --abbrev-ref HEAD/, { stdout: "main\n" }],
         [/rev-parse --verify/, { stdout: "a".repeat(40) + "\n" }],
         [/git .* log /, { stdout: logRecord("a".repeat(40), "feat") }],
       ],
@@ -112,6 +133,46 @@ describe("getExternalVersions", () => {
     );
     const versions = await getExternalVersions(conn, "/opt/apps/site", "main");
     expect(versions.behindTip).toBe(false);
+    expect(versions.detached).toBe(false);
+  });
+
+  it("сетевые git-команды выполняются без интерактивных вопросов", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn(
+      [
+        [/rev-parse --abbrev-ref HEAD/, { stdout: "main\n" }],
+        [/rev-parse --verify/, { stdout: "a".repeat(40) + "\n" }],
+      ],
+      commands,
+    );
+    await getExternalVersions(conn, "/opt/apps/site", "main");
+    const fetch = commands.find((c) => c.includes("fetch"));
+    expect(fetch).toContain("GIT_TERMINAL_PROMPT=0");
+    expect(fetch).toContain("BatchMode=yes");
+  });
+});
+
+describe("getExternalSyncState", () => {
+  it("одна локальная команда, без fetch и log", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn([[/rev-parse --abbrev-ref HEAD/, { stdout: "HEAD\n" }]], commands);
+    const state = await getExternalSyncState(conn, "/opt/apps/site");
+    expect(state).toEqual({ hasGit: true, detached: true });
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).not.toContain("fetch");
+  });
+
+  it("на ветке — detached=false; без git — hasGit=false", async () => {
+    const onBranch = await getExternalSyncState(
+      fakeConn([[/rev-parse/, { stdout: "main\n" }]], []),
+      "/opt/apps/site",
+    );
+    expect(onBranch).toEqual({ hasGit: true, detached: false });
+    const noGit = await getExternalSyncState(
+      fakeConn([[/rev-parse/, { code: 1 }]], []),
+      "/opt/apps/site",
+    );
+    expect(noGit).toEqual({ hasGit: false, detached: false });
   });
 });
 
@@ -129,8 +190,9 @@ describe("deployExternalInPlace: сборка команд", () => {
     const result = await deployExternalInPlace(conn, target(), () => {});
 
     const joined = commands.join("\n");
+    expect(joined).toContain("git -C '/opt/apps/site' checkout 'main' && ");
     expect(joined).toContain(
-      "git -C '/opt/apps/site' checkout 'main' && git -C '/opt/apps/site' pull --ff-only",
+      "GIT_SSH_COMMAND='ssh -o BatchMode=yes' git -C '/opt/apps/site' pull --ff-only",
     );
     expect(joined).toContain("cd '/opt/apps/site' && pnpm install");
     expect(joined).toContain(
@@ -227,5 +289,26 @@ describe("deployExternalInPlace: неудачи не трогают работа
       t("externalNoGit"),
     );
     expect(commands.some((c) => c.includes("pm2 restart"))).toBe(false);
+  });
+});
+
+describe("writeExternalEnv", () => {
+  it("выбирает файл и пишет одной командой: без гонки и лишнего запроса", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn([], commands);
+    await writeExternalEnv(conn, "/opt/apps/site", "KEY=value\n");
+    expect(commands).toHaveLength(1);
+    const command = commands[0];
+    // Selection happens server-side in the same command as the write
+    expect(command).toContain("for f in .env*");
+    expect(command).toContain("base64 -d");
+    expect(command).toContain('chmod 600 "$target"');
+  });
+
+  it("ошибка записи отдаётся читаемым сообщением", async () => {
+    const conn = fakeConn([[/base64 -d/, { code: 1, stderr: "disk full" }]], []);
+    await expect(writeExternalEnv(conn, "/opt/apps/site", "A=1")).rejects.toThrow(
+      /disk full/,
+    );
   });
 });

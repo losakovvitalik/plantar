@@ -12,6 +12,7 @@ import {
   deployExternalInPlace,
   deployProject,
   discoverApps,
+  getExternalSyncState,
   getExternalVersions,
   enableAppMetrics,
   ensureAppMetricsScript,
@@ -428,6 +429,7 @@ interface ImportProjectInput {
 
 /** Добавляет найденное на сервере приложение как внешний проект (без папки с кодом) */
 async function importProject(input: ImportProjectInput): Promise<ProjectRecord> {
+  // Called for the throw only: fail before writing a record for a removed server
   getServer(input.serverId);
   const config = parseProjectConfig(input.config);
   assertNameFreeOnServer(input.serverId, config.name);
@@ -1688,6 +1690,20 @@ app.whenReady().then(() => {
         if (!external) throw new Error(t("projectNotFound"));
         return withServer(getServer(project.serverId), args.password, (conn) =>
           getExternalVersions(conn, external.appDir, external.branch),
+        );
+      }),
+  );
+  // Light local-only sync check for the Status tab indicator: no network
+  // fetch, so a slow git remote cannot delay the status snapshot
+  ipcMain.handle(
+    "versions:externalState",
+    (_e, args: { projectId: string; password?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        const external = project.external;
+        if (!external) throw new Error(t("projectNotFound"));
+        return withServer(getServer(project.serverId), args.password, (conn) =>
+          getExternalSyncState(conn, external.appDir),
         );
       }),
   );

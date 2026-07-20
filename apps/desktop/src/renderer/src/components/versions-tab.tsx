@@ -95,11 +95,21 @@ export function VersionsTab({ project, server, askPassword, onRollbackStarted }:
         {t("versions.banner")}
       </p>
 
-      {data?.behindTip && (
+      {/* Detached HEAD (after a version restore) and "the branch just has new
+          commits" are different situations: only the first one breaks a manual
+          git pull, so they get different banners */}
+      {data?.detached ? (
         <p className="rounded-lg bg-amber-bg px-3 py-2 text-[12.5px] leading-snug text-ink">
           <span className="font-semibold">{t("versions.behindTip")}</span>{" "}
           {t("versions.behindTipHint")}
         </p>
+      ) : (
+        data?.behindTip && (
+          <p className="rounded-lg bg-moss/8 px-3 py-2 text-[12.5px] leading-snug text-moss-deep">
+            <span className="font-semibold">{t("versions.updatesAvailable")}</span>{" "}
+            {t("versions.updatesAvailableHint")}
+          </p>
+        )
       )}
 
       {error && (

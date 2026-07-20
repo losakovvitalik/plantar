@@ -97,6 +97,8 @@ const api = {
     invoke("deploy:rollback", { projectId, password }),
   externalVersions: (projectId: string, password?: string) =>
     invoke("versions:external", { projectId, password }),
+  externalSyncState: (projectId: string, password?: string) =>
+    invoke("versions:externalState", { projectId, password }),
   rollbackExternalTo: (projectId: string, commit: string, password?: string) =>
     invoke("deploy:rollbackExternal", { projectId, commit, password }),
   migrateProject: (projectId: string, password?: string) =>
