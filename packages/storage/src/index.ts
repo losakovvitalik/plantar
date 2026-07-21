@@ -319,7 +319,13 @@ function appStatusCacheFile(): string {
 export function readAppStatusCache(): Record<string, AppStatusEntry> {
   const file = appStatusCacheFile();
   if (!existsSync(file)) return {};
-  return JSON.parse(readFileSync(file, "utf8")) as Record<string, AppStatusEntry>;
+  // Битый снимок (например, обрыв записи при выключении) не должен ломать
+  // запуск — деградируем до «кэша нет», как с history.json
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as Record<string, AppStatusEntry>;
+  } catch {
+    return {};
+  }
 }
 
 export function writeAppStatusCache(cache: Record<string, AppStatusEntry>): void {

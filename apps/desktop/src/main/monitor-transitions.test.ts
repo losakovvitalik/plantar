@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type AppHealth,
   type PendingCheck,
   type ServerMonitorState,
   detectTransitions,
@@ -8,7 +9,7 @@ import {
 
 const NONE = new Set<string>();
 
-const state = (apps: Record<string, boolean>): ServerMonitorState => ({
+const state = (apps: Record<string, AppHealth>): ServerMonitorState => ({
   apps,
   unreachable: false,
 });
@@ -24,7 +25,7 @@ describe("detectTransitions", () => {
     expect(result.notifications).toEqual([]);
     expect(result.recheck).toBeNull();
     // "static" carries no health information — not part of the state
-    expect(result.state).toEqual(state({ a: true, b: false }));
+    expect(result.state).toEqual(state({ a: "up", b: "downAdopted" }));
   });
 
   it("первый запуск с недоступным сервером: молчание", () => {
@@ -36,7 +37,7 @@ describe("detectTransitions", () => {
 
   it("падение уведомляет только после подтверждающей перепроверки", () => {
     const first = detectTransitions(
-      state({ a: true }),
+      state({ a: "up" }),
       { reachable: true, apps: { a: "error" } },
       null,
       NONE,
@@ -44,7 +45,7 @@ describe("detectTransitions", () => {
     expect(first.notifications).toEqual([]);
     expect(first.recheck).toEqual({ downCandidates: ["a"], unreachableCandidate: false });
     // Until confirmed, the state stays "up"
-    expect(first.state.apps).toEqual({ a: true });
+    expect(first.state.apps).toEqual({ a: "up" });
 
     const confirmed = detectTransitions(
       first.state,
@@ -53,12 +54,12 @@ describe("detectTransitions", () => {
       NONE,
     );
     expect(confirmed.notifications).toEqual([{ kind: "appDown", projectId: "a" }]);
-    expect(confirmed.state.apps).toEqual({ a: false });
+    expect(confirmed.state.apps).toEqual({ a: "down" });
     expect(confirmed.recheck).toBeNull();
   });
 
   it("пока приложение лежит, повторных уведомлений нет; восстановление уведомляет", () => {
-    const down = state({ a: false });
+    const down = state({ a: "down" });
     const still = detectTransitions(
       down,
       { reachable: true, apps: { a: "stopped" } },
@@ -75,12 +76,33 @@ describe("detectTransitions", () => {
       NONE,
     );
     expect(recovered.notifications).toEqual([{ kind: "appUp", projectId: "a" }]);
-    expect(recovered.state.apps).toEqual({ a: true });
+    expect(recovered.state.apps).toEqual({ a: "up" });
+  });
+
+  it("приложение, увиденное упавшим сразу, поднимается молча", () => {
+    // A project added but never deployed is "stopped" from the start: the first
+    // successful deploy must not be followed by "the app works again"
+    const adopted = detectTransitions(
+      state({}),
+      { reachable: true, apps: { fresh: "stopped" } },
+      null,
+      NONE,
+    );
+    expect(adopted.state.apps).toEqual({ fresh: "downAdopted" });
+
+    const deployed = detectTransitions(
+      adopted.state,
+      { reachable: true, apps: { fresh: "running" } },
+      null,
+      NONE,
+    );
+    expect(deployed.notifications).toEqual([]);
+    expect(deployed.state.apps).toEqual({ fresh: "up" });
   });
 
   it("флаппинг: к перепроверке приложение поднялось — уведомления нет", () => {
     const first = detectTransitions(
-      state({ a: true }),
+      state({ a: "up" }),
       { reachable: true, apps: { a: "stopped" } },
       null,
       NONE,
@@ -92,25 +114,25 @@ describe("detectTransitions", () => {
       NONE,
     );
     expect(confirmed.notifications).toEqual([]);
-    expect(confirmed.state.apps).toEqual({ a: true });
+    expect(confirmed.state.apps).toEqual({ a: "up" });
     expect(confirmed.recheck).toBeNull();
   });
 
   it("свежее падение во время перепроверки не уведомляет — дождётся своего цикла", () => {
     const pending: PendingCheck = { downCandidates: ["a"], unreachableCandidate: false };
     const result = detectTransitions(
-      state({ a: true, b: true }),
+      state({ a: "up", b: "up" }),
       { reachable: true, apps: { a: "stopped", b: "stopped" } },
       pending,
       NONE,
     );
     expect(result.notifications).toEqual([{ kind: "appDown", projectId: "a" }]);
     // b fell between the cycle and the re-check — becomes a candidate next cycle
-    expect(result.state.apps).toEqual({ a: false, b: true });
+    expect(result.state.apps).toEqual({ a: "down", b: "up" });
   });
 
   it("недоступный сервер: одно уведомление после подтверждения, не «упали все»", () => {
-    const prev = state({ a: true, b: true });
+    const prev = state({ a: "up", b: "up" });
     const first = detectTransitions(prev, { reachable: false }, null, NONE);
     expect(first.notifications).toEqual([]);
     expect(first.recheck).toEqual({ downCandidates: [], unreachableCandidate: true });
@@ -120,7 +142,7 @@ describe("detectTransitions", () => {
     expect(confirmed.notifications).toEqual([{ kind: "serverUnreachable" }]);
     expect(confirmed.state.unreachable).toBe(true);
     // App states are frozen — no per-app notifications
-    expect(confirmed.state.apps).toEqual({ a: true, b: true });
+    expect(confirmed.state.apps).toEqual({ a: "up", b: "up" });
 
     const still = detectTransitions(confirmed.state, { reachable: false }, null, NONE);
     expect(still.notifications).toEqual([]);
@@ -128,7 +150,7 @@ describe("detectTransitions", () => {
   });
 
   it("сеть мигнула: к перепроверке сервер снова отвечает — молчание", () => {
-    const prev = state({ a: true });
+    const prev = state({ a: "up" });
     const first = detectTransitions(prev, { reachable: false }, null, NONE);
     const confirmed = detectTransitions(
       prev,
@@ -137,12 +159,12 @@ describe("detectTransitions", () => {
       NONE,
     );
     expect(confirmed.notifications).toEqual([]);
-    expect(confirmed.state).toEqual(state({ a: true }));
+    expect(confirmed.state).toEqual(state({ a: "up" }));
   });
 
   it("сервер пропал между циклом и перепроверкой приложений: кандидаты не подтверждаются", () => {
     const pending: PendingCheck = { downCandidates: ["a"], unreachableCandidate: false };
-    const prev = state({ a: true });
+    const prev = state({ a: "up" });
     const result = detectTransitions(prev, { reachable: false }, pending, NONE);
     expect(result.notifications).toEqual([]);
     expect(result.recheck).toBeNull();
@@ -150,7 +172,7 @@ describe("detectTransitions", () => {
   });
 
   it("после восстановления сервера упавшие за время простоя приложения идут обычным путём", () => {
-    const frozen: ServerMonitorState = { apps: { a: true, b: false }, unreachable: true };
+    const frozen: ServerMonitorState = { apps: { a: "up", b: "down" }, unreachable: true };
     const result = detectTransitions(
       frozen,
       { reachable: true, apps: { a: "stopped", b: "stopped" } },
@@ -166,37 +188,37 @@ describe("detectTransitions", () => {
   it("во время деплоя статусы проекта не читаются и не меняют состояние", () => {
     const deploying = new Set(["a"]);
     const result = detectTransitions(
-      state({ a: true }),
+      state({ a: "up" }),
       { reachable: true, apps: { a: "stopped" } },
       null,
       deploying,
     );
     expect(result.notifications).toEqual([]);
     expect(result.recheck).toBeNull();
-    expect(result.state.apps).toEqual({ a: true });
+    expect(result.state.apps).toEqual({ a: "up" });
 
     // Deploy started between the cycle and the re-check — notification suppressed
     const pending: PendingCheck = { downCandidates: ["a"], unreachableCandidate: false };
     const confirm = detectTransitions(
-      state({ a: true }),
+      state({ a: "up" }),
       { reachable: true, apps: { a: "stopped" } },
       pending,
       deploying,
     );
     expect(confirm.notifications).toEqual([]);
-    expect(confirm.state.apps).toEqual({ a: true });
+    expect(confirm.state.apps).toEqual({ a: "up" });
   });
 
   it("новые проекты принимаются молча, удалённые исчезают из состояния", () => {
     const result = detectTransitions(
-      state({ old: true }),
+      state({ old: "up" }),
       { reachable: true, apps: { fresh: "stopped" } },
       null,
       NONE,
     );
     expect(result.notifications).toEqual([]);
     expect(result.recheck).toBeNull();
-    expect(result.state.apps).toEqual({ fresh: false });
+    expect(result.state.apps).toEqual({ fresh: "downAdopted" });
   });
 });
 
@@ -207,7 +229,7 @@ describe("stateFromCache", () => {
 
   it("кэш прошлого сеанса становится базовым состоянием", () => {
     expect(stateFromCache({ a: "running", b: "unresponsive", c: "static" })).toEqual({
-      apps: { a: true, b: false },
+      apps: { a: "up", b: "downAdopted" },
       unreachable: false,
     });
   });

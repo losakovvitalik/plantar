@@ -11,10 +11,18 @@ export type ServerObservation =
   | { reachable: true; apps: Record<string, AppStatus> }
   | { reachable: false };
 
+/**
+ * Health of one app as of the last confirmed check. "downAdopted" — the app was
+ * already down when the monitor first saw it (a project added but never
+ * deployed, a cache from the previous session): its rise is not a recovery from
+ * a fall and must not notify.
+ */
+export type AppHealth = "up" | "down" | "downAdopted";
+
 /** Last confirmed state of one server */
 export interface ServerMonitorState {
-  /** projectId → whether the app is up (as of the last confirmed check) */
-  apps: Record<string, boolean>;
+  /** projectId → app health (as of the last confirmed check) */
+  apps: Record<string, AppHealth>;
   /** Server is unreachable (the user has been notified, or it started that way) */
   unreachable: boolean;
 }
@@ -55,7 +63,8 @@ function appIsUp(status: AppStatus): boolean | null {
  *
  * pending == null — a regular cycle: "was up → went down" transitions do not
  * notify immediately, they go into recheck for confirmation; "was down → up"
- * notifies right away (the fall was already confirmed earlier). pending != null
+ * notifies right away, but only for a fall the monitor confirmed and announced
+ * itself (an app adopted as down rises silently). pending != null
  * — the confirmation re-check: notifications only for the candidates, no new
  * candidates are created (fresh falls wait for the next cycle).
  *
@@ -101,48 +110,52 @@ export function detectTransitions(
   }
 
   const notifications: MonitorNotification[] = [];
-  const apps: Record<string, boolean> = {};
+  const apps: Record<string, AppHealth> = {};
   const downCandidates: string[] = [];
 
   for (const [projectId, status] of Object.entries(observation.apps)) {
-    const wasUp = prev.apps[projectId];
+    const was = prev.apps[projectId];
     if (deploying.has(projectId)) {
-      if (wasUp !== undefined) apps[projectId] = wasUp;
+      if (was !== undefined) apps[projectId] = was;
       continue;
     }
     const up = appIsUp(status);
     if (up === null) {
-      if (wasUp !== undefined) apps[projectId] = wasUp;
+      if (was !== undefined) apps[projectId] = was;
       continue;
     }
-    if (wasUp === undefined) {
+    if (was === undefined) {
       // A new app (or its first meaningful status) — adopt silently
-      apps[projectId] = up;
+      apps[projectId] = up ? "up" : "downAdopted";
       continue;
     }
-    if (wasUp && !up) {
+    if (was === "up" && !up) {
       if (pending) {
         if (pending.downCandidates.includes(projectId)) {
           // The fall is confirmed by the second check
-          apps[projectId] = false;
+          apps[projectId] = "down";
           notifications.push({ kind: "appDown", projectId });
         } else {
           // Fell during the re-check window — waits for the next cycle
-          apps[projectId] = true;
+          apps[projectId] = "up";
         }
       } else {
         // First detection — wait for confirmation, state stays "up" for now
-        apps[projectId] = true;
+        apps[projectId] = "up";
         downCandidates.push(projectId);
       }
       continue;
     }
-    if (!wasUp && up) {
-      apps[projectId] = true;
-      notifications.push({ kind: "appUp", projectId });
+    if (was !== "up" && up) {
+      apps[projectId] = "up";
+      // "Working again" only makes sense after a fall the monitor itself
+      // announced: an app adopted as down (a project deployed for the first
+      // time) rises silently
+      if (was === "down") notifications.push({ kind: "appUp", projectId });
       continue;
     }
-    apps[projectId] = up;
+    // Still up, or still down — the flavour of "down" is preserved
+    apps[projectId] = up ? "up" : was;
   }
 
   return {
@@ -158,10 +171,11 @@ export function detectTransitions(
 /** Baseline state from the first observation — no notifications */
 function baseline(observation: ServerObservation): ServerMonitorState {
   if (!observation.reachable) return { apps: {}, unreachable: true };
-  const apps: Record<string, boolean> = {};
+  const apps: Record<string, AppHealth> = {};
   for (const [projectId, status] of Object.entries(observation.apps)) {
     const up = appIsUp(status);
-    if (up !== null) apps[projectId] = up;
+    // Down at the first sight — its rise is not a recovery worth notifying
+    if (up !== null) apps[projectId] = up ? "up" : "downAdopted";
   }
   return { apps, unreachable: false };
 }

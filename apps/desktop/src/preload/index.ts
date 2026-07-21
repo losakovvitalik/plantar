@@ -166,6 +166,9 @@ const api = {
     return () => ipcRenderer.removeListener("logs:stream-end", handler);
   },
 
+  // Unlike the other subscriptions, only one subscriber at a time: a second
+  // onOpenProject displaces the first callback. Enough for the single listener
+  // in the app shell; more would need a Set of callbacks
   onOpenProject: (callback: (event: { projectId: string }) => void) => {
     openProjectCallback = callback;
     if (pendingOpenProject) {

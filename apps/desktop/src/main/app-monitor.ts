@@ -30,12 +30,16 @@ import { isConnected } from "./ssh-pool";
  * monitor must never prompt. The UI explains this for password servers.
  */
 
-/** How often the background sweep runs; a deliberate constant, not a setting */
+/** How often the background sweep runs; a deliberate constant, not a setting.
+ *  The interval is named in the UI and the docs — when changing it, update
+ *  settings.notifyAppDownHint in renderer i18n (ru/en) and docs/features.md */
 export const MONITOR_INTERVAL_MS = 5 * 60 * 1000;
 /** Pause before the confirmation re-check of a suspected fall */
 export const MONITOR_CONFIRM_DELAY_MS = 30 * 1000;
 /** Delay before the first sweep after waking from sleep — let the network settle */
 const RESUME_GRACE_MS = 60 * 1000;
+/** How old a cached snapshot may be to serve as the "last known status" */
+const CACHE_BASELINE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 interface AppMonitorDeps {
   /** One-round-trip statuses of all server apps (same path as the sidebar) */
@@ -49,14 +53,20 @@ let deps: AppMonitorDeps | null = null;
 const states = new Map<string, ServerMonitorState>();
 let cycleTimer: NodeJS.Timeout | null = null;
 const recheckTimers = new Map<string, NodeJS.Timeout>();
+/** Servers being checked right now — a second check would race on the state */
+const inFlight = new Set<string>();
 let suspended = false;
 let stopped = false;
 
 export function startAppMonitor(d: AppMonitorDeps): void {
   deps = d;
   // Statuses of the previous session are the "last known" baseline — an app
-  // that fell while Plantar was not running still gets its notification
+  // that fell while Plantar was not running still gets its notification.
+  // A stale snapshot is not a status: an app stopped by the user weeks ago
+  // would be reported as a fall, so old entries start from scratch instead
   for (const [serverId, entry] of Object.entries(readAppStatusCache())) {
+    const age = Date.now() - new Date(entry.checkedAt).getTime();
+    if (age > CACHE_BASELINE_MAX_AGE_MS) continue;
     const state = stateFromCache(entry.apps);
     if (state) states.set(serverId, state);
   }
@@ -76,6 +86,16 @@ export function startAppMonitor(d: AppMonitorDeps): void {
 export function stopAppMonitor(): void {
   stopped = true;
   clearTimers();
+}
+
+/** Forgets a removed server: without this its pending re-check would fire in
+ *  half a minute, reconnect to a server that is no longer in the list and can
+ *  report it as unreachable */
+export function forgetServer(serverId: string): void {
+  const timer = recheckTimers.get(serverId);
+  if (timer) clearTimeout(timer);
+  recheckTimers.delete(serverId);
+  states.delete(serverId);
 }
 
 function clearTimers(): void {
@@ -122,49 +142,61 @@ async function checkServer(
   // once the pool drops it, skipping silently is correct — needing a password
   // is not a server incident (also guards the confirmation re-check)
   if (server.auth === "password" && !isConnected(server.id)) return;
+  // A check of this server is still running (a sweep that hung on a connection
+  // broken by sleep, for instance) — two of them would overwrite each other's
+  // state depending on which finishes last, losing a confirmed fall
+  if (inFlight.has(server.id)) return;
+  inFlight.add(server.id);
 
-  let observation: ServerObservation;
   try {
-    observation = { reachable: true, apps: (await deps.collectStatuses(server)).apps };
-  } catch {
-    // The user's own connectivity vanishing is not a server incident
-    if (!net.isOnline()) return;
-    // The pooled connection died mid-flight and reconnecting needs a password
-    if (server.auth === "password" && !isConnected(server.id)) return;
-    observation = { reachable: false };
-  }
+    let observation: ServerObservation;
+    try {
+      observation = { reachable: true, apps: (await deps.collectStatuses(server)).apps };
+    } catch (err) {
+      // The user's own connectivity vanishing is not a server incident
+      if (!net.isOnline()) return;
+      // The pooled connection died mid-flight and reconnecting needs a password
+      if (server.auth === "password" && !isConnected(server.id)) return;
+      // Logged before blaming the server: a bug in the collector looks exactly
+      // like an unreachable server otherwise
+      console.error(`[monitor] collect failed on ${server.name}:`, err);
+      observation = { reachable: false };
+    }
 
-  const deploying = new Set(activeDeployRuns().map((run) => run.projectId));
-  const result = detectTransitions(
-    states.get(server.id) ?? null,
-    observation,
-    pending,
-    deploying,
-  );
-  states.set(server.id, result.state);
-
-  for (const notification of result.notifications) notify(server, notification);
-
-  if (result.recheck) {
-    console.log(
-      `[monitor] suspected on ${server.name}: ` +
-        (result.recheck.unreachableCandidate
-          ? "server unreachable"
-          : `apps down [${result.recheck.downCandidates.join(", ")}]`) +
-        ", re-checking",
+    const deploying = new Set(activeDeployRuns().map((run) => run.projectId));
+    const result = detectTransitions(
+      states.get(server.id) ?? null,
+      observation,
+      pending,
+      deploying,
     );
-    const existing = recheckTimers.get(server.id);
-    if (existing) clearTimeout(existing);
-    const recheck = result.recheck;
-    recheckTimers.set(
-      server.id,
-      setTimeout(() => {
-        recheckTimers.delete(server.id);
-        void checkServer(server, recheck).catch((err) =>
-          console.error("[monitor] re-check failed:", err),
-        );
-      }, MONITOR_CONFIRM_DELAY_MS),
-    );
+    states.set(server.id, result.state);
+
+    for (const notification of result.notifications) notify(server, notification);
+
+    if (result.recheck) {
+      console.log(
+        `[monitor] suspected on ${server.name}: ` +
+          (result.recheck.unreachableCandidate
+            ? "server unreachable"
+            : `apps down [${result.recheck.downCandidates.join(", ")}]`) +
+          ", re-checking",
+      );
+      const existing = recheckTimers.get(server.id);
+      if (existing) clearTimeout(existing);
+      const recheck = result.recheck;
+      recheckTimers.set(
+        server.id,
+        setTimeout(() => {
+          recheckTimers.delete(server.id);
+          void checkServer(server, recheck).catch((err) =>
+            console.error("[monitor] re-check failed:", err),
+          );
+        }, MONITOR_CONFIRM_DELAY_MS),
+      );
+    }
+  } finally {
+    inFlight.delete(server.id);
   }
 }
 

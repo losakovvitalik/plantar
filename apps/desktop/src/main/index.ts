@@ -115,7 +115,7 @@ import {
   deployRunState,
   startDeployRun,
 } from "./deploy-runs";
-import { startAppMonitor, stopAppMonitor } from "./app-monitor";
+import { forgetServer, startAppMonitor, stopAppMonitor } from "./app-monitor";
 import { createAppTray, destroyTray, refreshTrayMenu } from "./tray";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
@@ -577,12 +577,23 @@ function removeCloneDir(projectPath: string): void {
  * freshly created window is buffered by the preload until the renderer mounts.
  */
 function openFromBackground(projectId?: string): void {
-  const win =
-    BrowserWindow.getAllWindows().find((w) => !w.isDestroyed()) ?? createWindow();
+  const existing = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+  const win = existing ?? createWindow();
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
-  if (projectId) win.webContents.send("deploy:open-project", { projectId });
+  if (!projectId) return;
+  const send = (): void => {
+    win.webContents.send("deploy:open-project", { projectId });
+  };
+  // A window created just now has no renderer frame yet — a send in this tick
+  // goes nowhere, there is not even a preload to buffer it. Wait for the load;
+  // from there the preload buffer covers the gap until the renderer subscribes
+  if (!existing || win.webContents.isLoading()) {
+    win.webContents.once("did-finish-load", send);
+  } else {
+    send();
+  }
 }
 
 /** Системное уведомление о результате деплоя; клик открывает окно на проекте */
@@ -943,13 +954,6 @@ app.whenReady().then(() => {
   setLanguage(readSettings().language);
   migratePlainKeys();
   createWindow();
-  // The tray keeps the app alive with the window closed — the background
-  // monitor works on every platform, and the app can be reopened or quit
-  createAppTray(() => openFromBackground());
-  startAppMonitor({
-    collectStatuses: collectServerAppStatuses,
-    openFromBackground,
-  });
 
   ipcMain.handle("settings:get", () => toResult(async () => readSettings()));
   ipcMain.handle("settings:set", (_e, settings: AppSettings) =>
@@ -1004,6 +1008,7 @@ app.whenReady().then(() => {
   ipcMain.handle("servers:remove", (_e, id: string) =>
     toResult(async () => {
       dropConnection(id);
+      forgetServer(id);
       writeServers(readServers().filter((s) => s.id !== id));
       writeProjects(readProjects().filter((p) => p.serverId !== id));
       // Убираем осиротевший снимок статусов приложений
@@ -1667,6 +1672,25 @@ app.whenReady().then(() => {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+
+  // Last, and each in its own try/catch: a tray that some Linux desktops cannot
+  // create, or a broken status cache, must not leave the app without the IPC
+  // handlers registered above — the window would open and every action fail
+  try {
+    // The tray keeps the app alive with the window closed — the background
+    // monitor works on every platform, and the app can be reopened or quit
+    createAppTray(() => openFromBackground());
+  } catch (err) {
+    console.error("[tray] init failed:", err);
+  }
+  try {
+    startAppMonitor({
+      collectStatuses: collectServerAppStatuses,
+      openFromBackground,
+    });
+  } catch (err) {
+    console.error("[monitor] init failed:", err);
+  }
 });
 
 // Closing the window no longer quits the app: the background monitor keeps
