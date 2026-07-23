@@ -145,7 +145,12 @@ async function checkServer(
   // A check of this server is still running (a sweep that hung on a connection
   // broken by sleep, for instance) — two of them would overwrite each other's
   // state depending on which finishes last, losing a confirmed fall
-  if (inFlight.has(server.id)) return;
+  if (inFlight.has(server.id)) {
+    // Don't drop a pending confirmation when its timer fires mid-check: re-arm
+    // it so the fall is confirmed on the next slot, not a full cycle later
+    if (pending) scheduleRecheck(server, pending);
+    return;
+  }
   inFlight.add(server.id);
 
   try {
@@ -182,22 +187,26 @@ async function checkServer(
             : `apps down [${result.recheck.downCandidates.join(", ")}]`) +
           ", re-checking",
       );
-      const existing = recheckTimers.get(server.id);
-      if (existing) clearTimeout(existing);
-      const recheck = result.recheck;
-      recheckTimers.set(
-        server.id,
-        setTimeout(() => {
-          recheckTimers.delete(server.id);
-          void checkServer(server, recheck).catch((err) =>
-            console.error("[monitor] re-check failed:", err),
-          );
-        }, MONITOR_CONFIRM_DELAY_MS),
-      );
+      scheduleRecheck(server, result.recheck);
     }
   } finally {
     inFlight.delete(server.id);
   }
+}
+
+/** Arms the confirmation re-check of a suspected fall, replacing any pending one */
+function scheduleRecheck(server: ServerRecord, pending: PendingCheck): void {
+  const existing = recheckTimers.get(server.id);
+  if (existing) clearTimeout(existing);
+  recheckTimers.set(
+    server.id,
+    setTimeout(() => {
+      recheckTimers.delete(server.id);
+      void checkServer(server, pending).catch((err) =>
+        console.error("[monitor] re-check failed:", err),
+      );
+    }, MONITOR_CONFIRM_DELAY_MS),
+  );
 }
 
 function notify(server: ServerRecord, notification: MonitorNotification): void {

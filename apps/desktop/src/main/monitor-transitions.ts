@@ -180,7 +180,16 @@ function baseline(observation: ServerObservation): ServerMonitorState {
   return { apps, unreachable: false };
 }
 
-/** Initial state from the cached statuses of past checks (app-status-cache.json) */
+/**
+ * Initial state from the cached statuses of past checks (app-status-cache.json).
+ *
+ * The cache stores AppStatus, not AppHealth, so a restart cannot tell "fell and
+ * was already notified" from "seen down for the first time" — everything down
+ * comes back as downAdopted. Deliberate asymmetry: a fall during downtime still
+ * notifies (the cache holds the last observed "running"), but a recovery across
+ * a restart does not. Not worth widening the on-disk format — at reopen the user
+ * is already looking at the app list.
+ */
 export function stateFromCache(
   cached: Record<string, AppStatus> | undefined,
 ): ServerMonitorState | null {
