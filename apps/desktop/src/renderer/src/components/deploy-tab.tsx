@@ -57,7 +57,7 @@ function formatWhen(iso: string, lang: Language): string {
 /** Прогон деплоя глазами вкладки — зеркало состояния main */
 interface RunView {
   status: "running" | "success" | "error" | "interrupted";
-  kind: "deploy" | "rollback";
+  kind: "deploy" | "rollback" | "migrate";
   startedAt: string;
   url: string | null;
   error: { message: string; code?: string } | null;
@@ -215,7 +215,7 @@ export function DeployTab({
   const rollingBack = running && run?.kind === "rollback";
   const success = run?.status === "success";
   const url = success ? (run?.url ?? null) : null;
-  const deployed = success && run?.kind === "deploy";
+  const deployed = success && run?.kind !== "rollback";
   const rolledBack = success && run?.kind === "rollback";
   const error = run?.status === "error" ? run.error : null;
 
@@ -326,7 +326,7 @@ export function DeployTab({
   }
 
   /** Сброс вкладки под новый прогон — до ответа main, чтобы клик отзывался мгновенно */
-  function startRunView(kind: "deploy" | "rollback") {
+  function startRunView(kind: "deploy" | "rollback" | "migrate") {
     setRun({
       status: "running",
       kind,
@@ -426,7 +426,7 @@ export function DeployTab({
       const password = await passwordFor(server, askPassword);
       if (password === null) return;
       setMigrateOpen(false);
-      startRunView("deploy");
+      startRunView("migrate");
       const result = await window.plantar.migrateProject(project.id, password);
       if (!result.ok) {
         setRun((prev) =>
@@ -654,7 +654,11 @@ export function DeployTab({
               error.code === "npm-peer-conflict" ? () => void deploy(true) : undefined
             }
             onReturnPrevious={
+              // After a failed migrate the old pm2 process is already deleted
+              // by the takeover, so "return to previous version" cannot work —
+              // the button is only for failed in-place runs
               externalGit &&
+              run?.kind !== "migrate" &&
               project.deployedCommit &&
               (error.code === "app-not-responding" ||
                 error.code === "process-unstable")

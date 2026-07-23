@@ -581,7 +581,11 @@ async function runDeploy(
 
   // Прогон регистрируется до первого await — второй одновременный деплой
   // одного проекта отсекается здесь же, не оставляя пустого файла лога
-  const run = startDeployRun(projectId, "deploy");
+  // The migrate kind survives in the run state and history: after a failed
+  // migrate the old pm2 process is deleted, so the "return to previous
+  // version" recovery must not be offered for this run
+  const kind = migrate ? ("migrate" as const) : ("deploy" as const);
+  const run = startDeployRun(projectId, kind);
   const startedAt = new Date().toISOString();
 
   // git-проект: обновляем клон до свежего коммита ветки перед деплоем
@@ -648,6 +652,7 @@ async function runDeploy(
       startedAt,
       finishedAt: new Date().toISOString(),
       status: "success",
+      kind: migrate ? kind : undefined,
       url: result.url,
       commit: deployedCommit?.hash,
       logFile: logWriter.file,
@@ -685,6 +690,7 @@ async function runDeploy(
         startedAt,
         finishedAt: new Date().toISOString(),
         status: "error",
+        kind: migrate ? kind : undefined,
         error: message,
         code,
         commit: deployedCommit?.hash,

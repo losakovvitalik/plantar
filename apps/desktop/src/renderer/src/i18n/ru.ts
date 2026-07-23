@@ -70,6 +70,7 @@ export const ru = {
   "sidebar.status.checkedAt": "проверено {time}",
   "sidebar.deploying.deploy": "Идёт деплой",
   "sidebar.deploying.rollback": "Идёт возврат предыдущей версии",
+  "sidebar.deploying.migrate": "Идёт перевод под управление Plantar",
 
   "addServer.title": "Добавить сервер",
   "addServer.description":

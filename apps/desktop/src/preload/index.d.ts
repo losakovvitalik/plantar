@@ -160,7 +160,7 @@ export type IpcResult<T> =
 /** Снимок прогона деплоя из main (вкладка «Деплой»); interrupted — прогон,
  *  оборванный закрытием приложения */
 export interface DeployRunState {
-  kind: "deploy" | "rollback";
+  kind: "deploy" | "rollback" | "migrate";
   status: "running" | "success" | "error" | "interrupted";
   /** Хвост лога; полный лог — в файле истории */
   lines: string[];
@@ -178,13 +178,13 @@ export interface DeployRunState {
 /** Старт прогона деплоя или возврата версии (событие deploy:started) */
 export interface DeployStartedEvent {
   projectId: string;
-  kind: "deploy" | "rollback";
+  kind: "deploy" | "rollback" | "migrate";
 }
 
 /** Завершение прогона деплоя (событие deploy:finished) */
 export interface DeployFinishedEvent {
   projectId: string;
-  kind: "deploy" | "rollback";
+  kind: "deploy" | "rollback" | "migrate";
   status: "success" | "error";
   url?: string;
   error?: string;

@@ -8,7 +8,10 @@ import { t } from "./i18n";
  * остаётся в реестре как «последний» — не удаляется.
  */
 
-export type DeployKind = "deploy" | "rollback";
+/** migrate — moving an external project under Plantar management: after it
+ *  fails the old pm2 process is already gone, so the GUI must not offer
+ *  the "return to previous version" recovery */
+export type DeployKind = "deploy" | "rollback" | "migrate";
 
 /** Снимок прогона для вкладки «Деплой»; interrupted — только у прогонов,
  *  восстановленных с диска (приложение закрыли посреди деплоя) */

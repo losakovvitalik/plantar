@@ -70,6 +70,7 @@ export const en: Record<MessageKey, string> = {
   "sidebar.status.checkedAt": "checked {time}",
   "sidebar.deploying.deploy": "Deploy in progress",
   "sidebar.deploying.rollback": "Rolling back to the previous version",
+  "sidebar.deploying.migrate": "Moving under Plantar management",
 
   "addServer.title": "Add server",
   "addServer.description":

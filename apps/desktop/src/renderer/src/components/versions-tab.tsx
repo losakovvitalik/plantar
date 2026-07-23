@@ -17,6 +17,9 @@ interface Props {
   askPassword: (server: ServerRecord) => Promise<string | null>;
   /** Возврат версии запущен — родитель переключает на вкладку «Деплой» с логом */
   onRollbackStarted: () => void;
+  /** A deploy of this project is already running (state lives in main) —
+   *  the restore buttons are disabled instead of racing a second run */
+  deployRunning: boolean;
 }
 
 const DATE_LOCALES: Record<Language, string> = { ru: "ru-RU", en: "en-US" };
@@ -37,7 +40,13 @@ function formatDate(iso: string, lang: Language): string {
  * Возврат версии — повторный деплой выбранного коммита (со сборкой),
  * в отличие от мгновенного переключения версий управляемых проектов.
  */
-export function VersionsTab({ project, server, askPassword, onRollbackStarted }: Props) {
+export function VersionsTab({
+  project,
+  server,
+  askPassword,
+  onRollbackStarted,
+  deployRunning,
+}: Props) {
   const { t, lang } = useI18n();
   const [data, setData] = useState<ExternalVersions | null>(null);
   const [loading, setLoading] = useState(false);
@@ -70,7 +79,7 @@ export function VersionsTab({ project, server, askPassword, onRollbackStarted }:
   }, [project.id]);
 
   async function restore(commit: { hash: string; shortHash: string }) {
-    if (busy) return;
+    if (busy || deployRunning) return;
     if (!window.confirm(t("versions.confirm", { hash: commit.shortHash }))) return;
     const password = await passwordFor(server, askPassword);
     if (password === null) return;
@@ -185,7 +194,7 @@ export function VersionsTab({ project, server, askPassword, onRollbackStarted }:
                           size="sm"
                           className="shrink-0"
                           onClick={() => void restore(commit)}
-                          disabled={busy}
+                          disabled={busy || deployRunning}
                         >
                           <Undo2 />
                           {t("versions.restore")}

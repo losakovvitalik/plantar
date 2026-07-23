@@ -385,6 +385,7 @@ export default function App() {
                     server={projectServer}
                     askPassword={askPassword}
                     onRollbackStarted={() => setTab("deploy")}
+                    deployRunning={Boolean(activeDeploys[selectedProject.id])}
                   />
                 </TabsContent>
               )}

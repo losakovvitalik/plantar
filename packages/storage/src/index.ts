@@ -233,8 +233,9 @@ export interface DeployRecord {
   startedAt: string;
   finishedAt: string;
   status: "success" | "error";
-  /** Запись создана возвратом предыдущей версии; отсутствует — обычный деплой */
-  kind?: "deploy" | "rollback";
+  /** Запись создана возвратом предыдущей версии; отсутствует — обычный деплой.
+   *  migrate — the run moved an external project under Plantar management */
+  kind?: "deploy" | "rollback" | "migrate";
   url?: string;
   error?: string;
   /** Машинный код ошибки (например npm-peer-conflict) — по нему GUI
