@@ -44,6 +44,40 @@ const MESSAGES = {
     en: "Project “{name}” — an error occurred.",
   },
   deployLogError: { ru: "ОШИБКА", en: "ERROR" },
+  notifyAppDownTitle: {
+    ru: "Приложение перестало работать",
+    en: "App stopped working",
+  },
+  notifyAppDownBody: {
+    ru: "«{name}» на сервере «{server}» не отвечает.",
+    en: "“{name}” on server “{server}” is not responding.",
+  },
+  notifyAppUpTitle: {
+    ru: "Приложение снова работает",
+    en: "App is working again",
+  },
+  notifyAppUpBody: {
+    ru: "«{name}» на сервере «{server}» снова отвечает.",
+    en: "“{name}” on server “{server}” is responding again.",
+  },
+  notifyServerUnreachableTitle: {
+    ru: "Сервер не отвечает",
+    en: "Server is not responding",
+  },
+  notifyServerUnreachableBody: {
+    ru: "Нет связи с сервером «{name}». Приложения на нём сейчас не проверяются.",
+    en: "Server “{name}” is unreachable. Its apps cannot be checked right now.",
+  },
+  trayOpen: { ru: "Открыть Plantar", en: "Open Plantar" },
+  trayQuit: { ru: "Выйти из Plantar", en: "Quit Plantar" },
+  trayBackgroundTitle: {
+    ru: "Plantar работает в фоне",
+    en: "Plantar keeps running in the background",
+  },
+  trayBackgroundBody: {
+    ru: "Приложение продолжает следить за серверами из значка возле часов. Чтобы выйти совсем, используйте меню значка.",
+    en: "The app keeps watching your servers from the tray icon. To quit completely, use the icon’s menu.",
+  },
   invalidEnvFileName: {
     ru: "Недопустимое имя env-файла.",
     en: "Invalid env file name.",

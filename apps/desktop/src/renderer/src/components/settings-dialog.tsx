@@ -167,6 +167,24 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
               />
             </div>
 
+            <div className="flex items-start justify-between gap-6">
+              <div>
+                <Label htmlFor="notify-app-down" className="text-[13.5px] font-semibold">
+                  {t("settings.notifyAppDown")}
+                </Label>
+                <p className="mt-1 text-[12.5px] leading-snug text-ink-soft">
+                  {t("settings.notifyAppDownHint")}
+                </p>
+              </div>
+              <Switch
+                id="notify-app-down"
+                checked={settings.notifyOnAppDown}
+                onCheckedChange={(checked) =>
+                  setSettings({ ...settings, notifyOnAppDown: checked })
+                }
+              />
+            </div>
+
             <div>
               <Label htmlFor="le-email" className="text-[13.5px] font-semibold">
                 {t("settings.leEmail")}

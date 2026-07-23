@@ -185,6 +185,8 @@ export interface AppSettings {
   letsEncryptEmail: string;
   /** Показывать системное уведомление об успешном деплое (об ошибке — всегда) */
   notifyOnDeploySuccess: boolean;
+  /** Фоновая проверка приложений с уведомлениями о падениях и восстановлениях */
+  notifyOnAppDown: boolean;
   /** Язык интерфейса */
   language: Language;
 }
@@ -193,6 +195,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   saveServerLogCopies: true,
   letsEncryptEmail: "",
   notifyOnDeploySuccess: true,
+  notifyOnAppDown: true,
   language: systemLanguage(),
 };
 
@@ -316,7 +319,13 @@ function appStatusCacheFile(): string {
 export function readAppStatusCache(): Record<string, AppStatusEntry> {
   const file = appStatusCacheFile();
   if (!existsSync(file)) return {};
-  return JSON.parse(readFileSync(file, "utf8")) as Record<string, AppStatusEntry>;
+  // Битый снимок (например, обрыв записи при выключении) не должен ломать
+  // запуск — деградируем до «кэша нет», как с history.json
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as Record<string, AppStatusEntry>;
+  } catch {
+    return {};
+  }
 }
 
 export function writeAppStatusCache(cache: Record<string, AppStatusEntry>): void {

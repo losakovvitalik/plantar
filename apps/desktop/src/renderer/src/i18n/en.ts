@@ -29,6 +29,8 @@ export const en: Record<MessageKey, string> = {
   "app.projectSettings": "Project settings",
   "app.serverHint":
     "This is a server. Add a project via “+” in the list on the left to deploy.",
+  "app.monitoringPasswordHint":
+    "Background app checks are unavailable for this server: it connects with a password, and the password is never stored.",
   "app.emptyAddServer": "Add your first server",
   "app.emptySelect": "Select a server or project",
   "app.emptyAddServerHint":
@@ -461,6 +463,9 @@ export const en: Record<MessageKey, string> = {
   "settings.notifySuccess": "Notify about successful deploys",
   "settings.notifySuccessHint":
     "A system notification when a deploy finishes successfully. Error notifications always arrive.",
+  "settings.notifyAppDown": "Watch apps in the background",
+  "settings.notifyAppDownHint":
+    "Every 5 minutes Plantar checks the apps on your servers and sends a notification if one stops working — and when it is back up. Servers connected with a password are not checked in the background.",
   "settings.leEmail": "Email for SSL certificates",
   "settings.leEmailHint":
     "Let's Encrypt will email you if certificate auto-renewal goes wrong. Applies on the next deploy with a domain. Can be left empty.",
