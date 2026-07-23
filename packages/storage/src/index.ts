@@ -1,12 +1,14 @@
 import {
   appendFileSync,
   closeSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   openSync,
   readFileSync,
   readSync,
   readdirSync,
+  renameSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -167,15 +169,44 @@ export interface ProjectRecord {
   external?: ExternalAppInfo;
 }
 
+/**
+ * Reads a JSON store, degrading to a fallback when the file is missing or
+ * corrupted: a broken store must never crash startup. The corrupted file is
+ * kept as <file>.broken (first occurrence only) so data can be recovered.
+ */
+function readJsonSafe<T>(file: string, fallback: T): T {
+  if (!existsSync(file)) return fallback;
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as T;
+  } catch (err) {
+    console.error(`plantar: corrupted JSON store ${file}, falling back to defaults`, err);
+    const backup = `${file}.broken`;
+    try {
+      if (!existsSync(backup)) copyFileSync(file, backup);
+    } catch {
+      // best effort — recovering the backup must not introduce a new crash
+    }
+    return fallback;
+  }
+}
+
+/**
+ * Writes a JSON store atomically: temp file in the same directory + rename,
+ * so a crash mid-write leaves either the old or the new content on disk.
+ */
+function writeJsonAtomic(file: string, data: unknown): void {
+  mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(data, null, 2));
+  renameSync(tmp, file);
+}
+
 function readJsonList<T>(file: string): T[] {
-  const full = path.join(dataDir(), file);
-  if (!existsSync(full)) return [];
-  return JSON.parse(readFileSync(full, "utf8")) as T[];
+  return readJsonSafe<T[]>(path.join(dataDir(), file), []);
 }
 
 function writeJsonList<T>(file: string, list: T[]): void {
-  mkdirSync(dataDir(), { recursive: true });
-  writeFileSync(path.join(dataDir(), file), JSON.stringify(list, null, 2));
+  writeJsonAtomic(path.join(dataDir(), file), list);
 }
 
 export interface AppSettings {
@@ -201,13 +232,11 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 export function readSettings(): AppSettings {
   const file = path.join(dataDir(), "settings.json");
-  if (!existsSync(file)) return { ...DEFAULT_SETTINGS };
-  return { ...DEFAULT_SETTINGS, ...(JSON.parse(readFileSync(file, "utf8")) as object) };
+  return { ...DEFAULT_SETTINGS, ...readJsonSafe<Partial<AppSettings>>(file, {}) };
 }
 
 export function writeSettings(settings: AppSettings): void {
-  mkdirSync(dataDir(), { recursive: true });
-  writeFileSync(path.join(dataDir(), "settings.json"), JSON.stringify(settings, null, 2));
+  writeJsonAtomic(path.join(dataDir(), "settings.json"), settings);
 }
 
 export const readServers = () => readJsonList<ServerRecord>("servers.json");
@@ -252,20 +281,13 @@ function historyFile(): string {
 }
 
 export function readHistory(): DeployRecord[] {
-  if (!existsSync(historyFile())) return [];
-  // Битый history.json не должен ломать вкладки — деградируем до пустой истории
-  try {
-    return JSON.parse(readFileSync(historyFile(), "utf8")) as DeployRecord[];
-  } catch {
-    return [];
-  }
+  return readJsonSafe<DeployRecord[]>(historyFile(), []);
 }
 
 export function appendHistory(record: DeployRecord): void {
-  mkdirSync(dataDir(), { recursive: true });
   const history = readHistory();
   history.push(record);
-  writeFileSync(historyFile(), JSON.stringify(history, null, 2));
+  writeJsonAtomic(historyFile(), history);
 }
 
 /** Коммит в кэше вкладки «Коммиты» (совпадает по форме с Commit из main/git.ts) */
@@ -289,14 +311,11 @@ function commitsCacheFile(): string {
 
 /** Кэш вкладки «Коммиты» по projectId — для мгновенного показа при открытии */
 export function readCommitsCache(): Record<string, CommitsCacheEntry> {
-  const file = commitsCacheFile();
-  if (!existsSync(file)) return {};
-  return JSON.parse(readFileSync(file, "utf8")) as Record<string, CommitsCacheEntry>;
+  return readJsonSafe<Record<string, CommitsCacheEntry>>(commitsCacheFile(), {});
 }
 
 export function writeCommitsCache(cache: Record<string, CommitsCacheEntry>): void {
-  mkdirSync(dataDir(), { recursive: true });
-  writeFileSync(commitsCacheFile(), JSON.stringify(cache, null, 2));
+  writeJsonAtomic(commitsCacheFile(), cache);
 }
 
 /** Статус приложения на сервере: pm2-процесс + HTTP-проверка сайта.
@@ -317,20 +336,11 @@ function appStatusCacheFile(): string {
 
 /** Кэш статусов приложений по serverId — для мгновенного показа при открытии */
 export function readAppStatusCache(): Record<string, AppStatusEntry> {
-  const file = appStatusCacheFile();
-  if (!existsSync(file)) return {};
-  // Битый снимок (например, обрыв записи при выключении) не должен ломать
-  // запуск — деградируем до «кэша нет», как с history.json
-  try {
-    return JSON.parse(readFileSync(file, "utf8")) as Record<string, AppStatusEntry>;
-  } catch {
-    return {};
-  }
+  return readJsonSafe<Record<string, AppStatusEntry>>(appStatusCacheFile(), {});
 }
 
 export function writeAppStatusCache(cache: Record<string, AppStatusEntry>): void {
-  mkdirSync(dataDir(), { recursive: true });
-  writeFileSync(appStatusCacheFile(), JSON.stringify(cache, null, 2));
+  writeJsonAtomic(appStatusCacheFile(), cache);
 }
 
 /** Кэш вкладки «Статус» одного проекта; форму полей задаёт вкладка (desktop),
@@ -349,12 +359,9 @@ function statusTabCacheFile(): string {
 
 /** Кэш вкладки «Статус» по projectId — для мгновенного показа при открытии */
 export function readStatusTabCache(): Record<string, StatusTabCacheEntry> {
-  const file = statusTabCacheFile();
-  if (!existsSync(file)) return {};
-  return JSON.parse(readFileSync(file, "utf8")) as Record<string, StatusTabCacheEntry>;
+  return readJsonSafe<Record<string, StatusTabCacheEntry>>(statusTabCacheFile(), {});
 }
 
 export function writeStatusTabCache(cache: Record<string, StatusTabCacheEntry>): void {
-  mkdirSync(dataDir(), { recursive: true });
-  writeFileSync(statusTabCacheFile(), JSON.stringify(cache, null, 2));
+  writeJsonAtomic(statusTabCacheFile(), cache);
 }
