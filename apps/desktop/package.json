@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Деплой React-приложений на Ubuntu-серверы без терминала",
+  "license": "MIT",
   "author": "Vitaliy Losakov",
   "repository": {
     "type": "git",

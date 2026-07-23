@@ -1,14 +1,18 @@
 {
   "name": "plantar",
   "version": "1.0.0",
-  "description": "",
+  "description": "Deploy React, Next.js and Node.js apps to Ubuntu servers without a terminal — desktop app and CLI",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Vitaliy Losakov",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/losakovvitalik/plantar.git"
+  },
   "devEngines": {
     "packageManager": {
       "name": "pnpm",

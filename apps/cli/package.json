@@ -2,6 +2,12 @@
   "name": "@plantar/cli",
   "version": "0.1.0",
   "description": "Deploy web apps and Telegram bots to Ubuntu servers — Plantar CLI",
+  "license": "MIT",
+  "author": "Vitaliy Losakov",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/losakovvitalik/plantar.git"
+  },
   "type": "module",
   "bin": {
     "plantar": "dist/index.cjs"
