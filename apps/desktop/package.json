@@ -2,7 +2,7 @@
   "name": "@plantar/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Деплой React-приложений на Ubuntu-серверы без терминала",
+  "description": "Deploy React apps to Ubuntu servers without a terminal",
   "license": "MIT",
   "author": "Vitaliy Losakov",
   "repository": {

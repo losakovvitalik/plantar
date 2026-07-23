@@ -6,7 +6,8 @@
   "author": "Vitaliy Losakov",
   "repository": {
     "type": "git",
-    "url": "https://github.com/losakovvitalik/plantar.git"
+    "url": "https://github.com/losakovvitalik/plantar.git",
+    "directory": "apps/cli"
   },
   "type": "module",
   "bin": {
