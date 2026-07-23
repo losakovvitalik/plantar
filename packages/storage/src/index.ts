@@ -3,14 +3,17 @@ import {
   closeSync,
   copyFileSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
   openSync,
   readFileSync,
   readSync,
   readdirSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -193,16 +196,33 @@ function readJsonSafe<T>(file: string, fallback: T): T {
 /**
  * Writes a JSON store atomically: temp file in the same directory + rename,
  * so a crash mid-write leaves either the old or the new content on disk.
+ * The temp file is fsynced before the rename — otherwise the filesystem may
+ * journal the rename ahead of the data blocks and power loss would still
+ * leave a truncated target.
  */
 function writeJsonAtomic(file: string, data: unknown): void {
   mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(data, null, 2));
-  renameSync(tmp, file);
+  try {
+    const fd = openSync(tmp, "w");
+    try {
+      writeSync(fd, JSON.stringify(data, null, 2));
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(tmp, file);
+  } catch (err) {
+    rmSync(tmp, { force: true });
+    throw err;
+  }
 }
 
 function readJsonList<T>(file: string): T[] {
-  return readJsonSafe<T[]>(path.join(dataDir(), file), []);
+  const list = readJsonSafe<T[]>(path.join(dataDir(), file), []);
+  // Valid JSON of the wrong shape (e.g. a hand-edited `null`) must not
+  // push the crash into the caller's first .map
+  return Array.isArray(list) ? list : [];
 }
 
 function writeJsonList<T>(file: string, list: T[]): void {
@@ -281,7 +301,9 @@ function historyFile(): string {
 }
 
 export function readHistory(): DeployRecord[] {
-  return readJsonSafe<DeployRecord[]>(historyFile(), []);
+  const history = readJsonSafe<DeployRecord[]>(historyFile(), []);
+  // Same wrong-shape guard as readJsonList — appendHistory pushes into this
+  return Array.isArray(history) ? history : [];
 }
 
 export function appendHistory(record: DeployRecord): void {

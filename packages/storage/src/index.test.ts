@@ -99,6 +99,13 @@ describe("чтение битых JSON-хранилищ", () => {
     expect(readFileSync(`${full}.broken`, "utf8")).toBe('[{"id": "srv-1"');
   });
 
+  it("валидный JSON не той формы деградирует до пустого списка", () => {
+    corruptStore("servers.json", "null");
+    expect(readServers()).toEqual([]);
+    corruptStore("history.json", '{"not": "a list"}');
+    expect(readHistory()).toEqual([]);
+  });
+
   it("существующий .broken не перезаписывается повторным сбоем", () => {
     const full = corruptStore("servers.json", "first-corruption");
     readServers();
@@ -130,6 +137,13 @@ describe("атомарная запись", () => {
       expect(readServers()).toEqual([server("srv-1")]);
     },
   );
+
+  it("после неудачной записи временный файл не остаётся", () => {
+    // Rename onto a directory fails after the temp file is already written
+    mkdirSync(path.join(dataDir(), "servers.json"), { recursive: true });
+    expect(() => writeServers([server("srv-1")])).toThrow();
+    expect(readdirSync(dataDir()).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+  });
 
   it("appendHistory дописывает записи и переживает битую историю", () => {
     appendHistory(deploy("site-a"));
