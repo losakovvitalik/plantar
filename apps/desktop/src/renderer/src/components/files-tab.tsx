@@ -112,9 +112,11 @@ export function FilesTab({ project, server, config, askPassword }: Props) {
   const openSessionRef = useRef(0);
 
   async function open(selection: Selection) {
-    const session = ++openSessionRef.current;
     const password = await passwordFor(server, askPassword);
-    if (password === null || openSessionRef.current !== session) return;
+    if (password === null) return;
+    // The token is taken after the password gate: a cancelled call must not
+    // invalidate the request already in flight
+    const session = ++openSessionRef.current;
     setSelected(selection);
     setContent(null);
     setContentLoading(true);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useI18n } from "../i18n";
 import { Button } from "./ui/button";
 import {
@@ -20,6 +20,12 @@ interface Props {
 export function PasswordDialog({ serverName, onSubmit }: Props) {
   const { t } = useI18n();
   const [password, setPassword] = useState("");
+
+  // A superseding request can swap the target server while the dialog is
+  // open — text typed for the previous server must not leak into the new one
+  useEffect(() => {
+    setPassword("");
+  }, [serverName]);
 
   function close(value: string | null) {
     setPassword("");
