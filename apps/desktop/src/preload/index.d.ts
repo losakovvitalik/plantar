@@ -3,6 +3,8 @@ import type {
   AppLogPoint,
   AppMetricsHistory,
   DiscoveredApp,
+  ExternalSyncState,
+  ExternalVersions,
   LogStreamSource,
   MonitoringStatus,
   MonitoringTool,
@@ -33,6 +35,8 @@ export type {
   AppStatusEntry,
   DetectedProject,
   DiscoveredApp,
+  ExternalSyncState,
+  ExternalVersions,
   LogStreamSource,
   MonitoringStatus,
   MonitoringTool,
@@ -118,6 +122,9 @@ export interface AppStatusSnapshot {
   goaccessMissing: boolean;
   /** Включён ли на сервере сбор нагрузки приложений; undefined — тип без процесса */
   appMetrics?: boolean;
+  /** Внешний git-проект: папка на сервере закреплена на старой версии
+   *  (отвязанный HEAD после возврата версии) */
+  detachedHead?: boolean;
 }
 
 /** Кэш вкладки «Статус»: устаревшие данные для мгновенного показа.
@@ -153,7 +160,7 @@ export type IpcResult<T> =
 /** Снимок прогона деплоя из main (вкладка «Деплой»); interrupted — прогон,
  *  оборванный закрытием приложения */
 export interface DeployRunState {
-  kind: "deploy" | "rollback";
+  kind: "deploy" | "rollback" | "migrate";
   status: "running" | "success" | "error" | "interrupted";
   /** Хвост лога; полный лог — в файле истории */
   lines: string[];
@@ -171,13 +178,13 @@ export interface DeployRunState {
 /** Старт прогона деплоя или возврата версии (событие deploy:started) */
 export interface DeployStartedEvent {
   projectId: string;
-  kind: "deploy" | "rollback";
+  kind: "deploy" | "rollback" | "migrate";
 }
 
 /** Завершение прогона деплоя (событие deploy:finished) */
 export interface DeployFinishedEvent {
   projectId: string;
-  kind: "deploy" | "rollback";
+  kind: "deploy" | "rollback" | "migrate";
   status: "success" | "error";
   url?: string;
   error?: string;
@@ -397,6 +404,27 @@ declare global {
       ) => Promise<IpcResult<{ url?: string }>>;
       /** Возврат предыдущей версии; лог приходит в onDeployLog */
       rollback: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<{ url?: string }>>;
+      /** Git-версии внешнего проекта с сервера — вкладка «Версии» */
+      externalVersions: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<ExternalVersions>>;
+      /** Лёгкая локальная проверка (без fetch) для индикатора на «Статусе» */
+      externalSyncState: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<ExternalSyncState>>;
+      /** Возврат версии внешнего проекта: повторный деплой выбранного коммита */
+      rollbackExternalTo: (
+        projectId: string,
+        commit: string,
+        password?: string,
+      ) => Promise<IpcResult<{ url?: string }>>;
+      /** Перенос импортированного проекта под управление Plantar (takeover-деплой) */
+      migrateProject: (
         projectId: string,
         password?: string,
       ) => Promise<IpcResult<{ url?: string }>>;

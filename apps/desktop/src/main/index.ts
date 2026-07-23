@@ -9,8 +9,11 @@ import {
   type RelatedFileId,
   appBaseDir,
   checkSitesRespond,
+  deployExternalInPlace,
   deployProject,
   discoverApps,
+  getExternalSyncState,
+  getExternalVersions,
   enableAppMetrics,
   ensureAppMetricsScript,
   getAppLogActivity,
@@ -27,11 +30,13 @@ import {
   pm2ProcessHealth,
   pm2ProcessStatuses,
   readAppEnv,
+  readExternalEnv,
   readProjectEnv,
   readRemoteTextFile,
   removeDeployedProject,
   resolveProjectPath,
   rollbackProject,
+  writeExternalEnv,
   writeProjectEnv,
 } from "@plantar/core";
 import {
@@ -219,7 +224,7 @@ function appStatusOf(
       : undefined;
   // Статичный сайт живёт без pm2-процесса
   if (type === "static") return { status: "static", siteUrl };
-  // Внешнее приложение до первого деплоя работает под прежним именем pm2
+  // Внешнее приложение работает под прежним именем pm2
   const status = pm2.get(project.external ? project.external.pm2Name : name);
   if (status === "online" || status === "launching") return { status: "running", siteUrl };
   if (status === "errored") return { status: "error", siteUrl };
@@ -467,15 +472,12 @@ interface ImportProjectInput {
 
 /** Добавляет найденное на сервере приложение как внешний проект (без папки с кодом) */
 async function importProject(input: ImportProjectInput): Promise<ProjectRecord> {
-  const server = getServer(input.serverId);
+  // Called for the throw only: fail before writing a record for a removed server
+  getServer(input.serverId);
   const config = parseProjectConfig(input.config);
   assertNameFreeOnServer(input.serverId, config.name);
-  // Переносим env-файлы приложения в хранилище Plantar до записи проекта:
-  // если сервер недоступен, импорт не удастся целиком и его можно повторить
-  await withServer(server, input.password, async (conn) => {
-    const env = await readAppEnv(conn, input.appDir);
-    if (env) await writeProjectEnv(conn, config.name, env);
-  });
+  // Переменные не копируются в хранилище Plantar: внешний проект читает
+  // и сохраняет их прямо в .env своей папки — на сервере ничего не меняется
   const record: ProjectRecord = {
     id: randomUUID(),
     serverId: input.serverId,
@@ -623,17 +625,27 @@ async function runDeploy(
   password: string | undefined,
   // Режим совместимости (npm --legacy-peer-deps); пользователь подтвердил кнопкой в GUI
   legacyPeerDeps?: boolean,
+  // Перенос импортированного проекта под управление Plantar — прежний
+  // takeover-деплой, но только как явное действие с подтверждением в GUI
+  migrate = false,
 ): Promise<{ url?: string }> {
   const project = getProject(projectId);
   const server = getServer(project.serverId);
-  // Импортированный проект: деплой возможен только после привязки папки с кодом
+  // Импортированный проект живёт в бережном режиме: обновляется в своей
+  // папке на сервере, без переноса под структуру Plantar
+  if (project.external && !migrate) return runExternalInPlace(projectId, password);
+  // Перенос под управление Plantar возможен только после привязки папки с кодом
   if (project.external && !project.path) throw new Error(t("externalNeedsFolder"));
   const dir = projectDir(project);
   let config = loadProjectConfig(dir);
 
   // Прогон регистрируется до первого await — второй одновременный деплой
   // одного проекта отсекается здесь же, не оставляя пустого файла лога
-  const run = startDeployRun(projectId, "deploy");
+  // The migrate kind survives in the run state and history: after a failed
+  // migrate the old pm2 process is deleted, so the "return to previous
+  // version" recovery must not be offered for this run
+  const kind = migrate ? ("migrate" as const) : ("deploy" as const);
+  const run = startDeployRun(projectId, kind);
   const startedAt = new Date().toISOString();
 
   // git-проект: обновляем клон до свежего коммита ветки перед деплоем
@@ -662,16 +674,28 @@ async function runDeploy(
     const settings = readSettings();
     // Флаг не пишем в конфиг заранее: он закрепится ниже, только если деплой удался
     const deployConfig = legacyPeerDeps ? { ...config, legacyPeerDeps: true } : config;
+    // При переносе под управление Plantar переменные из .env приложения
+    // переезжают в хранилище Plantar — деплой подставит их как раньше
+    if (migrate && project.external) {
+      const appDir = project.external.appDir;
+      await withServer(server, password, async (conn) => {
+        if (!(await readProjectEnv(conn, config.name))) {
+          const env = await readAppEnv(conn, appDir);
+          if (env) await writeProjectEnv(conn, config.name, env);
+        }
+      });
+    }
     const result = await withServer(server, password, (conn) =>
       deployProject(conn, dir, deployConfig, log, {
         letsEncryptEmail: settings.letsEncryptEmail || undefined,
-        // Первый деплой импортированного проекта снимает прежний процесс и конфиг nginx
-        takeover: project.external
-          ? {
-              pm2Name: project.external.pm2Name,
-              nginxConfFile: project.external.nginxConfFile,
-            }
-          : undefined,
+        // Перенос под управление Plantar снимает прежний процесс и конфиг nginx
+        takeover:
+          migrate && project.external
+            ? {
+                pm2Name: project.external.pm2Name,
+                nginxConfFile: project.external.nginxConfFile,
+              }
+            : undefined,
       }),
     );
     // Закрепляем в конфиге порт (выбирается на сервере при первом деплое)
@@ -688,13 +712,14 @@ async function runDeploy(
       startedAt,
       finishedAt: new Date().toISOString(),
       status: "success",
+      kind: migrate ? kind : undefined,
       url: result.url,
       commit: deployedCommit?.hash,
       logFile: logWriter.file,
     });
     // git-проект: запоминаем задеплоенный коммит для карточки проекта и вкладки «Коммиты»
-    // Внешний проект после успешного деплоя переходит на управляемую структуру —
-    // пометка «внешний» снимается, дальше он живёт как обычный проект
+    // После переноса под управление Plantar пометка «внешний» снимается —
+    // дальше проект живёт как обычный (структура releases, мгновенный возврат)
     if (deployedCommit || project.external) {
       const commit = deployedCommit;
       writeProjects(
@@ -725,9 +750,110 @@ async function runDeploy(
         startedAt,
         finishedAt: new Date().toISOString(),
         status: "error",
+        kind: migrate ? kind : undefined,
         error: message,
         code,
         commit: deployedCommit?.hash,
+        logFile: logWriter.file,
+      });
+    }
+    throw err;
+  }
+}
+
+/**
+ * Бережный деплой импортированного проекта: код обновляется в исходной папке
+ * приложения на сервере (git), процесс перезапускается под прежним именем pm2.
+ * nginx, порты и структура releases не меняются. С checkoutCommit —
+ * возврат версии: разворачивается указанный коммит вместо вершины ветки.
+ */
+async function runExternalInPlace(
+  projectId: string,
+  password: string | undefined,
+  checkoutCommit?: string,
+): Promise<{ url?: string }> {
+  const project = getProject(projectId);
+  const server = getServer(project.serverId);
+  const external = project.external;
+  if (!external) throw new Error(t("projectNotFound"));
+  const config = projectConfig(project);
+
+  const run = startDeployRun(projectId, checkoutCommit ? "rollback" : "deploy");
+  const startedAt = new Date().toISOString();
+  const kind = checkoutCommit ? ("rollback" as const) : ("deploy" as const);
+
+  let logWriter: DeployLogWriter | undefined;
+  try {
+    logWriter = new DeployLogWriter(config.name);
+    const writer = logWriter;
+    const log = (line: string) => {
+      writer.write(line);
+      run.log(line);
+    };
+    // Смоук-проверка только по известному домену: своего nginx-конфига
+    // у бережного режима нет, адрес по IP приложению может не принадлежать
+    const url =
+      config.type !== "bot" && config.domain ? `https://${config.domain}/` : undefined;
+    const result = await withServer(server, password, (conn) =>
+      deployExternalInPlace(
+        conn,
+        {
+          appDir: external.appDir,
+          pm2Name: external.pm2Name,
+          branch: external.branch,
+          runtime: config.runtime,
+          type: config.type,
+          port: config.port,
+          url,
+        },
+        log,
+        checkoutCommit ? { checkout: checkoutCommit } : {},
+      ),
+    );
+    appendHistory({
+      project: config.name,
+      host: server.host,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      status: "success",
+      kind,
+      url,
+      commit: result.commit?.hash,
+      logFile: logWriter.file,
+    });
+    // Развёрнутый коммит — для строки версии на вкладке «Деплой» и кнопки
+    // «вернуть предыдущую версию» после неудачного деплоя
+    if (result.commit) {
+      const commit = { hash: result.commit.hash, message: result.commit.subject };
+      writeProjects(
+        readProjects().map((p) =>
+          p.id === project.id ? { ...p, deployedCommit: commit } : p,
+        ),
+      );
+    }
+    if (readSettings().notifyOnDeploySuccess) {
+      notifyDeployResult(projectId, config.name, true);
+    }
+    run.finish({ status: "success", url });
+    return { url };
+  } catch (err) {
+    const message = (err as Error).message;
+    const code = (err as { code?: string }).code;
+    // Статус прогона обновляется первым: сбой записи на диск не должен
+    // оставить проект навсегда заблокированным «идущим» деплоем
+    run.finish({ status: "error", error: message, code });
+    notifyDeployResult(projectId, config.name, false);
+    if (logWriter) {
+      logWriter.write(`\n${t("deployLogError")}: ${message}`);
+      appendHistory({
+        project: config.name,
+        host: server.host,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        status: "error",
+        kind,
+        error: message,
+        code,
         logFile: logWriter.file,
       });
     }
@@ -741,7 +867,8 @@ async function runRollback(
   password: string | undefined,
 ): Promise<{ url?: string }> {
   const project = getProject(projectId);
-  // До первого деплоя через Plantar на сервере нет сохранённых версий
+  // У внешних проектов нет структуры releases — их возврат версии идёт
+  // по git-истории через deploy:rollbackExternal
   if (project.external) throw new Error(t("rollbackUnavailableExternal"));
   const server = getServer(project.serverId);
   const config = projectConfig(project);
@@ -1284,10 +1411,18 @@ app.whenReady().then(() => {
       }),
   );
 
-  // Переменные проекта хранятся на сервере (вне папки версии) и применяются при деплое
+  // Переменные проекта хранятся на сервере (вне папки версии) и применяются
+  // при деплое; у внешних проектов читаются и сохраняются прямо в .env
+  // папки приложения — хранилище Plantar на сервере не создаётся
   ipcMain.handle("env:read", (_e, args: { projectId: string; password?: string }) =>
     toResult(async () => {
       const project = getProject(args.projectId);
+      if (project.external) {
+        const appDir = project.external.appDir;
+        return withServer(getServer(project.serverId), args.password, (conn) =>
+          readExternalEnv(conn, appDir),
+        );
+      }
       const config = projectConfig(project);
       return withServer(getServer(project.serverId), args.password, (conn) =>
         readProjectEnv(conn, config.name),
@@ -1299,6 +1434,13 @@ app.whenReady().then(() => {
     (_e, args: { projectId: string; content: string; password?: string }) =>
       toResult(async () => {
         const project = getProject(args.projectId);
+        if (project.external) {
+          const appDir = project.external.appDir;
+          await withServer(getServer(project.serverId), args.password, (conn) =>
+            writeExternalEnv(conn, appDir, args.content),
+          );
+          return;
+        }
         const config = projectConfig(project);
         await withServer(getServer(project.serverId), args.password, (conn) =>
           writeProjectEnv(conn, config.name, args.content),
@@ -1572,6 +1714,53 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("deploy:rollback", (_e, args: { projectId: string; password?: string }) =>
     toResult(() => runRollback(args.projectId, args.password)),
+  );
+  // Git-версии внешнего проекта с сервера — для вкладки «Версии»
+  // и индикатора «развёрнута не последняя версия»
+  ipcMain.handle(
+    "versions:external",
+    (_e, args: { projectId: string; password?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        const external = project.external;
+        if (!external) throw new Error(t("projectNotFound"));
+        return withServer(getServer(project.serverId), args.password, (conn) =>
+          getExternalVersions(conn, external.appDir, external.branch),
+        );
+      }),
+  );
+  // Light local-only sync check for the Status tab indicator: no network
+  // fetch, so a slow git remote cannot delay the status snapshot
+  ipcMain.handle(
+    "versions:externalState",
+    (_e, args: { projectId: string; password?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        const external = project.external;
+        if (!external) throw new Error(t("projectNotFound"));
+        return withServer(getServer(project.serverId), args.password, (conn) =>
+          getExternalSyncState(conn, external.appDir),
+        );
+      }),
+  );
+  // Возврат версии внешнего проекта: повторный деплой выбранного коммита
+  ipcMain.handle(
+    "deploy:rollbackExternal",
+    (_e, args: { projectId: string; commit: string; password?: string }) =>
+      toResult(async () => {
+        // Хеш попадает в shell-команду на сервере — только настоящие хеши
+        if (!/^[0-9a-f]{7,40}$/i.test(args.commit)) {
+          throw new Error(t("invalidCommit"));
+        }
+        return runExternalInPlace(args.projectId, args.password, args.commit);
+      }),
+  );
+  // Явный перенос импортированного проекта под управление Plantar:
+  // прежний takeover-деплой, запускается только после подтверждения в GUI
+  ipcMain.handle(
+    "projects:migrate",
+    (_e, args: { projectId: string; password?: string; legacyPeerDeps?: boolean }) =>
+      toResult(() => runDeploy(args.projectId, args.password, args.legacyPeerDeps, true)),
   );
   // Идущие сейчас прогоны — начальное состояние индикаторов деплоя в сайдбаре
   ipcMain.handle("deploy:active", () => toResult(async () => activeDeployRuns()));

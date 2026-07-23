@@ -9,6 +9,32 @@ import { readPackageJson, type ProjectConfig } from "@plantar/config";
 import { t } from "./messages";
 
 import { ENV_FILE_RE, findDomainConflicts, parseNginxSites, parsePm2Jlist } from "./discover";
+import {
+  run,
+  verifySiteAvailable,
+  waitForApp,
+  waitForStableProcess,
+} from "./process-checks";
+
+export {
+  AppNotRespondingError,
+  ProcessUnstableError,
+} from "./process-checks";
+export {
+  deployExternalInPlace,
+  getExternalSyncState,
+  getExternalVersions,
+  parseServerCommits,
+  readExternalEnv,
+  writeExternalEnv,
+} from "./external";
+export type {
+  ExternalDeployResult,
+  ExternalSyncState,
+  ExternalTarget,
+  ExternalVersions,
+  ServerCommit,
+} from "./external";
 
 export {
   ENV_FILE_RE,
@@ -187,28 +213,6 @@ function isPeerConflict(config: ProjectConfig, output: string): boolean {
     !config.legacyPeerDeps &&
     output.includes("ERESOLVE")
   );
-}
-
-async function run(
-  conn: SshConnection,
-  command: string,
-  log: (line: string) => void,
-): Promise<void> {
-  log(`$ ${command}`);
-  const result = await conn.exec(command);
-  if (result.code !== 0) {
-    const output = [result.stdout, result.stderr]
-      .filter(Boolean)
-      .join("\n")
-      .slice(-3000);
-    throw new Error(
-      t("commandFailed", {
-        code: result.code,
-        command,
-        stderr: output,
-      }),
-    );
-  }
 }
 
 export async function setupServer(
@@ -578,44 +582,12 @@ async function setupSsl(
   log(t("httpsConfigured"));
 }
 
-/**
- * Смоук-проверка после деплоя: запрос к публичному адресу с самого сервера,
- * чтобы проверить всю цепочку nginx → приложение (без влияния DNS и сети
- * пользователя). Редиректы и коды авторизации — сайт отвечает; 502/503/504
- * или отсутствие ответа — прокси не достучался до приложения. Неудача не
- * роняет деплой, а заменяет «сайт доступен» предупреждением.
- */
-async function verifySiteAvailable(
-  conn: SshConnection,
-  url: string,
-  liveMessage: "siteAvailable" | "appAvailable",
-  log: (line: string) => void,
-): Promise<void> {
-  log(t("checkingSiteUrl", { url }));
-  // -k: проверяем доступность, а не сертификат; ретраи — nginx/приложению
-  // может понадобиться пара секунд после перезагрузки
-  const check = await conn.exec(
-    `for i in 1 2 3 4 5; do ` +
-      `code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 ${shellQuote(url)} 2>/dev/null || true); ` +
-      `case "$code" in ''|000|502|503|504) sleep 2;; *) echo "$code"; exit 0;; esac; ` +
-      `done; echo "$code"; exit 1`,
-  );
-  const code = check.stdout.trim().split("\n").pop() ?? "";
-  if (check.code === 0) {
-    log(t(liveMessage, { url }));
-  } else if (code === "" || code === "000") {
-    log(t("siteCheckNoResponse", { url }));
-  } else {
-    log(t("siteCheckBadGateway", { url, code }));
-  }
-}
-
 export interface DeployOptions {
   /** Email для регистрации в Let's Encrypt */
   letsEncryptEmail?: string;
-  /** Первый деплой импортированного проекта: перед запуском снимается прежний
-   *  pm2-процесс, а прежний конфиг nginx отключается — приложение переходит
-   *  под управление Plantar */
+  /** Явный перенос импортированного проекта под управление Plantar: перед
+   *  запуском снимается прежний pm2-процесс, а прежний конфиг nginx
+   *  отключается — дальше приложение живёт в структуре Plantar */
   takeover?: {
     pm2Name: string;
     nginxConfFile?: string;
@@ -807,30 +779,6 @@ async function pickFreePort(conn: SshConnection): Promise<number> {
   );
 }
 
-/** Ждёт, пока приложение начнёт отвечать по HTTP; при неудаче — ошибка с логами pm2 */
-async function waitForApp(
-  conn: SshConnection,
-  name: string,
-  port: number,
-  log: (line: string) => void,
-): Promise<void> {
-  log(t("checkingAppPort", { port }));
-  // 120 попыток: тяжёлым приложениям (например, Strapi через npm start)
-  // 30 секунд на запуск не хватает
-  const check = await conn.exec(
-    `for i in $(seq 1 120); do ` +
-      `code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://127.0.0.1:${port}/); ` +
-      `if [ "$code" != "000" ]; then exit 0; fi; sleep 1; done; exit 1`,
-  );
-  if (check.code !== 0) {
-    const logs = await conn.exec(`pm2 logs '${name}' --nostream --lines 30 2>&1`);
-    throw new Error(
-      t("appNotResponding", { port, logs: logs.stdout.slice(-3000) }),
-    );
-  }
-  log(t("appResponding"));
-}
-
 /** Общее для node, Next.js и bot: загрузка проекта, зависимости, сборка и подмена папки */
 async function uploadApp(
   conn: SshConnection,
@@ -1018,44 +966,6 @@ async function deployNode(
   }
   await verifySiteAvailable(conn, url, "appAvailable", log);
   return { target, fileCount, url, port };
-}
-
-interface Pm2Process {
-  name: string;
-  pm2_env: { status: string; pm_uptime: number };
-}
-
-/** Бот не слушает порт, поэтому вместо HTTP-проверки убеждаемся,
- *  что pm2-процесс живёт несколько секунд и не перезапускается */
-async function waitForStableProcess(
-  conn: SshConnection,
-  name: string,
-  log: (line: string) => void,
-): Promise<void> {
-  log(t("checkingProcess"));
-  const result = await conn.exec(`sleep 5; echo "NOW:$(date +%s%3N)"; pm2 jlist 2>/dev/null`);
-  const now = Number(result.stdout.match(/^NOW:(\d+)$/m)?.[1]);
-
-  let processes: Pm2Process[] = [];
-  const jsonStart = result.stdout.indexOf("[");
-  if (jsonStart !== -1) {
-    try {
-      processes = JSON.parse(result.stdout.slice(jsonStart)) as Pm2Process[];
-    } catch {
-      /* нечитаемый вывод pm2 — обработается как «процесс не найден» */
-    }
-  }
-
-  const app = processes.find((p) => p.name === name);
-  const stable =
-    app && app.pm2_env.status === "online" && now - app.pm2_env.pm_uptime >= 4000;
-  if (!stable) {
-    const logs = await conn.exec(`pm2 logs '${name}' --nostream --lines 30 2>&1`);
-    throw new Error(
-      t("processUnstable", { name, logs: logs.stdout.slice(-3000) }),
-    );
-  }
-  log(t("processStable"));
 }
 
 async function deployBot(

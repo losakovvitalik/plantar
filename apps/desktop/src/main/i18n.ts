@@ -134,6 +134,10 @@ const MESSAGES = {
     ru: "Недопустимое имя ветки.",
     en: "Invalid branch name.",
   },
+  invalidCommit: {
+    ru: "Недопустимый идентификатор версии.",
+    en: "Invalid version identifier.",
+  },
   gitNotAvailable: {
     ru: "Не найден git. Установите его, чтобы работать с репозиториями.",
     en: "git was not found. Install it to work with repositories.",
@@ -203,12 +207,12 @@ const MESSAGES = {
     en: "The folder “{subdir}” was not found in the repository.",
   },
   externalNeedsFolder: {
-    ru: "Сначала укажите папку с кодом проекта — кнопка на вкладке «Деплой».",
-    en: "First choose the folder with the project code — the button is on the Deploy tab.",
+    ru: "Для переноса под управление Plantar сначала укажите папку с кодом проекта — кнопка на вкладке «Деплой».",
+    en: "To move the app under Plantar management, first choose the folder with the project code — the button is on the Deploy tab.",
   },
   rollbackUnavailableExternal: {
-    ru: "Возврат предыдущей версии станет доступен после первого деплоя через Plantar.",
-    en: "Restoring the previous version becomes available after the first deploy via Plantar.",
+    ru: "У импортированного приложения версии хранятся в git — вернуть версию можно на вкладке «Версии».",
+    en: "An imported app keeps its versions in git — restore a version on the Versions tab.",
   },
   linkFolderUnavailable: {
     ru: "Папку с кодом можно привязать только к проекту, импортированному с сервера.",
