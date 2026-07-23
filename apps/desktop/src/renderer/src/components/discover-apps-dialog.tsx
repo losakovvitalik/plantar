@@ -1,5 +1,5 @@
 import { Check, PackageSearch, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DiscoveredApp, ServerRecord } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
 import { passwordFor } from "../lib/server-auth";
@@ -33,10 +33,17 @@ export function DiscoverAppsDialog({ server, askPassword, onClose, onImported }:
   // Пароль со скана: импорт тоже ходит на сервер (переносит env-файлы приложения)
   const [password, setPassword] = useState<string | undefined>(undefined);
 
+  // Grows on every scan and server change/close — a late response of a stale
+  // scan is ignored. The dialog is mounted permanently, so the invalidation
+  // lives in the effect on serverId, not in unmount
+  const sessionRef = useRef(0);
+
   async function scan(target: ServerRecord) {
+    const session = ++sessionRef.current;
     setApps(null);
     setError(null);
     const password = await passwordFor(target, askPassword);
+    if (sessionRef.current !== session) return;
     if (password === null) {
       onClose();
       return;
@@ -44,6 +51,7 @@ export function DiscoverAppsDialog({ server, askPassword, onClose, onImported }:
     setPassword(password);
     setLoading(true);
     const result = await window.plantar.discoverApps(target.id, password);
+    if (sessionRef.current !== session) return;
     setLoading(false);
     if (result.ok) setApps(result.data);
     else setError(result.error);
@@ -51,8 +59,10 @@ export function DiscoverAppsDialog({ server, askPassword, onClose, onImported }:
 
   const serverId = server?.id;
   useEffect(() => {
+    sessionRef.current++;
     setApps(null);
     setError(null);
+    setLoading(false);
     if (server) void scan(server);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId]);

@@ -45,6 +45,9 @@ export default function App() {
   const [passwordFor, setPasswordFor] = useState<ServerRecord | null>(null);
   const passwordResolve = useRef<(value: string | null) => void>();
   const askPassword = useCallback((server: ServerRecord) => {
+    // A second concurrent request supersedes the first: resolve it with null
+    // (same as user cancel) so the superseded caller aborts and resets its busy flag
+    passwordResolve.current?.(null);
     setPasswordFor(server);
     return new Promise<string | null>((resolve) => {
       passwordResolve.current = resolve;
@@ -465,7 +468,13 @@ export default function App() {
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 thin-scroll">
               <div className="flex flex-col gap-4 pb-4">
-                <StatusTab server={selectedServer} askPassword={askPassword} />
+                {/* key remounts the tab per server — a slow response can't render
+                    under another server's heading */}
+                <StatusTab
+                  key={selectedServer.id}
+                  server={selectedServer}
+                  askPassword={askPassword}
+                />
                 <ServerMonitoring
                   key={selectedServer.id}
                   server={selectedServer}

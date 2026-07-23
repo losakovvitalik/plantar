@@ -1,5 +1,5 @@
 import { FolderTree, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   ProjectConfig,
   ProjectRecord,
@@ -107,9 +107,14 @@ export function FilesTab({ project, server, config, askPassword }: Props) {
     }
   }
 
+  // Grows on every file open — a late response for a previously selected
+  // file is ignored instead of rendering under the current file's name
+  const openSessionRef = useRef(0);
+
   async function open(selection: Selection) {
+    const session = ++openSessionRef.current;
     const password = await passwordFor(server, askPassword);
-    if (password === null) return;
+    if (password === null || openSessionRef.current !== session) return;
     setSelected(selection);
     setContent(null);
     setContentLoading(true);
@@ -118,6 +123,7 @@ export function FilesTab({ project, server, config, askPassword }: Props) {
       selection.kind === "path"
         ? await window.plantar.readProjectFile(project.id, selection.path, password)
         : await window.plantar.readRelatedFile(project.id, selection.file.id, password);
+    if (openSessionRef.current !== session) return;
     setContentLoading(false);
     if (result.ok) setContent(result.data);
     else setError(result.error);
