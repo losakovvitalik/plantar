@@ -62,6 +62,7 @@ export default function App() {
     setToast(message);
     toastTimer.current = window.setTimeout(() => setToast(null), 6000);
   }, []);
+  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
   const refresh = useCallback(async () => {
     const [srv, prj] = await Promise.all([
@@ -69,9 +70,13 @@ export default function App() {
       window.plantar.listProjects(),
     ]);
     if (srv.ok) setServers(srv.data);
-    else showError(srv.error);
     if (prj.ok) setProjects(prj.data);
-    else showError(prj.error);
+    // One toast for both failures: a second showError call would overwrite
+    // the first message. Dedupe — both lists share the same store
+    const errors = [
+      ...new Set([srv, prj].flatMap((r) => (r.ok ? [] : [r.error]))),
+    ];
+    if (errors.length) showError(errors.join("\n"));
   }, [showError]);
 
   // Индикаторы «работает/не работает» в сайдбаре; каждое обновление списка

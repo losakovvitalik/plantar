@@ -530,6 +530,8 @@ export const ru = {
   "settings.loading": "Загрузка настроек…",
   "settings.loadError": "Не удалось загрузить настройки: {message}",
   "settings.saveError": "Не удалось сохранить настройки: {message}",
+  "settings.githubStatusError":
+    "Не удалось проверить подключение GitHub: {message}",
 } as const;
 
 export type MessageKey = keyof typeof ru;

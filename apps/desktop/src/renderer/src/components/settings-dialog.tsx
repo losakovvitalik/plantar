@@ -36,6 +36,7 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [account, setAccount] = useState<GithubAccount | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
 
   useEffect(() => {
@@ -44,12 +45,14 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
     setSettings(null);
     setLoadError(null);
     setSaveError(null);
+    setAccountError(null);
     void (async () => {
       const result = await window.plantar.getSettings();
       if (result.ok) setSettings(result.data);
       else setLoadError(result.error);
       const acc = await window.plantar.githubAccount();
       if (acc.ok) setAccount(acc.data);
+      else setAccountError(acc.error);
     })();
   }, [open]);
 
@@ -97,10 +100,16 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                 <Label className="text-[13.5px] font-semibold">
                   {t("settings.github")}
                 </Label>
-                <p className="mt-1 text-[12.5px] leading-snug text-ink-soft">
+                <p
+                  className={`mt-1 text-[12.5px] leading-snug ${
+                    !account && accountError ? "text-clay" : "text-ink-soft"
+                  }`}
+                >
                   {account
                     ? t("settings.githubConnected", { login: account.login })
-                    : t("settings.githubHint")}
+                    : accountError
+                      ? t("settings.githubStatusError", { message: accountError })
+                      : t("settings.githubHint")}
                 </p>
               </div>
               {account ? (
