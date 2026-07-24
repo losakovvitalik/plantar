@@ -1056,7 +1056,9 @@ function createWindow(): BrowserWindow {
     titleBarStyle: "hiddenInset",
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
-      sandbox: false,
+      // The preload only needs contextBridge/ipcRenderer, so the renderer can
+      // run inside the Chromium sandbox instead of the default `sandbox: false`
+      sandbox: true,
     },
   });
 

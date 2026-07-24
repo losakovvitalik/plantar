@@ -154,4 +154,17 @@ describe("атомарная запись", () => {
     appendHistory(deploy("site-c"));
     expect(readHistory().map((r) => r.project)).toEqual(["site-c"]);
   });
+
+  it("история не растёт бесконечно: остаются последние 500 записей", () => {
+    const existing = Array.from({ length: 700 }, (_, i) => deploy(`old-${i}`));
+    mkdirSync(dataDir(), { recursive: true });
+    writeFileSync(path.join(dataDir(), "history.json"), JSON.stringify(existing));
+
+    appendHistory(deploy("newest"));
+
+    const history = readHistory();
+    expect(history).toHaveLength(500);
+    expect(history[0].project).toBe("old-201");
+    expect(history.at(-1)?.project).toBe("newest");
+  });
 });

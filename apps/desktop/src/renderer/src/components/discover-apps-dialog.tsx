@@ -63,6 +63,9 @@ export function DiscoverAppsDialog({ server, askPassword, onClose, onImported }:
     setApps(null);
     setError(null);
     setLoading(false);
+    // The dialog stays mounted, so the password has to be dropped explicitly
+    // on close — otherwise it lingers in state until the next scan
+    setPassword(undefined);
     if (server) void scan(server);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverId]);

@@ -37,7 +37,12 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
   const [configHosts, setConfigHosts] = useState<SshConfigHost[]>([]);
 
   useEffect(() => {
-    if (!open) return;
+    // The dialog stays mounted, so the password has to be dropped explicitly
+    // on close — otherwise it survives cancel and is pre-filled on reopen
+    if (!open) {
+      setPassword("");
+      return;
+    }
     window.plantar.detectSshKeys().then((result) => {
       if (result.ok) setDetectedKeys(result.data);
     });

@@ -308,10 +308,19 @@ export function readHistory(): DeployRecord[] {
   return Array.isArray(history) ? history : [];
 }
 
+/** Сколько записей о деплоях хранится; старые вытесняются новыми */
+const HISTORY_LIMIT = 500;
+
+/**
+ * The whole file is rewritten on every deploy, so the log is capped instead of
+ * growing forever. Read-modify-write cannot interleave inside one process (the
+ * call is fully synchronous); a deploy from the CLI running at the same time as
+ * one from the app can still lose a record — accepted, the file is a log.
+ */
 export function appendHistory(record: DeployRecord): void {
   const history = readHistory();
   history.push(record);
-  writeJsonAtomic(historyFile(), history);
+  writeJsonAtomic(historyFile(), history.slice(-HISTORY_LIMIT));
 }
 
 /** Коммит в кэше вкладки «Коммиты» (совпадает по форме с Commit из main/git.ts) */
