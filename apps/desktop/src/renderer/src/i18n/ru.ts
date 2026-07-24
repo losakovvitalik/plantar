@@ -526,6 +526,12 @@ export const ru = {
   "settings.githubConnected": "Подключён аккаунт @{login}.",
   "settings.githubConnect": "Войти через GitHub",
   "settings.githubSignOut": "Выйти",
+
+  "settings.loading": "Загрузка настроек…",
+  "settings.loadError": "Не удалось загрузить настройки: {message}",
+  "settings.saveError": "Не удалось сохранить настройки: {message}",
+  "settings.githubStatusError":
+    "Не удалось проверить подключение GitHub: {message}",
 } as const;
 
 export type MessageKey = keyof typeof ru;

@@ -526,4 +526,10 @@ export const en: Record<MessageKey, string> = {
   "settings.githubConnected": "Connected as @{login}.",
   "settings.githubConnect": "Sign in with GitHub",
   "settings.githubSignOut": "Sign out",
+
+  "settings.loading": "Loading settings…",
+  "settings.loadError": "Failed to load settings: {message}",
+  "settings.saveError": "Failed to save settings: {message}",
+  "settings.githubStatusError":
+    "Failed to check the GitHub connection: {message}",
 };

@@ -32,17 +32,27 @@ const LANGUAGE_NAMES: Record<Language, string> = {
 export function SettingsDialog({ open, onOpenChange }: Props) {
   const { t, setLang } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [account, setAccount] = useState<GithubAccount | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    // settings === null && loadError === null → loading state
+    setSettings(null);
+    setLoadError(null);
+    setSaveError(null);
+    setAccountError(null);
     void (async () => {
       const result = await window.plantar.getSettings();
       if (result.ok) setSettings(result.data);
+      else setLoadError(result.error);
       const acc = await window.plantar.githubAccount();
       if (acc.ok) setAccount(acc.data);
+      else setAccountError(acc.error);
     })();
   }, [open]);
 
@@ -54,6 +64,7 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
   async function save() {
     if (!settings) return;
     setBusy(true);
+    setSaveError(null);
     const result = await window.plantar.setSettings({
       ...settings,
       letsEncryptEmail: settings.letsEncryptEmail.trim(),
@@ -62,6 +73,8 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
     if (result.ok) {
       setLang(settings.language);
       onOpenChange(false);
+    } else {
+      setSaveError(result.error);
     }
   }
 
@@ -74,17 +87,29 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
           <DialogDescription className="sr-only">{t("settings.description")}</DialogDescription>
         </DialogHeader>
 
-        {settings && (
+        {loadError ? (
+          <p className="text-[13px] text-clay">
+            {t("settings.loadError", { message: loadError })}
+          </p>
+        ) : !settings ? (
+          <p className="text-[13px] text-ink-soft">{t("settings.loading")}</p>
+        ) : (
           <div className="flex flex-col gap-6">
             <div className="flex items-start justify-between gap-6">
               <div>
                 <Label className="text-[13.5px] font-semibold">
                   {t("settings.github")}
                 </Label>
-                <p className="mt-1 text-[12.5px] leading-snug text-ink-soft">
+                <p
+                  className={`mt-1 text-[12.5px] leading-snug ${
+                    !account && accountError ? "text-clay" : "text-ink-soft"
+                  }`}
+                >
                   {account
                     ? t("settings.githubConnected", { login: account.login })
-                    : t("settings.githubHint")}
+                    : accountError
+                      ? t("settings.githubStatusError", { message: accountError })
+                      : t("settings.githubHint")}
                 </p>
               </div>
               {account ? (
@@ -202,6 +227,12 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
               />
             </div>
           </div>
+        )}
+
+        {saveError && (
+          <p className="text-[13px] text-clay">
+            {t("settings.saveError", { message: saveError })}
+          </p>
         )}
 
         <DialogFooter>

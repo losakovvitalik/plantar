@@ -54,6 +54,16 @@ export default function App() {
     });
   }, []);
 
+  // Clear the previous timer so an earlier toast's timeout cannot hide
+  // a newer error before its full duration
+  const toastTimer = useRef<number>();
+  const showError = useCallback((message: string) => {
+    window.clearTimeout(toastTimer.current);
+    setToast(message);
+    toastTimer.current = window.setTimeout(() => setToast(null), 6000);
+  }, []);
+  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+
   const refresh = useCallback(async () => {
     const [srv, prj] = await Promise.all([
       window.plantar.listServers(),
@@ -61,7 +71,13 @@ export default function App() {
     ]);
     if (srv.ok) setServers(srv.data);
     if (prj.ok) setProjects(prj.data);
-  }, []);
+    // One toast for both failures: a second showError call would overwrite
+    // the first message. Dedupe — both lists share the same store
+    const errors = [
+      ...new Set([srv, prj].flatMap((r) => (r.ok ? [] : [r.error]))),
+    ];
+    if (errors.length) showError(errors.join("\n"));
+  }, [showError]);
 
   // Индикаторы «работает/не работает» в сайдбаре; каждое обновление списка
   // (добавление, деплой) перепроверяет статусы
@@ -83,11 +99,6 @@ export default function App() {
     return window.plantar.onOpenProject(({ projectId }) => {
       setSelection({ kind: "project", id: projectId });
     });
-  }, []);
-
-  const showError = useCallback((message: string) => {
-    setToast(message);
-    window.setTimeout(() => setToast(null), 6000);
   }, []);
 
   // Любая непойманная ошибка должна быть видна пользователю, а не молча теряться
@@ -191,7 +202,11 @@ export default function App() {
   async function removeServer(server: ServerRecord) {
     if (!window.confirm(t("app.confirmRemoveServer", { name: server.name })))
       return;
-    await window.plantar.removeServer(server.id);
+    const result = await window.plantar.removeServer(server.id);
+    if (!result.ok) {
+      showError(result.error);
+      return;
+    }
     if (selection?.id === server.id) setSelection(null);
     await refresh();
   }
