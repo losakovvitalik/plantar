@@ -1863,9 +1863,14 @@ app.whenReady().then(() => {
     try {
       protocol = new URL(url).protocol;
     } catch {
+      console.warn("open-external: blocked url", url);
       return;
     }
-    if (protocol === "http:" || protocol === "https:") return shell.openExternal(url);
+    if (protocol !== "http:" && protocol !== "https:") {
+      console.warn("open-external: blocked url", url);
+      return;
+    }
+    return shell.openExternal(url);
   });
 
   app.on("activate", () => {

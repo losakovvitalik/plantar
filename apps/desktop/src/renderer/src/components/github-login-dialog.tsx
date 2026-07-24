@@ -27,7 +27,9 @@ export function GithubLoginDialog({ open, onOpenChange, onLoggedIn }: Props) {
   // Parents pass an inline arrow; keep it in a ref so a parent re-render does
   // not restart the effect and kick off a second device flow with a new code
   const onLoggedInRef = useRef(onLoggedIn);
-  onLoggedInRef.current = onLoggedIn;
+  useEffect(() => {
+    onLoggedInRef.current = onLoggedIn;
+  });
 
   useEffect(() => {
     if (!open) {
