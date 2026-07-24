@@ -25,12 +25,13 @@ const NETDATA_API = "http://127.0.0.1:19999/api/v1";
 const NETDATA_INFO = `curl -sf --max-time 5 '${NETDATA_API}/info'`;
 
 /**
- * A request to the Netdata data API. The query string carries a chart id taken
- * from the API response, so the whole URL is quoted — no need to reason about
- * which characters may show up in it.
+ * A request to the Netdata data API. The chart id comes from the API response,
+ * so it is escaped for the query string and the whole URL is quoted for the
+ * shell — no need to reason about which characters may show up in it.
  */
-function netdataDataCommand(query: string): string {
-  return `curl -sf --max-time 10 ${shellQuote(`${NETDATA_API}/data?${query}`)}`;
+function netdataDataCommand(chart: string, params: string): string {
+  const url = `${NETDATA_API}/data?chart=${encodeURIComponent(chart)}&${params}`;
+  return `curl -sf --max-time 10 ${shellQuote(url)}`;
 }
 
 /** Конфиг Netdata, который писали прежние версии Plantar, — узнаём его, чтобы обновить */
@@ -504,7 +505,8 @@ export async function getServerMetrics(
   const query = (chart: string) =>
     conn.exec(
       netdataDataCommand(
-        `chart=${chart}&after=-${Math.round(seconds)}&points=120&group=average&format=json`,
+        chart,
+        `after=-${Math.round(seconds)}&points=120&group=average&format=json`,
       ),
     );
 
@@ -794,7 +796,8 @@ async function queryChartSeries(
   const fine = Math.max(points, Math.min(2880, Math.round(seconds / 30)));
   const result = await conn.exec(
     netdataDataCommand(
-      `chart=${chart}&after=-${Math.round(seconds)}&points=${fine}&group=average&format=json`,
+      chart,
+      `after=-${Math.round(seconds)}&points=${fine}&group=average&format=json`,
     ),
   );
   if (result.code !== 0) return [];

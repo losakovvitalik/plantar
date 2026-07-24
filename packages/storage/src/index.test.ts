@@ -49,6 +49,11 @@ function corruptStore(file: string, content = '{"broken":'): string {
   return full;
 }
 
+function seedHistory(records: DeployRecord[]): void {
+  mkdirSync(dataDir(), { recursive: true });
+  writeFileSync(path.join(dataDir(), "history.json"), JSON.stringify(records));
+}
+
 function server(id: string): ServerRecord {
   return { id, name: id, host: "1.2.3.4", port: 22, user: "root", auth: "key" };
 }
@@ -155,16 +160,44 @@ describe("атомарная запись", () => {
     expect(readHistory().map((r) => r.project)).toEqual(["site-c"]);
   });
 
-  it("история не растёт бесконечно: остаются последние 500 записей", () => {
-    const existing = Array.from({ length: 700 }, (_, i) => deploy(`old-${i}`));
-    mkdirSync(dataDir(), { recursive: true });
-    writeFileSync(path.join(dataDir(), "history.json"), JSON.stringify(existing));
+  it("история проекта не растёт бесконечно: остаются последние 200 записей", () => {
+    const existing = Array.from({ length: 300 }, (_, i) => ({
+      ...deploy("site-a"),
+      startedAt: `run-${i}`,
+    }));
+    seedHistory(existing);
 
-    appendHistory(deploy("newest"));
+    appendHistory(deploy("site-a"));
 
     const history = readHistory();
-    expect(history).toHaveLength(500);
-    expect(history[0].project).toBe("old-201");
-    expect(history.at(-1)?.project).toBe("newest");
+    expect(history).toHaveLength(200);
+    expect(history[0].startedAt).toBe("run-101");
+    expect(history.at(-1)?.startedAt).toBe("2026-07-12T10:00:00.000Z");
+  });
+
+  it("активный проект не вытесняет историю остальных", () => {
+    seedHistory([
+      deploy("site-rare"),
+      ...Array.from({ length: 300 }, () => deploy("site-busy")),
+    ]);
+
+    appendHistory(deploy("site-busy"));
+
+    const history = readHistory();
+    expect(history.filter((r) => r.project === "site-rare")).toHaveLength(1);
+    expect(history.filter((r) => r.project === "site-busy")).toHaveLength(200);
+    // Порядок записей сохраняется: старейшая уцелевшая — по-прежнему первая
+    expect(history[0].project).toBe("site-rare");
+  });
+
+  it("один проект на двух серверах: истории не вытесняют друг друга", () => {
+    seedHistory([
+      { ...deploy("site"), host: "5.6.7.8" },
+      ...Array.from({ length: 300 }, () => deploy("site")),
+    ]);
+
+    appendHistory(deploy("site"));
+
+    expect(readHistory().filter((r) => r.host === "5.6.7.8")).toHaveLength(1);
   });
 });
