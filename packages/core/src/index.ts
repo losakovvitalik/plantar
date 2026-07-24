@@ -563,6 +563,14 @@ ${rootLines}
   log(t("nginxConfigured"));
 }
 
+/** certbot account args; the email is user input, so it must be shell-quoted —
+ *  an apostrophe is valid in an email address and would break the command */
+export function certbotAccountArgs(email?: string): string {
+  return email
+    ? `--email ${shellQuote(email)} --no-eff-email`
+    : "--register-unsafely-without-email";
+}
+
 async function setupSsl(
   conn: SshConnection,
   domain: string,
@@ -571,7 +579,7 @@ async function setupSsl(
 ): Promise<void> {
   log(t("configuringHttps", { domain }));
   // С email Let's Encrypt предупредит о проблемах с продлением сертификата
-  const account = email ? `--email '${email}' --no-eff-email` : "--register-unsafely-without-email";
+  const account = certbotAccountArgs(email);
   // --keep-until-expiring: при повторном деплое сертификат не перевыпускается.
   // certbot сам дописывает SSL-блок в наш nginx-конфиг и настраивает редирект с http.
   await run(

@@ -1,5 +1,6 @@
 import type { SshConnection } from "@plantar/ssh";
 import { shellQuote } from "@plantar/ssh";
+import { extractPm2Json } from "./discover";
 import { t } from "./messages";
 
 /**
@@ -83,15 +84,9 @@ export async function waitForStableProcess(
   const result = await conn.exec(`sleep 5; echo "NOW:$(date +%s%3N)"; pm2 jlist 2>/dev/null`);
   const now = Number(result.stdout.match(/^NOW:(\d+)$/m)?.[1]);
 
-  let processes: Pm2Process[] = [];
-  const jsonStart = result.stdout.indexOf("[");
-  if (jsonStart !== -1) {
-    try {
-      processes = JSON.parse(result.stdout.slice(jsonStart)) as Pm2Process[];
-    } catch {
-      /* нечитаемый вывод pm2 — обработается как «процесс не найден» */
-    }
-  }
+  // extractPm2Json skips pm2 service banners; unreadable output → empty list,
+  // handled below as "process not found"
+  const processes = extractPm2Json(result.stdout) as Pm2Process[];
 
   const app = processes.find((p) => p.name === name);
   const stable =

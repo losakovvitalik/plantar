@@ -1856,7 +1856,22 @@ app.whenReady().then(() => {
     }),
   );
 
-  ipcMain.handle("open-external", (_e, url: string) => shell.openExternal(url));
+  // Defense in depth: only web links leave the app — file:// or a custom
+  // scheme could trigger an arbitrary protocol handler on the user's machine
+  ipcMain.handle("open-external", (_e, url: string) => {
+    let protocol: string;
+    try {
+      protocol = new URL(url).protocol;
+    } catch {
+      console.warn("open-external: blocked url", url);
+      return;
+    }
+    if (protocol !== "http:" && protocol !== "https:") {
+      console.warn("open-external: blocked url", url);
+      return;
+    }
+    return shell.openExternal(url);
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

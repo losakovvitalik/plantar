@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SshConnection } from "@plantar/ssh";
 import type { ProjectConfig } from "@plantar/config";
 
-import { deployProject, pickRollbackTarget, rollbackProject } from "./index";
+import { certbotAccountArgs, deployProject, pickRollbackTarget, rollbackProject } from "./index";
 import { t } from "./messages";
 
 interface ExecResult {
@@ -214,5 +214,21 @@ describe("pickRollbackTarget", () => {
 
   it("возвращаться некуда — null", () => {
     expect(pickRollbackTarget(["1"], "1", "1")).toBe(null);
+  });
+});
+
+describe("certbotAccountArgs", () => {
+  it("обычный email оборачивается в кавычки", () => {
+    expect(certbotAccountArgs("user@mail.com")).toBe("--email 'user@mail.com' --no-eff-email");
+  });
+
+  it("апостроф в email экранируется, а не ломает команду", () => {
+    expect(certbotAccountArgs("o'brien@mail.com")).toBe(
+      "--email 'o'\\''brien@mail.com' --no-eff-email",
+    );
+  });
+
+  it("без email — регистрация без почты", () => {
+    expect(certbotAccountArgs(undefined)).toBe("--register-unsafely-without-email");
   });
 });

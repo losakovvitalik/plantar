@@ -81,11 +81,13 @@ interface RawPm2Process {
 
 /** JSON-массив из вывода pm2 jlist; pm2 может напечатать служебные строки до JSON */
 export function extractPm2Json(stdout: string): unknown[] {
-  const jsonStart = stdout.indexOf("[");
-  if (jsonStart === -1) return [];
+  // Service lines like "[PM2] Spawning PM2 daemon..." also start with "[",
+  // so look for a line that actually starts the JSON array: "[{" or "[]"
+  const match = /^\[\s*[{\]]/m.exec(stdout);
+  if (!match) return [];
   let raw: unknown;
   try {
-    raw = JSON.parse(stdout.slice(jsonStart));
+    raw = JSON.parse(stdout.slice(match.index));
   } catch {
     return [];
   }

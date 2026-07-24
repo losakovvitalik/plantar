@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GithubAccount } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
 import { Button } from "./ui/button";
@@ -24,6 +24,13 @@ export function GithubLoginDialog({ open, onOpenChange, onLoggedIn }: Props) {
   const [verificationUri, setVerificationUri] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  // Parents pass an inline arrow; keep it in a ref so a parent re-render does
+  // not restart the effect and kick off a second device flow with a new code
+  const onLoggedInRef = useRef(onLoggedIn);
+  useEffect(() => {
+    onLoggedInRef.current = onLoggedIn;
+  });
+
   useEffect(() => {
     if (!open) {
       setUserCode(null);
@@ -45,13 +52,13 @@ export function GithubLoginDialog({ open, onOpenChange, onLoggedIn }: Props) {
 
       const result = await window.plantar.githubPollLogin(deviceCode, interval, expiresIn);
       if (cancelled) return;
-      if (result.ok) onLoggedIn(result.data);
+      if (result.ok) onLoggedInRef.current(result.data);
       else setError(result.error);
     })();
     return () => {
       cancelled = true;
     };
-  }, [open, onLoggedIn]);
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
