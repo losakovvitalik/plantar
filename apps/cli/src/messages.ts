@@ -9,11 +9,14 @@ const MESSAGES = {
   optHost: { ru: "адрес сервера", en: "server address" },
   optPort: { ru: "SSH-порт", en: "SSH port" },
   optUser: { ru: "имя пользователя", en: "user name" },
-  optPassword: { ru: "пароль (если без ключа)", en: "password (when not using a key)" },
+  optPassword: {
+    ru: "пароль (если без ключа); безопаснее передать его в PLANTAR_PASSWORD",
+    en: "password (when not using a key); safer to pass it in PLANTAR_PASSWORD",
+  },
   optKey: { ru: "путь к приватному ключу", en: "path to the private key" },
   authRequired: {
-    ru: "Нужно указать --password или --key для аутентификации.",
-    en: "Provide --password or --key for authentication.",
+    ru: "Нужно указать --password (или переменную PLANTAR_PASSWORD) либо --key для аутентификации.",
+    en: "Provide --password (or the PLANTAR_PASSWORD variable) or --key for authentication.",
   },
   connected: { ru: "Подключено к {user}@{host}.", en: "Connected to {user}@{host}." },
   disconnected: { ru: "Отключено.", en: "Disconnected." },

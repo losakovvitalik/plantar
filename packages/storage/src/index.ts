@@ -308,10 +308,40 @@ export function readHistory(): DeployRecord[] {
   return Array.isArray(history) ? history : [];
 }
 
+/** How many deploy records are kept per project on a host; older ones are evicted */
+const HISTORY_LIMIT_PER_PROJECT = 200;
+
+/**
+ * Drops the oldest records of every project beyond the limit, keeping the
+ * original order. The cap is per project + host, because that is how history is
+ * read back everywhere: a global cap would let one busy project flush out the
+ * records of a rarely deployed one, and a project whose newest record is gone
+ * while its deploy log is still on disk reads back as an interrupted deploy.
+ */
+function capHistory(history: DeployRecord[]): DeployRecord[] {
+  const kept = new Map<string, number>();
+  const result: DeployRecord[] = [];
+  for (let i = history.length - 1; i >= 0; i--) {
+    const record = history[i];
+    const key = `${record.project} ${record.host}`;
+    const count = kept.get(key) ?? 0;
+    if (count >= HISTORY_LIMIT_PER_PROJECT) continue;
+    kept.set(key, count + 1);
+    result.push(record);
+  }
+  return result.reverse();
+}
+
+/**
+ * The whole file is rewritten on every deploy, so the log is capped instead of
+ * growing forever. Read-modify-write cannot interleave inside one process (the
+ * call is fully synchronous); a deploy from the CLI running at the same time as
+ * one from the app can still lose a record — accepted, the file is a log.
+ */
 export function appendHistory(record: DeployRecord): void {
   const history = readHistory();
   history.push(record);
-  writeJsonAtomic(historyFile(), history);
+  writeJsonAtomic(historyFile(), capHistory(history));
 }
 
 /** Коммит в кэше вкладки «Коммиты» (совпадает по форме с Commit из main/git.ts) */

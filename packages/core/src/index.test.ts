@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { SshConnection } from "@plantar/ssh";
 import type { ProjectConfig } from "@plantar/config";
 
-import { certbotAccountArgs, deployProject, pickRollbackTarget, rollbackProject } from "./index";
+import {
+  certbotAccountArgs,
+  deployProject,
+  logStreamCommand,
+  pickRollbackTarget,
+  rollbackProject,
+} from "./index";
 import { t } from "./messages";
 
 interface ExecResult {
@@ -230,5 +236,25 @@ describe("certbotAccountArgs", () => {
 
   it("без email — регистрация без почты", () => {
     expect(certbotAccountArgs(undefined)).toBe("--register-unsafely-without-email");
+  });
+});
+
+describe("logStreamCommand", () => {
+  it("пути к логам pm2 в кавычках, $HOME остаётся раскрываемым", () => {
+    const command = logStreamCommand("app", "site");
+    expect(command).toContain(`"$HOME/.pm2/logs/"'site-out.log'`);
+    expect(command).toContain(`"$HOME/.pm2/logs/"'site-error.log'`);
+  });
+
+  it("пути к логам nginx в кавычках", () => {
+    const command = logStreamCommand("nginx", "site");
+    expect(command).toContain("'/var/log/nginx/site.access.log'");
+    expect(command).toContain("'/var/log/nginx/site.error.log'");
+  });
+
+  it("апостроф в имени приложения экранируется, а не ломает команду", () => {
+    expect(logStreamCommand("app", "o'brien")).toContain(
+      `"$HOME/.pm2/logs/"'o'\\''brien-out.log'`,
+    );
   });
 });

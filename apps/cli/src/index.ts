@@ -43,7 +43,10 @@ function withConnectionOptions(command: Command): Command {
 }
 
 async function connect(opts: ConnectionOpts): Promise<SshConnection> {
-  if (!opts.password && !opts.key) {
+  // A password in --password is visible in `ps` and in the shell history,
+  // so the environment variable is the preferred way to pass it
+  const password = opts.password ?? process.env.PLANTAR_PASSWORD;
+  if (!password && !opts.key) {
     console.error(t("authRequired"));
     process.exit(1);
   }
@@ -51,7 +54,7 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
     host: opts.host,
     port: Number(opts.port),
     username: opts.user,
-    password: opts.password,
+    password,
     privateKeyPath: opts.key,
   });
   console.log(t("connected", { user: opts.user, host: opts.host }));

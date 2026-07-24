@@ -337,16 +337,17 @@ export function logStreamCommand(
   /** Явные пути к логам — у импортированных приложений они бывают нестандартными */
   paths?: { out: string; err: string },
 ): string {
+  // $HOME has to stay expandable, so only the file name is quoted: the shell
+  // glues the adjacent "$HOME/.pm2/logs/" and 'site-out.log' into one argument
+  const pm2Log = (suffix: string) =>
+    `"$HOME/.pm2/logs/"${shellQuote(`${siteName}-${suffix}.log`)}`;
   const [out, err] = paths
     ? [shellQuote(paths.out), shellQuote(paths.err)]
     : source === "app"
-      ? [
-          `"$HOME/.pm2/logs/${siteName}-out.log"`,
-          `"$HOME/.pm2/logs/${siteName}-error.log"`,
-        ]
+      ? [pm2Log("out"), pm2Log("error")]
       : [
-          `"/var/log/nginx/${siteName}.access.log"`,
-          `"/var/log/nginx/${siteName}.error.log"`,
+          shellQuote(`/var/log/nginx/${siteName}.access.log`),
+          shellQuote(`/var/log/nginx/${siteName}.error.log`),
         ];
   // Жалобы самих tail (нет файла и т.п.) глушатся, чтобы не мешаться с логами;
   // >&2 до 2>/dev/null: сначала stdout уходит в канал stderr, потом stderr tail — в null.
