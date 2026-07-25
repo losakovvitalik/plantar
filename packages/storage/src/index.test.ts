@@ -225,7 +225,7 @@ describe("очистка файлов deploy-логов", () => {
     };
   }
 
-  /** Кладёт файл прогона на диск (историю пишут отдельно); mtime — время прогона */
+  /** Puts a run file on disk (history is seeded separately); mtime = run time */
   function writeLog(project: string, startedAt: string): string {
     const file = logPath(project, startedAt);
     mkdirSync(path.dirname(file), { recursive: true });
@@ -286,7 +286,7 @@ describe("очистка файлов deploy-логов", () => {
 
   it("файл, в который ещё пишут, остаётся, даже если он старее записи", () => {
     seedHistory([]);
-    // Второй прогон того же имени (другой сервер или CLI) начался раньше и идёт
+    // A second run of the same name (another server or the CLI) started earlier and is still going
     const live = writeLog("site", "2026-07-12T09:00:00.000Z");
     utimesSync(live, new Date(), new Date());
 
@@ -297,7 +297,7 @@ describe("очистка файлов deploy-логов", () => {
 
   it("прогон, начатый меньше суток назад, остаётся, даже если давно не писал", () => {
     seedHistory([]);
-    // Долгая сборка на сервере может ничего не писать в лог часами
+    // A long remote build can go hours without writing a single line
     const startedAt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
     const quiet = writeLog("site", startedAt);
 
@@ -314,6 +314,48 @@ describe("очистка файлов deploy-логов", () => {
 
     expect(existsSync(orphan)).toBe(true);
     expect(existsSync(path.join(dataDir(), "history.json.broken"))).toBe(true);
+  });
+
+  it("файл, на который ссылается .broken-копия, переживает и последующие деплои", () => {
+    const referenced = writeLog("site", "2026-07-01T10:00:00.000Z");
+    // Realistic corruption: the old history text survives truncated, so the
+    // recovery copy still references the file by name
+    corruptStore(
+      "history.json",
+      JSON.stringify([run("site", "2026-07-01T10:00:00.000Z")]).slice(0, -2),
+    );
+
+    appendHistory(run("site", "2026-07-12T10:00:00.000Z"));
+    appendHistory(run("site", "2026-07-12T11:00:00.000Z"));
+    appendHistory(run("site", "2026-07-12T12:00:00.000Z"));
+
+    expect(existsSync(referenced)).toBe(true);
+  });
+
+  it("файл без записи и без упоминания в .broken-копии — мусор, он собирается", () => {
+    const orphan = writeLog("site", "2026-07-01T10:00:00.000Z");
+    corruptStore("history.json"); // '{"broken":' — the copy references no files
+
+    appendHistory(run("site", "2026-07-12T10:00:00.000Z"));
+    appendHistory(run("site", "2026-07-12T11:00:00.000Z"));
+
+    // Nothing is recoverable from a copy that names no logs, so the orphan is
+    // unreachable garbage — exactly what the cleanup exists to collect
+    expect(existsSync(orphan)).toBe(false);
+  });
+
+  it("запись без logFile не роняет appendHistory и не прерывает очистку", () => {
+    const orphan = writeLog("site", "2026-07-01T10:00:00.000Z");
+    const valid = writeLog("site", "2026-07-05T10:00:00.000Z");
+    const { logFile: _dropped, ...withoutLogFile } = run("site", "2026-07-03T10:00:00.000Z");
+    seedHistory([withoutLogFile as DeployRecord, run("site", "2026-07-05T10:00:00.000Z")]);
+
+    expect(() => appendHistory(run("site", "2026-07-12T10:00:00.000Z"))).not.toThrow();
+
+    // The malformed records are skipped, not fatal: the pass still ran to the
+    // end (the orphan is gone) and the healthy record's file is untouched
+    expect(existsSync(orphan)).toBe(false);
+    expect(existsSync(valid)).toBe(true);
   });
 
   it("removeProjectHistory убирает записи проекта, не трогая чужие", () => {

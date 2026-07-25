@@ -361,6 +361,24 @@ const LIVE_LOG_WINDOW_MS = 60 * 60 * 1000;
 const RECENT_RUN_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * Log filenames referenced by the <history>.broken recovery copy, or null when
+ * the copy exists but cannot be read. The copy is corrupted JSON — parsing it
+ * is off the table — but the filenames in it still appear literally in the
+ * text (path separators and quotes cannot occur inside a name), and they are
+ * exactly the logs a manual recovery would resurrect. An unreadable copy
+ * yields null: the caller must not prune blind while recovery data may exist.
+ */
+function brokenHistoryLogNames(): Set<string> | null {
+  const marker = `${historyFile()}.broken`;
+  if (!existsSync(marker)) return new Set();
+  try {
+    return new Set(readFileSync(marker, "utf8").match(/deploy-[^"\\/]+\.log/g) ?? []);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Deletes the run files of records the cap has evicted: they are unreachable
  * from the UI (a log is only opened through the logFile of a record), while a
  * single build log easily takes hundreds of kilobytes.
@@ -381,11 +399,26 @@ const RECENT_RUN_WINDOW_MS = 24 * 60 * 60 * 1000;
  * (a long remote build writes nothing for a while) would still look dead by
  * mtime, so a run started within the last day is kept as well: too conservative
  * costs a few stale files, too eager loses a running deploy's log.
+ *
+ * Finally, every filename appearing in the <history>.broken recovery copy is
+ * treated as alive for as long as the copy exists: those are exactly the logs
+ * a manual recovery of the copy would point back at, and deleting them would
+ * defeat the point of keeping it.
  */
 function pruneDeployLogs(project: string, history: DeployRecord[]): void {
-  const records = history.filter((r) => r.project === project);
+  // A hand-edited or foreign history.json can hold anything Array.isArray lets
+  // through. A malformed record (not an object, or no logFile string) is
+  // skipped rather than trusted: it must neither abort the pass for the
+  // healthy records nor throw out of appendHistory — on the desktop success
+  // path that would report a deploy that actually succeeded as failed.
+  const records = history.filter(
+    (r) => r != null && r.project === project && typeof r.logFile === "string",
+  );
   if (records.length === 0) return;
+  const referenced = brokenHistoryLogNames();
+  if (referenced === null) return;
   const kept = new Set(records.map((r) => path.basename(r.logFile)));
+  for (const name of referenced) kept.add(name);
   const newest = records.reduce(
     (max, r) => (r.startedAt > max ? r.startedAt : max),
     records[0].startedAt,
@@ -448,9 +481,12 @@ export function appendHistory(record: DeployRecord): void {
   const history = [...(previous ?? []), record];
   const capped = capHistory(history);
   writeJsonAtomic(historyFile(), capped);
-  // A lost history knows about this one record only, so pruning against it
-  // would delete every other log of the project — including the files the
-  // <file>.broken copy still points at, the whole point of keeping that copy.
+  // A degraded read skips pruning for this one append: the history just
+  // written knows about this single record only. The skip alone would merely
+  // delay the problem by one deploy — the next append reads that one-record
+  // history back as healthy — so the durable protection lives inside
+  // pruneDeployLogs itself: every filename in the <file>.broken recovery copy
+  // stays alive for as long as the copy exists, however many deploys later.
   // A genuinely fresh install has nothing to prune anyway.
   if (previous !== null) pruneDeployLogs(record.project, capped);
 }
