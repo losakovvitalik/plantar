@@ -68,6 +68,7 @@ import {
   readServers,
   readSettings,
   readStatusTabCache,
+  removeProjectHistory,
   removeProjectLogs,
   reposDir,
   resolveLastRun,
@@ -1304,9 +1305,12 @@ app.whenReady().then(() => {
       writeProjects(remaining);
       // The log directory is keyed by name only, so it is removed only when no
       // remaining project resolves to that name: the same app deployed to a
-      // staging and a production server shares one directory
+      // staging and a production server shares one directory. The history
+      // records go with the files — they are keyed by name too, and rows whose
+      // log no longer exists would come back if that name were added again
       if (name !== null && !remaining.some((p) => currentProjectName(p) === name)) {
         removeProjectLogs(name);
+        removeProjectHistory(name);
       }
       // Убираем осиротевший снимок кэша коммитов
       const cache = readCommitsCache();

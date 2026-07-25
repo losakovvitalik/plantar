@@ -6,6 +6,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -20,6 +21,7 @@ import {
   readServers,
   readSettings,
   readStatusTabCache,
+  removeProjectHistory,
   removeProjectLogs,
   writeServers,
   writeSettings,
@@ -223,11 +225,13 @@ describe("очистка файлов deploy-логов", () => {
     };
   }
 
-  /** Кладёт файл прогона на диск (историю пишут отдельно) */
+  /** Кладёт файл прогона на диск (историю пишут отдельно); mtime — время прогона */
   function writeLog(project: string, startedAt: string): string {
     const file = logPath(project, startedAt);
     mkdirSync(path.dirname(file), { recursive: true });
     writeFileSync(file, "log");
+    const time = new Date(startedAt);
+    utimesSync(file, time, time);
     return file;
   }
 
@@ -276,6 +280,27 @@ describe("очистка файлов deploy-логов", () => {
     appendHistory(run("site", "2026-07-12T10:00:00.000Z"));
 
     expect(existsSync(otherHost)).toBe(true);
+  });
+
+  it("файл, в который ещё пишут, остаётся, даже если он старее записи", () => {
+    // Второй прогон того же имени (другой сервер или CLI) начался раньше и идёт
+    const live = writeLog("site", "2026-07-12T09:00:00.000Z");
+    utimesSync(live, new Date(), new Date());
+
+    appendHistory(run("site", "2026-07-12T10:00:00.000Z"));
+
+    expect(readFileSync(live, "utf8")).toBe("log");
+  });
+
+  it("removeProjectHistory убирает записи проекта, не трогая чужие", () => {
+    seedHistory([
+      run("site-a", "2026-07-01T10:00:00.000Z"),
+      run("site-b", "2026-07-01T10:00:00.000Z"),
+    ]);
+
+    removeProjectHistory("site-a");
+
+    expect(readHistory().map((r) => r.project)).toEqual(["site-b"]);
   });
 
   it("removeProjectLogs убирает папку проекта и не выходит за пределы logs", () => {

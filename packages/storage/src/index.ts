@@ -340,6 +340,9 @@ function safeLogDir(project: string): string | null {
   return dir.startsWith(root) ? dir : null;
 }
 
+/** A log touched more recently than this is treated as still being written */
+const LIVE_LOG_WINDOW_MS = 60 * 60 * 1000;
+
 /**
  * Deletes the run files of records the cap has evicted: they are unreachable
  * from the UI (a log is only opened through the logFile of a record), while a
@@ -351,6 +354,13 @@ function safeLogDir(project: string): string | null {
  * the file of a deploy still in flight (from the CLI, say) whose record does not
  * exist yet. Records of every host are taken into account — the cap is per
  * project + host, but a project deployed to two servers shares one directory.
+ *
+ * The name of a file, though, only says when its run started: an overlapping
+ * run that started earlier (the same app on a staging and a production server,
+ * or the CLI next to the app) is still appending to a file older than the
+ * record just written. Deleting it would not even free the space —
+ * appendFileSync recreates the file — it would only lose the run's log, so a
+ * recently written file is left alone regardless of its name.
  */
 function pruneDeployLogs(project: string, history: DeployRecord[]): void {
   const records = history.filter((r) => r.project === project);
@@ -367,15 +377,28 @@ function pruneDeployLogs(project: string, history: DeployRecord[]): void {
       if (!/^deploy-.*\.log$/.test(name) || kept.has(name)) continue;
       const time = deployLogTimestamp(name);
       if (time === null || time > newest) continue;
+      const file = path.join(dir, name);
       try {
-        rmSync(path.join(dir, name));
+        if (statSync(file).mtimeMs > Date.now() - LIVE_LOG_WINDOW_MS) continue;
+        rmSync(file);
       } catch {
-        // best effort — a locked file must not fail the deploy
+        // best effort — a locked or vanished file must not fail the deploy
       }
     }
   } catch {
     // best effort — an unreadable directory must not fail the deploy
   }
+}
+
+/**
+ * Drops the history records of a project — for when the project itself is
+ * removed together with its logs: a record whose file is gone would open as a
+ * raw filesystem error if the project were added again under the same name.
+ */
+export function removeProjectHistory(project: string): void {
+  const history = readHistory();
+  const kept = history.filter((r) => r.project !== project);
+  if (kept.length !== history.length) writeJsonAtomic(historyFile(), kept);
 }
 
 /** Deletes all logs of a project — for when the project itself is removed */
