@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -19,6 +20,7 @@ import {
   readServers,
   readSettings,
   readStatusTabCache,
+  removeProjectLogs,
   writeServers,
   writeSettings,
   type DeployRecord,
@@ -199,5 +201,93 @@ describe("атомарная запись", () => {
     appendHistory(deploy("site"));
 
     expect(readHistory().filter((r) => r.host === "5.6.7.8")).toHaveLength(1);
+  });
+});
+
+describe("очистка файлов deploy-логов", () => {
+  function logPath(project: string, startedAt: string): string {
+    return path.join(
+      dataDir(),
+      "logs",
+      project,
+      `deploy-${startedAt.replace(/[:.]/g, "-")}.log`,
+    );
+  }
+
+  function run(project: string, startedAt: string): DeployRecord {
+    return {
+      ...deploy(project),
+      startedAt,
+      finishedAt: startedAt,
+      logFile: logPath(project, startedAt),
+    };
+  }
+
+  /** Кладёт файл прогона на диск (историю пишут отдельно) */
+  function writeLog(project: string, startedAt: string): string {
+    const file = logPath(project, startedAt);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, "log");
+    return file;
+  }
+
+  it("файл вытесненной записи удаляется с диска", () => {
+    const evicted = writeLog("site-a", "2026-07-01T10:00:00.000Z");
+    const survivor = writeLog("site-a", "2026-07-09T10:00:00.000Z");
+    seedHistory([
+      run("site-a", "2026-07-01T10:00:00.000Z"),
+      ...Array.from({ length: 199 }, (_, i) =>
+        run("site-a", `2026-07-02T10:00:00.${String(i).padStart(3, "0")}Z`),
+      ),
+    ]);
+
+    appendHistory(run("site-a", "2026-07-09T10:00:00.000Z"));
+
+    expect(existsSync(evicted)).toBe(false);
+    expect(existsSync(survivor)).toBe(true);
+  });
+
+  it("свежий файл без записи остаётся: это прерванный прогон", () => {
+    const interrupted = writeLog("site-a", "2026-07-12T11:00:00.000Z");
+
+    appendHistory(run("site-a", "2026-07-12T10:00:00.000Z"));
+
+    expect(existsSync(interrupted)).toBe(true);
+  });
+
+  it("снимки серверных логов не удаляются", () => {
+    const orphan = writeLog("site-a", "2026-07-01T10:00:00.000Z");
+    const access = path.join(path.dirname(orphan), "nginx-access.log");
+    const error = path.join(path.dirname(orphan), "nginx-error.log");
+    writeFileSync(access, "access");
+    writeFileSync(error, "error");
+
+    appendHistory(run("site-a", "2026-07-12T10:00:00.000Z"));
+
+    expect(existsSync(orphan)).toBe(false);
+    expect(existsSync(access)).toBe(true);
+    expect(existsSync(error)).toBe(true);
+  });
+
+  it("файл записи с другого сервера остаётся: папка логов у проекта одна", () => {
+    const otherHost = writeLog("site", "2026-07-01T10:00:00.000Z");
+    seedHistory([{ ...run("site", "2026-07-01T10:00:00.000Z"), host: "5.6.7.8" }]);
+
+    appendHistory(run("site", "2026-07-12T10:00:00.000Z"));
+
+    expect(existsSync(otherHost)).toBe(true);
+  });
+
+  it("removeProjectLogs убирает папку проекта и не выходит за пределы logs", () => {
+    const file = writeLog("site-a", "2026-07-01T10:00:00.000Z");
+    const dir = path.dirname(file);
+    const repos = path.join(dataDir(), "repos");
+    mkdirSync(repos, { recursive: true });
+
+    removeProjectLogs("../repos");
+    expect(existsSync(repos)).toBe(true);
+
+    removeProjectLogs("site-a");
+    expect(existsSync(dir)).toBe(false);
   });
 });

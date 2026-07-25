@@ -68,6 +68,7 @@ import {
   readServers,
   readSettings,
   readStatusTabCache,
+  removeProjectLogs,
   reposDir,
   resolveLastRun,
   saveServerLogSnapshot,
@@ -181,6 +182,15 @@ function relatedFilePath(project: ProjectRecord, id: RelatedFileId): string {
       : nginxRelatedPaths(config.name).find((file) => file.id === id);
   if (!found) throw new Error(t("fileNotFound"));
   return found.path;
+}
+
+/** Current name of a project: from plantar.json, falling back to the stored one */
+function currentProjectName(project: ProjectRecord): string {
+  try {
+    return projectConfig(project).name;
+  } catch {
+    return project.name;
+  }
 }
 
 /** Записи истории деплоев проекта, новыми вперёд (имя берём из plantar.json, с фолбэком) */
@@ -1287,8 +1297,17 @@ app.whenReady().then(() => {
   ipcMain.handle("projects:remove", (_e, id: string) =>
     toResult(async () => {
       const project = readProjects().find((p) => p.id === id);
+      // Resolve the name before the clone goes away — it comes from plantar.json
+      const name = project ? currentProjectName(project) : null;
       if (project?.source === "git") removeCloneDir(project.path);
-      writeProjects(readProjects().filter((p) => p.id !== id));
+      const remaining = readProjects().filter((p) => p.id !== id);
+      writeProjects(remaining);
+      // The log directory is keyed by name only, so it is removed only when no
+      // remaining project resolves to that name: the same app deployed to a
+      // staging and a production server shares one directory
+      if (name !== null && !remaining.some((p) => currentProjectName(p) === name)) {
+        removeProjectLogs(name);
+      }
       // Убираем осиротевший снимок кэша коммитов
       const cache = readCommitsCache();
       if (id in cache) {

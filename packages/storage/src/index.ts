@@ -18,6 +18,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { type Language, systemLanguage } from "@plantar/i18n";
+import { deployLogTimestamp } from "./last-run";
 
 export type { Language } from "@plantar/i18n";
 export { type LastDeployRun, deployLogTimestamp, resolveLastRun } from "./last-run";
@@ -332,6 +333,62 @@ function capHistory(history: DeployRecord[]): DeployRecord[] {
   return result.reverse();
 }
 
+/** Log directory of a project, or null when the name escapes <dataDir>/logs */
+function safeLogDir(project: string): string | null {
+  const root = path.join(dataDir(), "logs") + path.sep;
+  const dir = path.resolve(path.join(dataDir(), "logs", project));
+  return dir.startsWith(root) ? dir : null;
+}
+
+/**
+ * Deletes the run files of records the cap has evicted: they are unreachable
+ * from the UI (a log is only opened through the logFile of a record), while a
+ * single build log easily takes hundreds of kilobytes.
+ *
+ * Matching is strict on deploy-*.log, so the nginx snapshots living in the same
+ * directory survive. A file newer than the project's newest record is kept:
+ * resolveLastRun reads it as an interrupted run after a restart, and it is also
+ * the file of a deploy still in flight (from the CLI, say) whose record does not
+ * exist yet. Records of every host are taken into account — the cap is per
+ * project + host, but a project deployed to two servers shares one directory.
+ */
+function pruneDeployLogs(project: string, history: DeployRecord[]): void {
+  const records = history.filter((r) => r.project === project);
+  if (records.length === 0) return;
+  const kept = new Set(records.map((r) => path.basename(r.logFile)));
+  const newest = records.reduce(
+    (max, r) => (r.startedAt > max ? r.startedAt : max),
+    records[0].startedAt,
+  );
+  const dir = safeLogDir(project);
+  if (dir === null || !existsSync(dir)) return;
+  try {
+    for (const name of readdirSync(dir)) {
+      if (!/^deploy-.*\.log$/.test(name) || kept.has(name)) continue;
+      const time = deployLogTimestamp(name);
+      if (time === null || time > newest) continue;
+      try {
+        rmSync(path.join(dir, name));
+      } catch {
+        // best effort — a locked file must not fail the deploy
+      }
+    }
+  } catch {
+    // best effort — an unreadable directory must not fail the deploy
+  }
+}
+
+/** Deletes all logs of a project — for when the project itself is removed */
+export function removeProjectLogs(project: string): void {
+  const dir = safeLogDir(project);
+  if (dir === null) return;
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // best effort — a locked file must not fail removing the project
+  }
+}
+
 /**
  * The whole file is rewritten on every deploy, so the log is capped instead of
  * growing forever. Read-modify-write cannot interleave inside one process (the
@@ -341,7 +398,9 @@ function capHistory(history: DeployRecord[]): DeployRecord[] {
 export function appendHistory(record: DeployRecord): void {
   const history = readHistory();
   history.push(record);
-  writeJsonAtomic(historyFile(), capHistory(history));
+  const capped = capHistory(history);
+  writeJsonAtomic(historyFile(), capped);
+  pruneDeployLogs(record.project, capped);
 }
 
 /** Коммит в кэше вкладки «Коммиты» (совпадает по форме с Commit из main/git.ts) */
