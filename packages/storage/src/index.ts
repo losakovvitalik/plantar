@@ -175,12 +175,13 @@ export interface ProjectRecord {
 }
 
 /**
- * Reads a JSON store, degrading to a fallback when the file is missing or
- * corrupted: a broken store must never crash startup. The corrupted file is
- * kept as <file>.broken (first occurrence only) so data can be recovered.
+ * Reads a JSON store, or null when the file is missing or corrupted. The
+ * corrupted file is kept as <file>.broken (first occurrence only) so data can
+ * be recovered — hence the separate null: a caller that deletes files the store
+ * points at must be able to tell a lost store from an empty one.
  */
-function readJsonSafe<T>(file: string, fallback: T): T {
-  if (!existsSync(file)) return fallback;
+function readJsonOrNull<T>(file: string): T | null {
+  if (!existsSync(file)) return null;
   try {
     return JSON.parse(readFileSync(file, "utf8")) as T;
   } catch (err) {
@@ -191,8 +192,16 @@ function readJsonSafe<T>(file: string, fallback: T): T {
     } catch {
       // best effort — recovering the backup must not introduce a new crash
     }
-    return fallback;
+    return null;
   }
+}
+
+/**
+ * Reads a JSON store, degrading to a fallback when the file is missing or
+ * corrupted: a broken store must never crash startup.
+ */
+function readJsonSafe<T>(file: string, fallback: T): T {
+  return readJsonOrNull<T>(file) ?? fallback;
 }
 
 /**
@@ -303,10 +312,15 @@ function historyFile(): string {
   return path.join(dataDir(), "history.json");
 }
 
-export function readHistory(): DeployRecord[] {
-  const history = readJsonSafe<DeployRecord[]>(historyFile(), []);
+/** History as it is on disk; null — the file is missing, corrupted or not a list */
+function readHistoryOrNull(): DeployRecord[] | null {
+  const history = readJsonOrNull<DeployRecord[]>(historyFile());
   // Same wrong-shape guard as readJsonList — appendHistory pushes into this
-  return Array.isArray(history) ? history : [];
+  return Array.isArray(history) ? history : null;
+}
+
+export function readHistory(): DeployRecord[] {
+  return readHistoryOrNull() ?? [];
 }
 
 /** How many deploy records are kept per project on a host; older ones are evicted */
@@ -343,6 +357,9 @@ function safeLogDir(project: string): string | null {
 /** A log touched more recently than this is treated as still being written */
 const LIVE_LOG_WINDOW_MS = 60 * 60 * 1000;
 
+/** A run started more recently than this is never reclaimed, however quiet its file */
+const RECENT_RUN_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Deletes the run files of records the cap has evicted: they are unreachable
  * from the UI (a log is only opened through the logFile of a record), while a
@@ -360,7 +377,10 @@ const LIVE_LOG_WINDOW_MS = 60 * 60 * 1000;
  * or the CLI next to the app) is still appending to a file older than the
  * record just written. Deleting it would not even free the space —
  * appendFileSync recreates the file — it would only lose the run's log, so a
- * recently written file is left alone regardless of its name.
+ * recently written file is left alone regardless of its name. A quiet stretch
+ * (a long remote build writes nothing for a while) would still look dead by
+ * mtime, so a run started within the last day is kept as well: too conservative
+ * costs a few stale files, too eager loses a running deploy's log.
  */
 function pruneDeployLogs(project: string, history: DeployRecord[]): void {
   const records = history.filter((r) => r.project === project);
@@ -377,6 +397,7 @@ function pruneDeployLogs(project: string, history: DeployRecord[]): void {
       if (!/^deploy-.*\.log$/.test(name) || kept.has(name)) continue;
       const time = deployLogTimestamp(name);
       if (time === null || time > newest) continue;
+      if (Date.parse(time) > Date.now() - RECENT_RUN_WINDOW_MS) continue;
       const file = path.join(dir, name);
       try {
         if (statSync(file).mtimeMs > Date.now() - LIVE_LOG_WINDOW_MS) continue;
@@ -396,9 +417,13 @@ function pruneDeployLogs(project: string, history: DeployRecord[]): void {
  * raw filesystem error if the project were added again under the same name.
  */
 export function removeProjectHistory(project: string): void {
-  const history = readHistory();
-  const kept = history.filter((r) => r.project !== project);
-  if (kept.length !== history.length) writeJsonAtomic(historyFile(), kept);
+  try {
+    const history = readHistory();
+    const kept = history.filter((r) => r.project !== project);
+    if (kept.length !== history.length) writeJsonAtomic(historyFile(), kept);
+  } catch {
+    // best effort — a failed write must not fail removing the project
+  }
 }
 
 /** Deletes all logs of a project — for when the project itself is removed */
@@ -419,11 +444,15 @@ export function removeProjectLogs(project: string): void {
  * one from the app can still lose a record — accepted, the file is a log.
  */
 export function appendHistory(record: DeployRecord): void {
-  const history = readHistory();
-  history.push(record);
+  const previous = readHistoryOrNull();
+  const history = [...(previous ?? []), record];
   const capped = capHistory(history);
   writeJsonAtomic(historyFile(), capped);
-  pruneDeployLogs(record.project, capped);
+  // A lost history knows about this one record only, so pruning against it
+  // would delete every other log of the project — including the files the
+  // <file>.broken copy still points at, the whole point of keeping that copy.
+  // A genuinely fresh install has nothing to prune anyway.
+  if (previous !== null) pruneDeployLogs(record.project, capped);
 }
 
 /** Коммит в кэше вкладки «Коммиты» (совпадает по форме с Commit из main/git.ts) */

@@ -252,6 +252,7 @@ describe("очистка файлов deploy-логов", () => {
   });
 
   it("свежий файл без записи остаётся: это прерванный прогон", () => {
+    seedHistory([]);
     const interrupted = writeLog("site-a", "2026-07-12T11:00:00.000Z");
 
     appendHistory(run("site-a", "2026-07-12T10:00:00.000Z"));
@@ -260,6 +261,7 @@ describe("очистка файлов deploy-логов", () => {
   });
 
   it("снимки серверных логов не удаляются", () => {
+    seedHistory([]);
     const orphan = writeLog("site-a", "2026-07-01T10:00:00.000Z");
     const access = path.join(path.dirname(orphan), "nginx-access.log");
     const error = path.join(path.dirname(orphan), "nginx-error.log");
@@ -283,6 +285,7 @@ describe("очистка файлов deploy-логов", () => {
   });
 
   it("файл, в который ещё пишут, остаётся, даже если он старее записи", () => {
+    seedHistory([]);
     // Второй прогон того же имени (другой сервер или CLI) начался раньше и идёт
     const live = writeLog("site", "2026-07-12T09:00:00.000Z");
     utimesSync(live, new Date(), new Date());
@@ -290,6 +293,27 @@ describe("очистка файлов deploy-логов", () => {
     appendHistory(run("site", "2026-07-12T10:00:00.000Z"));
 
     expect(readFileSync(live, "utf8")).toBe("log");
+  });
+
+  it("прогон, начатый меньше суток назад, остаётся, даже если давно не писал", () => {
+    seedHistory([]);
+    // Долгая сборка на сервере может ничего не писать в лог часами
+    const startedAt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    const quiet = writeLog("site", startedAt);
+
+    appendHistory(run("site", new Date().toISOString()));
+
+    expect(existsSync(quiet)).toBe(true);
+  });
+
+  it("битая история не удаляет логи: по ним ещё можно восстановить записи", () => {
+    const orphan = writeLog("site-a", "2026-07-01T10:00:00.000Z");
+    corruptStore("history.json");
+
+    appendHistory(run("site-a", "2026-07-12T10:00:00.000Z"));
+
+    expect(existsSync(orphan)).toBe(true);
+    expect(existsSync(path.join(dataDir(), "history.json.broken"))).toBe(true);
   });
 
   it("removeProjectHistory убирает записи проекта, не трогая чужие", () => {
