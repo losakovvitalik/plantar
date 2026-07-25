@@ -186,22 +186,35 @@ function relatedFilePath(project: ProjectRecord, id: RelatedFileId): string {
   return found.path;
 }
 
+/** The name the project goes by now: from plantar.json, with the record as fallback */
+function currentName(project: ProjectRecord): string {
+  try {
+    return projectConfig(project).name;
+  } catch {
+    /* plantar.json недоступен — используем имя на момент добавления */
+    return project.name;
+  }
+}
+
 /**
- * Проект для поиска его записей в истории: id записи проекта плюс все имена,
- * под которыми он деплоился, — прогоны до переименования записаны под прежним
- * именем и без id (из CLI или до появления поля).
+ * The project to look its history records up by: the id of the project record
+ * plus every name it deployed under — runs from before a rename are recorded
+ * under the previous name and without an id (from the CLI or before the field
+ * existed).
  */
 function historyIdentity(project: ProjectRecord): ProjectHistoryIdentity {
   const server = getServer(project.serverId);
-  let name = project.name;
-  try {
-    name = projectConfig(project).name;
-  } catch {
-    /* plantar.json недоступен — используем имя на момент добавления */
-  }
+  const hostOf = new Map(readServers().map((s) => [s.id, s.host]));
+  // A previous name that another project on the same host goes by today belongs
+  // to that project: its records and its log directory are no longer ours
+  const taken = new Set(
+    readProjects()
+      .filter((p) => p.id !== project.id && hostOf.get(p.serverId) === server.host)
+      .map((p) => currentName(p)),
+  );
   return {
     projectId: project.id,
-    names: [name, ...projectNames(project)],
+    names: [currentName(project), ...projectNames(project).filter((n) => !taken.has(n))],
     host: server.host,
   };
 }
@@ -215,8 +228,8 @@ function projectHistory(project: ProjectRecord): DeployRecord[] {
 }
 
 /**
- * Прежние имена проекта после переименования: под старым именем остаются
- * записи истории и папка логов, поэтому имя запоминается, а не теряется
+ * The names the project was renamed from: the history records and the log
+ * directory stay under the old name, so the name is remembered, not lost
  */
 function previousNamesAfterRename(
   project: ProjectRecord,

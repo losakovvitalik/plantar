@@ -164,8 +164,8 @@ export interface ProjectRecord {
   serverId: string;
   /** name из plantar.json на момент добавления */
   name: string;
-  /** Имена, под которыми проект деплоился раньше (до переименований);
-   *  по ним находятся прежние записи истории и папки логов */
+  /** The names the project deployed under before its renames; its earlier
+   *  history records and log directories are found by them */
   previousNames?: string[];
   /** Локальная папка проекта; для git-источника — путь к клону в reposDir();
    *  у импортированного с сервера проекта пусто, пока папка не привязана */
@@ -295,9 +295,9 @@ export function reposDir(): string {
 export interface DeployRecord {
   project: string;
   host: string;
-  /** Проект, которому принадлежит запись. Пусто у записей CLI (он деплоит из
-   *  папки и записи проекта не имеет) и у записей до появления поля —
-   *  такие ищутся по имени + адресу сервера */
+  /** The project the record belongs to. Empty on CLI records (it deploys from
+   *  a directory and has no project record) and on records written before the
+   *  field existed — those are looked up by name + host */
   projectId?: string;
   startedAt: string;
   finishedAt: string;
@@ -325,16 +325,16 @@ export function readHistory(): DeployRecord[] {
   return Array.isArray(history) ? history : [];
 }
 
-/** Все имена, под которыми проект деплоился: текущее первым */
+/** Every name the project deployed under, the current one first */
 export function projectNames(project: ProjectRecord): string[] {
   return [project.name, ...(project.previousNames ?? [])];
 }
 
-/** Проект, чью историю ищем: id записи проекта, его имена и адрес сервера */
+/** The project whose history is looked up: its id, its names and its host */
 export interface ProjectHistoryIdentity {
-  /** Отсутствует у вызывающих без записи проекта (CLI) */
-  projectId?: string;
-  /** Текущее имя и все прежние — под ними записаны прогоны до переименования */
+  projectId: string;
+  /** The current name and every previous one — runs from before a rename are
+   *  recorded under the name of the time */
   names: string[];
   host: string;
 }
@@ -351,9 +351,7 @@ export function matchesProject(
   record: DeployRecord,
   identity: ProjectHistoryIdentity,
 ): boolean {
-  if (record.projectId && identity.projectId) {
-    return record.projectId === identity.projectId;
-  }
+  if (record.projectId) return record.projectId === identity.projectId;
   return record.host === identity.host && identity.names.includes(record.project);
 }
 
