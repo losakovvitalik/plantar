@@ -71,6 +71,8 @@ import {
   readServers,
   readSettings,
   readStatusTabCache,
+  removeProjectHistory,
+  removeProjectLogs,
   reposDir,
   resolveLastRun,
   saveServerLogSnapshot,
@@ -1327,8 +1329,31 @@ app.whenReady().then(() => {
   ipcMain.handle("projects:remove", (_e, id: string) =>
     toResult(async () => {
       const project = readProjects().find((p) => p.id === id);
+      // Resolve the names before the clone goes away — the current one comes
+      // from plantar.json. Every name the project deployed under is cleaned up,
+      // not only the current one: the runs from before a rename live in the
+      // directory of the name of the time
+      const names = project
+        ? [...new Set([currentName(project), ...projectNames(project)])]
+        : [];
       if (project?.source === "git") removeCloneDir(project.path);
-      writeProjects(readProjects().filter((p) => p.id !== id));
+      const remaining = readProjects().filter((p) => p.id !== id);
+      writeProjects(remaining);
+      // The log directory is keyed by name only, so a name is cleaned up only
+      // when no remaining project claims it — either as its current name (the
+      // same app deployed to a staging and a production server shares one
+      // directory) or as a name it was renamed from, whose earlier runs are
+      // still in that directory. The history records go with the files: records
+      // without an id are keyed by name too, and rows whose log no longer exists
+      // would come back if that name were added again
+      const claimed = new Set(
+        remaining.flatMap((p) => [currentName(p), ...projectNames(p)]),
+      );
+      for (const name of names) {
+        if (claimed.has(name)) continue;
+        removeProjectLogs(name);
+        removeProjectHistory(name);
+      }
       // Убираем осиротевший снимок кэша коммитов
       const cache = readCommitsCache();
       if (id in cache) {

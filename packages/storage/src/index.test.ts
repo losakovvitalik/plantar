@@ -1,10 +1,12 @@
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -21,6 +23,8 @@ import {
   readServers,
   readSettings,
   readStatusTabCache,
+  removeProjectHistory,
+  removeProjectLogs,
   writeProjects,
   writeServers,
   writeSettings,
@@ -274,5 +278,202 @@ describe("история переименованного проекта", () =>
     appendHistory(deploy("site-new", "prj-1"));
 
     expect(readHistory()).toHaveLength(200);
+  });
+});
+
+describe("очистка файлов deploy-логов", () => {
+  function logPath(project: string, startedAt: string): string {
+    return path.join(
+      dataDir(),
+      "logs",
+      project,
+      `deploy-${startedAt.replace(/[:.]/g, "-")}.log`,
+    );
+  }
+
+  function run(project: string, startedAt: string): DeployRecord {
+    return {
+      ...deploy(project),
+      startedAt,
+      finishedAt: startedAt,
+      logFile: logPath(project, startedAt),
+    };
+  }
+
+  /** Puts a run file on disk (history is seeded separately); mtime = run time */
+  function writeLog(project: string, startedAt: string): string {
+    const file = logPath(project, startedAt);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, "log");
+    const time = new Date(startedAt);
+    utimesSync(file, time, time);
+    return file;
+  }
+
+  it("файл вытесненной записи удаляется с диска", () => {
+    const evicted = writeLog("site-a", "2026-07-01T10:00:00.000Z");
+    const survivor = writeLog("site-a", "2026-07-09T10:00:00.000Z");
+    seedHistory([
+      run("site-a", "2026-07-01T10:00:00.000Z"),
+      ...Array.from({ length: 199 }, (_, i) =>
+        run("site-a", `2026-07-02T10:00:00.${String(i).padStart(3, "0")}Z`),
+      ),
+    ]);
+
+    appendHistory(run("site-a", "2026-07-09T10:00:00.000Z"));
+
+    expect(existsSync(evicted)).toBe(false);
+    expect(existsSync(survivor)).toBe(true);
+  });
+
+  it("свежий файл без записи остаётся: это прерванный прогон", () => {
+    seedHistory([]);
+    const interrupted = writeLog("site-a", "2026-07-12T11:00:00.000Z");
+
+    appendHistory(run("site-a", "2026-07-12T10:00:00.000Z"));
+
+    expect(existsSync(interrupted)).toBe(true);
+  });
+
+  it("снимки серверных логов не удаляются", () => {
+    seedHistory([]);
+    const orphan = writeLog("site-a", "2026-07-01T10:00:00.000Z");
+    const access = path.join(path.dirname(orphan), "nginx-access.log");
+    const error = path.join(path.dirname(orphan), "nginx-error.log");
+    writeFileSync(access, "access");
+    writeFileSync(error, "error");
+
+    appendHistory(run("site-a", "2026-07-12T10:00:00.000Z"));
+
+    expect(existsSync(orphan)).toBe(false);
+    expect(existsSync(access)).toBe(true);
+    expect(existsSync(error)).toBe(true);
+  });
+
+  it("файл записи с другого сервера остаётся: папка логов у проекта одна", () => {
+    const otherHost = writeLog("site", "2026-07-01T10:00:00.000Z");
+    seedHistory([{ ...run("site", "2026-07-01T10:00:00.000Z"), host: "5.6.7.8" }]);
+
+    appendHistory(run("site", "2026-07-12T10:00:00.000Z"));
+
+    expect(existsSync(otherHost)).toBe(true);
+  });
+
+  it("файл, в который ещё пишут, остаётся, даже если он старее записи", () => {
+    seedHistory([]);
+    // A second run of the same name (another server or the CLI) started earlier and is still going
+    const live = writeLog("site", "2026-07-12T09:00:00.000Z");
+    utimesSync(live, new Date(), new Date());
+
+    appendHistory(run("site", "2026-07-12T10:00:00.000Z"));
+
+    expect(readFileSync(live, "utf8")).toBe("log");
+  });
+
+  it("прогон, начатый меньше суток назад, остаётся, даже если давно не писал", () => {
+    seedHistory([]);
+    // A long remote build can go hours without writing a single line
+    const startedAt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    const quiet = writeLog("site", startedAt);
+
+    appendHistory(run("site", new Date().toISOString()));
+
+    expect(existsSync(quiet)).toBe(true);
+  });
+
+  it("битая история не удаляет логи: по ним ещё можно восстановить записи", () => {
+    const orphan = writeLog("site-a", "2026-07-01T10:00:00.000Z");
+    corruptStore("history.json");
+
+    appendHistory(run("site-a", "2026-07-12T10:00:00.000Z"));
+
+    expect(existsSync(orphan)).toBe(true);
+    expect(existsSync(path.join(dataDir(), "history.json.broken"))).toBe(true);
+  });
+
+  it("файл, на который ссылается .broken-копия, переживает и последующие деплои", () => {
+    const referenced = writeLog("site", "2026-07-01T10:00:00.000Z");
+    // Realistic corruption: the old history text survives truncated, so the
+    // recovery copy still references the file by name
+    corruptStore(
+      "history.json",
+      JSON.stringify([run("site", "2026-07-01T10:00:00.000Z")]).slice(0, -2),
+    );
+
+    appendHistory(run("site", "2026-07-12T10:00:00.000Z"));
+    appendHistory(run("site", "2026-07-12T11:00:00.000Z"));
+    appendHistory(run("site", "2026-07-12T12:00:00.000Z"));
+
+    expect(existsSync(referenced)).toBe(true);
+  });
+
+  it("файл без записи и без упоминания в .broken-копии — мусор, он собирается", () => {
+    const orphan = writeLog("site", "2026-07-01T10:00:00.000Z");
+    corruptStore("history.json"); // '{"broken":' — the copy references no files
+
+    appendHistory(run("site", "2026-07-12T10:00:00.000Z"));
+    appendHistory(run("site", "2026-07-12T11:00:00.000Z"));
+
+    // Nothing is recoverable from a copy that names no logs, so the orphan is
+    // unreachable garbage — exactly what the cleanup exists to collect
+    expect(existsSync(orphan)).toBe(false);
+  });
+
+  it("запись без logFile не роняет appendHistory и не прерывает очистку", () => {
+    const orphan = writeLog("site", "2026-07-01T10:00:00.000Z");
+    const valid = writeLog("site", "2026-07-05T10:00:00.000Z");
+    const { logFile: _dropped, ...withoutLogFile } = run("site", "2026-07-03T10:00:00.000Z");
+    seedHistory([withoutLogFile as DeployRecord, run("site", "2026-07-05T10:00:00.000Z")]);
+
+    expect(() => appendHistory(run("site", "2026-07-12T10:00:00.000Z"))).not.toThrow();
+
+    // The malformed records are skipped, not fatal: the pass still ran to the
+    // end (the orphan is gone) and the healthy record's file is untouched
+    expect(existsSync(orphan)).toBe(false);
+    expect(existsSync(valid)).toBe(true);
+  });
+
+  it("removeProjectHistory убирает записи проекта, не трогая чужие", () => {
+    seedHistory([
+      run("site-a", "2026-07-01T10:00:00.000Z"),
+      run("site-b", "2026-07-01T10:00:00.000Z"),
+    ]);
+
+    removeProjectHistory("site-a");
+
+    expect(readHistory().map((r) => r.project)).toEqual(["site-b"]);
+  });
+
+  it("removeProjectLogs убирает папку проекта и не выходит за пределы logs", () => {
+    const file = writeLog("site-a", "2026-07-01T10:00:00.000Z");
+    const dir = path.dirname(file);
+    const repos = path.join(dataDir(), "repos");
+    mkdirSync(repos, { recursive: true });
+
+    removeProjectLogs("../repos");
+    expect(existsSync(repos)).toBe(true);
+
+    removeProjectLogs("site-a");
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it("после переименования чистится и папка старого имени", () => {
+    writeServers([server("srv-1")]);
+    writeProjects([project({ previousNames: ["site-old"] })]);
+    const evicted = writeLog("site-old", "2026-07-01T10:00:00.000Z");
+    const survivor = writeLog("site-old", "2026-07-02T10:00:00.000Z");
+    seedHistory([
+      run("site-old", "2026-07-01T10:00:00.000Z"),
+      ...Array.from({ length: 199 }, (_, i) =>
+        run("site-old", `2026-07-02T10:00:00.${String(i).padStart(3, "0")}Z`),
+      ),
+    ]);
+
+    // Прогоны до переименования лежат в папке старого имени, а вытесняет их
+    // запись под новым: без обхода всех имён проекта эти файлы никто не соберёт
+    appendHistory({ ...run("site-new", "2026-07-09T10:00:00.000Z"), projectId: "prj-1" });
+
+    expect(existsSync(evicted)).toBe(false);
+    expect(existsSync(survivor)).toBe(true);
   });
 });

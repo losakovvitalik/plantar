@@ -394,7 +394,7 @@ export const en: Record<MessageKey, string> = {
 
   "removeProject.title": "Remove project “{name}”?",
   "removeProject.description":
-    "The local project folder will stay in place either way.",
+    "The local project folder will stay in place either way, but the deploy history and the saved logs of this project will be deleted.",
   "removeProject.fromList": "Remove from the list",
   "removeProject.fromListHint":
     " — the project disappears from Plantar but keeps running on the server.",
