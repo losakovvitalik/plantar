@@ -18,6 +18,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { type Language, systemLanguage } from "@plantar/i18n";
+import { deployLogTimestamp } from "./last-run";
 
 export type { Language } from "@plantar/i18n";
 export { type LastDeployRun, deployLogTimestamp, resolveLastRun } from "./last-run";
@@ -174,12 +175,13 @@ export interface ProjectRecord {
 }
 
 /**
- * Reads a JSON store, degrading to a fallback when the file is missing or
- * corrupted: a broken store must never crash startup. The corrupted file is
- * kept as <file>.broken (first occurrence only) so data can be recovered.
+ * Reads a JSON store, or null when the file is missing or corrupted. The
+ * corrupted file is kept as <file>.broken (first occurrence only) so data can
+ * be recovered — hence the separate null: a caller that deletes files the store
+ * points at must be able to tell a lost store from an empty one.
  */
-function readJsonSafe<T>(file: string, fallback: T): T {
-  if (!existsSync(file)) return fallback;
+function readJsonOrNull<T>(file: string): T | null {
+  if (!existsSync(file)) return null;
   try {
     return JSON.parse(readFileSync(file, "utf8")) as T;
   } catch (err) {
@@ -190,8 +192,16 @@ function readJsonSafe<T>(file: string, fallback: T): T {
     } catch {
       // best effort — recovering the backup must not introduce a new crash
     }
-    return fallback;
+    return null;
   }
+}
+
+/**
+ * Reads a JSON store, degrading to a fallback when the file is missing or
+ * corrupted: a broken store must never crash startup.
+ */
+function readJsonSafe<T>(file: string, fallback: T): T {
+  return readJsonOrNull<T>(file) ?? fallback;
 }
 
 /**
@@ -302,10 +312,15 @@ function historyFile(): string {
   return path.join(dataDir(), "history.json");
 }
 
-export function readHistory(): DeployRecord[] {
-  const history = readJsonSafe<DeployRecord[]>(historyFile(), []);
+/** History as it is on disk; null — the file is missing, corrupted or not a list */
+function readHistoryOrNull(): DeployRecord[] | null {
+  const history = readJsonOrNull<DeployRecord[]>(historyFile());
   // Same wrong-shape guard as readJsonList — appendHistory pushes into this
-  return Array.isArray(history) ? history : [];
+  return Array.isArray(history) ? history : null;
+}
+
+export function readHistory(): DeployRecord[] {
+  return readHistoryOrNull() ?? [];
 }
 
 /** How many deploy records are kept per project on a host; older ones are evicted */
@@ -332,6 +347,129 @@ function capHistory(history: DeployRecord[]): DeployRecord[] {
   return result.reverse();
 }
 
+/** Log directory of a project, or null when the name escapes <dataDir>/logs */
+function safeLogDir(project: string): string | null {
+  const root = path.join(dataDir(), "logs") + path.sep;
+  const dir = path.resolve(path.join(dataDir(), "logs", project));
+  return dir.startsWith(root) ? dir : null;
+}
+
+/** A log touched more recently than this is treated as still being written */
+const LIVE_LOG_WINDOW_MS = 60 * 60 * 1000;
+
+/** A run started more recently than this is never reclaimed, however quiet its file */
+const RECENT_RUN_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Log filenames referenced by the <history>.broken recovery copy, or null when
+ * the copy exists but cannot be read. The copy is corrupted JSON — parsing it
+ * is off the table — but the filenames in it still appear literally in the
+ * text (path separators and quotes cannot occur inside a name), and they are
+ * exactly the logs a manual recovery would resurrect. An unreadable copy
+ * yields null: the caller must not prune blind while recovery data may exist.
+ */
+function brokenHistoryLogNames(): Set<string> | null {
+  const marker = `${historyFile()}.broken`;
+  if (!existsSync(marker)) return new Set();
+  try {
+    return new Set(readFileSync(marker, "utf8").match(/deploy-[^"\\/]+\.log/g) ?? []);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Deletes the run files of records the cap has evicted: they are unreachable
+ * from the UI (a log is only opened through the logFile of a record), while a
+ * single build log easily takes hundreds of kilobytes.
+ *
+ * Matching is strict on deploy-*.log, so the nginx snapshots living in the same
+ * directory survive. A file newer than the project's newest record is kept:
+ * resolveLastRun reads it as an interrupted run after a restart, and it is also
+ * the file of a deploy still in flight (from the CLI, say) whose record does not
+ * exist yet. Records of every host are taken into account — the cap is per
+ * project + host, but a project deployed to two servers shares one directory.
+ *
+ * The name of a file, though, only says when its run started: an overlapping
+ * run that started earlier (the same app on a staging and a production server,
+ * or the CLI next to the app) is still appending to a file older than the
+ * record just written. Deleting it would not even free the space —
+ * appendFileSync recreates the file — it would only lose the run's log, so a
+ * recently written file is left alone regardless of its name. A quiet stretch
+ * (a long remote build writes nothing for a while) would still look dead by
+ * mtime, so a run started within the last day is kept as well: too conservative
+ * costs a few stale files, too eager loses a running deploy's log.
+ *
+ * Finally, every filename appearing in the <history>.broken recovery copy is
+ * treated as alive for as long as the copy exists: those are exactly the logs
+ * a manual recovery of the copy would point back at, and deleting them would
+ * defeat the point of keeping it.
+ */
+function pruneDeployLogs(project: string, history: DeployRecord[]): void {
+  // A hand-edited or foreign history.json can hold anything Array.isArray lets
+  // through. A malformed record (not an object, or no logFile string) is
+  // skipped rather than trusted: it must neither abort the pass for the
+  // healthy records nor throw out of appendHistory — on the desktop success
+  // path that would report a deploy that actually succeeded as failed.
+  const records = history.filter(
+    (r) => r != null && r.project === project && typeof r.logFile === "string",
+  );
+  if (records.length === 0) return;
+  const referenced = brokenHistoryLogNames();
+  if (referenced === null) return;
+  const kept = new Set(records.map((r) => path.basename(r.logFile)));
+  for (const name of referenced) kept.add(name);
+  const newest = records.reduce(
+    (max, r) => (r.startedAt > max ? r.startedAt : max),
+    records[0].startedAt,
+  );
+  const dir = safeLogDir(project);
+  if (dir === null || !existsSync(dir)) return;
+  try {
+    for (const name of readdirSync(dir)) {
+      if (!/^deploy-.*\.log$/.test(name) || kept.has(name)) continue;
+      const time = deployLogTimestamp(name);
+      if (time === null || time > newest) continue;
+      if (Date.parse(time) > Date.now() - RECENT_RUN_WINDOW_MS) continue;
+      const file = path.join(dir, name);
+      try {
+        if (statSync(file).mtimeMs > Date.now() - LIVE_LOG_WINDOW_MS) continue;
+        rmSync(file);
+      } catch {
+        // best effort — a locked or vanished file must not fail the deploy
+      }
+    }
+  } catch {
+    // best effort — an unreadable directory must not fail the deploy
+  }
+}
+
+/**
+ * Drops the history records of a project — for when the project itself is
+ * removed together with its logs: a record whose file is gone would open as a
+ * raw filesystem error if the project were added again under the same name.
+ */
+export function removeProjectHistory(project: string): void {
+  try {
+    const history = readHistory();
+    const kept = history.filter((r) => r.project !== project);
+    if (kept.length !== history.length) writeJsonAtomic(historyFile(), kept);
+  } catch {
+    // best effort — a failed write must not fail removing the project
+  }
+}
+
+/** Deletes all logs of a project — for when the project itself is removed */
+export function removeProjectLogs(project: string): void {
+  const dir = safeLogDir(project);
+  if (dir === null) return;
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // best effort — a locked file must not fail removing the project
+  }
+}
+
 /**
  * The whole file is rewritten on every deploy, so the log is capped instead of
  * growing forever. Read-modify-write cannot interleave inside one process (the
@@ -339,9 +477,18 @@ function capHistory(history: DeployRecord[]): DeployRecord[] {
  * one from the app can still lose a record — accepted, the file is a log.
  */
 export function appendHistory(record: DeployRecord): void {
-  const history = readHistory();
-  history.push(record);
-  writeJsonAtomic(historyFile(), capHistory(history));
+  const previous = readHistoryOrNull();
+  const history = [...(previous ?? []), record];
+  const capped = capHistory(history);
+  writeJsonAtomic(historyFile(), capped);
+  // A degraded read skips pruning for this one append: the history just
+  // written knows about this single record only. The skip alone would merely
+  // delay the problem by one deploy — the next append reads that one-record
+  // history back as healthy — so the durable protection lives inside
+  // pruneDeployLogs itself: every filename in the <file>.broken recovery copy
+  // stays alive for as long as the copy exists, however many deploys later.
+  // A genuinely fresh install has nothing to prune anyway.
+  if (previous !== null) pruneDeployLogs(record.project, capped);
 }
 
 /** Коммит в кэше вкладки «Коммиты» (совпадает по форме с Commit из main/git.ts) */
