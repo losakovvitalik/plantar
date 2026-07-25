@@ -13,15 +13,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   appendHistory,
   dataDir,
+  listDeployLogs,
+  matchesProject,
   readCommitsCache,
   readHistory,
   readProjects,
   readServers,
   readSettings,
   readStatusTabCache,
+  writeProjects,
   writeServers,
   writeSettings,
   type DeployRecord,
+  type ProjectRecord,
   type ServerRecord,
 } from "./index";
 
@@ -58,15 +62,34 @@ function server(id: string): ServerRecord {
   return { id, name: id, host: "1.2.3.4", port: 22, user: "root", auth: "key" };
 }
 
-function deploy(project: string): DeployRecord {
+function deploy(project: string, projectId?: string): DeployRecord {
   return {
     project,
+    ...(projectId ? { projectId } : {}),
     host: "1.2.3.4",
     startedAt: "2026-07-12T10:00:00.000Z",
     finishedAt: "2026-07-12T10:01:00.000Z",
     status: "success",
     logFile: `/data/logs/${project}/deploy-2026-07-12T10-00-00-000Z.log`,
   };
+}
+
+function project(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
+  return {
+    id: "prj-1",
+    serverId: "srv-1",
+    name: "site-new",
+    path: "/code/site",
+    ...overrides,
+  };
+}
+
+function writeLog(projectName: string, file: string): string {
+  const dir = path.join(dataDir(), "logs", projectName);
+  mkdirSync(dir, { recursive: true });
+  const full = path.join(dir, file);
+  writeFileSync(full, "");
+  return full;
 }
 
 describe("чтение битых JSON-хранилищ", () => {
@@ -199,5 +222,57 @@ describe("атомарная запись", () => {
     appendHistory(deploy("site"));
 
     expect(readHistory().filter((r) => r.host === "5.6.7.8")).toHaveLength(1);
+  });
+});
+
+describe("история переименованного проекта", () => {
+  const identity = {
+    projectId: "prj-1",
+    names: ["site-new", "site-old"],
+    host: "1.2.3.4",
+  };
+
+  it("записи до переименования находятся по id проекта", () => {
+    expect(matchesProject(deploy("site-old", "prj-1"), identity)).toBe(true);
+  });
+
+  it("запись другого проекта под тем же именем не подхватывается", () => {
+    expect(matchesProject(deploy("site-new", "prj-2"), identity)).toBe(false);
+  });
+
+  it("запись без id (CLI, старый формат) находится по имени и адресу сервера", () => {
+    expect(matchesProject(deploy("site-new"), identity)).toBe(true);
+    expect(matchesProject(deploy("site-old"), identity)).toBe(true);
+    expect(matchesProject(deploy("site-other"), identity)).toBe(false);
+    expect(matchesProject({ ...deploy("site-new"), host: "5.6.7.8" }, identity)).toBe(
+      false,
+    );
+  });
+
+  it("логи собираются из папок всех имён проекта, от старых к новым", () => {
+    const older = writeLog("site-old", "deploy-2026-07-11T10-00-00-000Z.log");
+    const newer = writeLog("site-new", "deploy-2026-07-12T10-00-00-000Z.log");
+    writeLog("site-old", "nginx-access.log");
+
+    expect(listDeployLogs(["site-new", "site-old"])).toEqual([older, newer]);
+  });
+
+  it("папка без логов и повторное имя не мешают", () => {
+    const file = writeLog("site-new", "deploy-2026-07-12T10-00-00-000Z.log");
+    expect(listDeployLogs(["site-new", "site-new", "site-gone"])).toEqual([file]);
+  });
+
+  it("переименование не делит историю проекта на две группы по лимиту", () => {
+    writeServers([server("srv-1")]);
+    writeProjects([project({ previousNames: ["site-old"] })]);
+    seedHistory([
+      // Прогоны до переименования: из CLI (без id) и из приложения (с id)
+      ...Array.from({ length: 150 }, () => deploy("site-old")),
+      ...Array.from({ length: 150 }, () => deploy("site-old", "prj-1")),
+    ]);
+
+    appendHistory(deploy("site-new", "prj-1"));
+
+    expect(readHistory()).toHaveLength(200);
   });
 });

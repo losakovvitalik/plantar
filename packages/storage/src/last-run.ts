@@ -35,8 +35,12 @@ export function resolveLastRun(
   logFiles: string[],
   history: DeployRecord[],
 ): LastDeployRun | null {
-  // Имя содержит ISO-метку времени — сортировка по имени = сортировка по времени
-  const latest = [...logFiles].sort().at(-1);
+  // Имя содержит ISO-метку времени — сортировка по имени = сортировка по времени.
+  // Sorting by base name, not by the whole path: a renamed project has one log
+  // directory per name it deployed under, and whole paths would sort by directory
+  const latest = [...logFiles]
+    .sort((a, b) => path.basename(a).localeCompare(path.basename(b)))
+    .at(-1);
   const lastRecord = history.at(-1);
   if (latest) {
     const known = history.some(

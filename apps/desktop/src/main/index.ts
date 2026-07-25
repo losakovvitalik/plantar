@@ -55,11 +55,14 @@ import {
   type ServerRecord,
   type AppSettings,
   type DeployRecord,
+  type ProjectHistoryIdentity,
   type StatusTabCacheEntry,
   appendHistory,
   dataDir,
   deployLogTimestamp,
   listDeployLogs,
+  matchesProject,
+  projectNames,
   readAppStatusCache,
   readCommitsCache,
   readHistory,
@@ -183,8 +186,12 @@ function relatedFilePath(project: ProjectRecord, id: RelatedFileId): string {
   return found.path;
 }
 
-/** Записи истории деплоев проекта, новыми вперёд (имя берём из plantar.json, с фолбэком) */
-function projectHistory(project: ProjectRecord): DeployRecord[] {
+/**
+ * Проект для поиска его записей в истории: id записи проекта плюс все имена,
+ * под которыми он деплоился, — прогоны до переименования записаны под прежним
+ * именем и без id (из CLI или до появления поля).
+ */
+function historyIdentity(project: ProjectRecord): ProjectHistoryIdentity {
   const server = getServer(project.serverId);
   let name = project.name;
   try {
@@ -192,9 +199,31 @@ function projectHistory(project: ProjectRecord): DeployRecord[] {
   } catch {
     /* plantar.json недоступен — используем имя на момент добавления */
   }
+  return {
+    projectId: project.id,
+    names: [name, ...projectNames(project)],
+    host: server.host,
+  };
+}
+
+/** Записи истории деплоев проекта, новыми вперёд (включая прогоны до переименования) */
+function projectHistory(project: ProjectRecord): DeployRecord[] {
+  const identity = historyIdentity(project);
   return readHistory()
-    .filter((r) => r.project === name && r.host === server.host)
+    .filter((r) => matchesProject(r, identity))
     .reverse();
+}
+
+/**
+ * Прежние имена проекта после переименования: под старым именем остаются
+ * записи истории и папка логов, поэтому имя запоминается, а не теряется
+ */
+function previousNamesAfterRename(
+  project: ProjectRecord,
+  name: string,
+): string[] | undefined {
+  if (name === project.name) return project.previousNames;
+  return [...new Set([...(project.previousNames ?? []), project.name])];
 }
 
 /** Статус приложения проекта по карте pm2-процессов сервера (имя → статус)
@@ -708,6 +737,7 @@ async function runDeploy(
     }
     appendHistory({
       project: config.name,
+      projectId: project.id,
       host: server.host,
       startedAt,
       finishedAt: new Date().toISOString(),
@@ -746,6 +776,7 @@ async function runDeploy(
       logWriter.write(`\n${t("deployLogError")}: ${message}`);
       appendHistory({
         project: config.name,
+        projectId: project.id,
         host: server.host,
         startedAt,
         finishedAt: new Date().toISOString(),
@@ -812,6 +843,7 @@ async function runExternalInPlace(
     );
     appendHistory({
       project: config.name,
+      projectId: project.id,
       host: server.host,
       startedAt,
       finishedAt: new Date().toISOString(),
@@ -847,6 +879,7 @@ async function runExternalInPlace(
       logWriter.write(`\n${t("deployLogError")}: ${message}`);
       appendHistory({
         project: config.name,
+        projectId: project.id,
         host: server.host,
         startedAt,
         finishedAt: new Date().toISOString(),
@@ -889,6 +922,7 @@ async function runRollback(
     );
     appendHistory({
       project: config.name,
+      projectId: project.id,
       host: server.host,
       startedAt,
       finishedAt: new Date().toISOString(),
@@ -906,6 +940,7 @@ async function runRollback(
       logWriter.write(`\n${t("deployLogError")}: ${message}`);
       appendHistory({
         project: config.name,
+        projectId: project.id,
         host: server.host,
         startedAt,
         finishedAt: new Date().toISOString(),
@@ -926,17 +961,9 @@ async function runRollback(
  * был прерван.
  */
 function restoredDeployState(project: ProjectRecord): DeployRunState | null {
-  const server = getServer(project.serverId);
-  let name = project.name;
-  try {
-    name = projectConfig(project).name;
-  } catch {
-    /* plantar.json недоступен — используем имя на момент добавления */
-  }
-  const history = readHistory().filter(
-    (r) => r.project === name && r.host === server.host,
-  );
-  const last = resolveLastRun(listDeployLogs(name), history);
+  const identity = historyIdentity(project);
+  const history = readHistory().filter((r) => matchesProject(r, identity));
+  const last = resolveLastRun(listDeployLogs(identity.names), history);
   if (!last) return null;
   let text = "";
   try {
@@ -1368,7 +1395,14 @@ app.whenReady().then(() => {
           };
           writeProjects(
             readProjects().map((p) =>
-              p.id === project.id ? { ...p, name: config.name, external } : p,
+              p.id === project.id
+                ? {
+                    ...p,
+                    name: config.name,
+                    previousNames: previousNamesAfterRename(project, config.name),
+                    external,
+                  }
+                : p,
             ),
           );
           return config;
@@ -1385,7 +1419,12 @@ app.whenReady().then(() => {
           writeProjects(
             readProjects().map((p) =>
               p.id === project.id
-                ? { ...p, name: config.name, subdir: subdir || undefined }
+                ? {
+                    ...p,
+                    name: config.name,
+                    previousNames: previousNamesAfterRename(project, config.name),
+                    subdir: subdir || undefined,
+                  }
                 : p,
             ),
           );
