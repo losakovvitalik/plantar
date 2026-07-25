@@ -18,7 +18,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { type Language, systemLanguage } from "@plantar/i18n";
-import { deployLogTimestamp } from "./last-run";
+import { byLogName, deployLogTimestamp } from "./last-run";
 
 export type { Language } from "@plantar/i18n";
 export { type LastDeployRun, deployLogTimestamp, resolveLastRun } from "./last-run";
@@ -63,14 +63,23 @@ export class DeployLogWriter {
   }
 }
 
-/** Файлы deploy-логов проекта (полные пути), от старых к новым */
-export function listDeployLogs(project: string): string[] {
-  const dir = path.join(dataDir(), "logs", project);
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((f) => /^deploy-.*\.log$/.test(f))
-    .sort()
-    .map((f) => path.join(dir, f));
+/**
+ * Файлы deploy-логов проекта (полные пути), от старых к новым.
+ * The directory is keyed by the project name as of the deploy, so a renamed
+ * project has one directory per name it deployed under — pass all of them to
+ * keep the runs from before the rename reachable.
+ */
+export function listDeployLogs(projectNames: string[]): string[] {
+  const files: string[] = [];
+  for (const name of new Set(projectNames)) {
+    const dir = path.join(dataDir(), "logs", name);
+    if (!existsSync(dir)) continue;
+    for (const file of readdirSync(dir)) {
+      if (/^deploy-.*\.log$/.test(file)) files.push(path.join(dir, file));
+    }
+  }
+  // The same order resolveLastRun uses: by the ISO timestamp in the file name
+  return files.sort(byLogName);
 }
 
 /**
@@ -155,6 +164,9 @@ export interface ProjectRecord {
   serverId: string;
   /** name из plantar.json на момент добавления */
   name: string;
+  /** The names the project deployed under before its renames; its earlier
+   *  history records and log directories are found by them */
+  previousNames?: string[];
   /** Локальная папка проекта; для git-источника — путь к клону в reposDir();
    *  у импортированного с сервера проекта пусто, пока папка не привязана */
   path: string;
@@ -292,6 +304,10 @@ export function reposDir(): string {
 export interface DeployRecord {
   project: string;
   host: string;
+  /** The project the record belongs to. Empty on CLI records (it deploys from
+   *  a directory and has no project record) and on records written before the
+   *  field existed — those are looked up by name + host */
+  projectId?: string;
   startedAt: string;
   finishedAt: string;
   status: "success" | "error";
@@ -323,22 +339,82 @@ export function readHistory(): DeployRecord[] {
   return readHistoryOrNull() ?? [];
 }
 
+/** Every name the project deployed under, the current one first */
+export function projectNames(project: ProjectRecord): string[] {
+  return [project.name, ...(project.previousNames ?? [])];
+}
+
+/** The project whose history is looked up: its id, its names and its host */
+export interface ProjectHistoryIdentity {
+  projectId: string;
+  /** The current name and every previous one — runs from before a rename are
+   *  recorded under the name of the time */
+  names: string[];
+  host: string;
+}
+
+/**
+ * Whether a record belongs to the project. A record written by the app carries
+ * the project id and is matched by it alone, so a rename does not hide it.
+ * Records without an id — written by the CLI, which deploys from a directory
+ * and has no project record, or written before the field existed — are matched
+ * by name + host: the name alone is not enough, since the same app deployed to
+ * a staging and a production server yields two projects with one name.
+ */
+export function matchesProject(
+  record: DeployRecord,
+  identity: ProjectHistoryIdentity,
+): boolean {
+  if (record.projectId) return record.projectId === identity.projectId;
+  return record.host === identity.host && identity.names.includes(record.project);
+}
+
 /** How many deploy records are kept per project on a host; older ones are evicted */
 const HISTORY_LIMIT_PER_PROJECT = 200;
 
 /**
+ * "<name>\0<host>" -> id of the project that owns that name on that host,
+ * including the names it was renamed from, so records without an id are capped
+ * together with the rest of their project's history.
+ */
+function projectIdsByNameHost(): Map<string, string> {
+  const hostOf = new Map(readServers().map((s) => [s.id, s.host]));
+  const projects = readProjects();
+  const ids = new Map<string, string>();
+  // Current names are written last on purpose: if a name a project was renamed
+  // from is taken by another project today, the record belongs to the latter
+  for (const project of projects) {
+    const host = hostOf.get(project.serverId);
+    if (!host) continue;
+    for (const name of project.previousNames ?? []) {
+      ids.set(`${name} ${host}`, project.id);
+    }
+  }
+  for (const project of projects) {
+    const host = hostOf.get(project.serverId);
+    if (host) ids.set(`${project.name} ${host}`, project.id);
+  }
+  return ids;
+}
+
+/**
  * Drops the oldest records of every project beyond the limit, keeping the
- * original order. The cap is per project + host, because that is how history is
- * read back everywhere: a global cap would let one busy project flush out the
+ * original order. The cap is per project, because that is how history is read
+ * back everywhere: a global cap would let one busy project flush out the
  * records of a rarely deployed one, and a project whose newest record is gone
  * while its deploy log is still on disk reads back as an interrupted deploy.
+ * The group is the identity the lookups use — the project id, with name + host
+ * resolved onto it — otherwise a rename would split one project into two
+ * groups of the full limit each.
  */
 function capHistory(history: DeployRecord[]): DeployRecord[] {
+  const ids = projectIdsByNameHost();
   const kept = new Map<string, number>();
   const result: DeployRecord[] = [];
   for (let i = history.length - 1; i >= 0; i--) {
     const record = history[i];
-    const key = `${record.project} ${record.host}`;
+    const nameHost = `${record.project} ${record.host}`;
+    const key = record.projectId ?? ids.get(nameHost) ?? nameHost;
     const count = kept.get(key) ?? 0;
     if (count >= HISTORY_LIMIT_PER_PROJECT) continue;
     kept.set(key, count + 1);
@@ -379,6 +455,19 @@ function brokenHistoryLogNames(): Set<string> | null {
 }
 
 /**
+ * The log directories the record's project writes to: the directory is keyed by
+ * the project name as of the deploy, so a project that was renamed has one per
+ * name it deployed under. A record without an id (from the CLI, or written
+ * before the field existed) only knows its own name.
+ */
+function projectLogNames(record: DeployRecord): string[] {
+  const project = record.projectId
+    ? readProjects().find((p) => p.id === record.projectId)
+    : undefined;
+  return [record.project, ...(project ? projectNames(project) : [])];
+}
+
+/**
  * Deletes the run files of records the cap has evicted: they are unreachable
  * from the UI (a log is only opened through the logFile of a record), while a
  * single build log easily takes hundreds of kilobytes.
@@ -404,8 +493,26 @@ function brokenHistoryLogNames(): Set<string> | null {
  * treated as alive for as long as the copy exists: those are exactly the logs
  * a manual recovery of the copy would point back at, and deleting them would
  * defeat the point of keeping it.
+ *
+ * A renamed project has one directory per name it deployed under, and the cap
+ * evicts its records across all of them, so every one of those directories is
+ * visited. Each is pruned against the records recorded under its own name,
+ * whoever wrote them — that is what keeps the pass from deleting the runs of
+ * another project sharing the directory, and what makes the newest-record
+ * cutoff mean "newest run that landed in this directory".
  */
-function pruneDeployLogs(project: string, history: DeployRecord[]): void {
+function pruneDeployLogs(names: string[], history: DeployRecord[]): void {
+  const referenced = brokenHistoryLogNames();
+  if (referenced === null) return;
+  for (const name of new Set(names)) pruneLogDir(name, history, referenced);
+}
+
+/** One log directory of a project; see pruneDeployLogs for the rules */
+function pruneLogDir(
+  project: string,
+  history: DeployRecord[],
+  referenced: Set<string>,
+): void {
   // A hand-edited or foreign history.json can hold anything Array.isArray lets
   // through. A malformed record (not an object, or no logFile string) is
   // skipped rather than trusted: it must neither abort the pass for the
@@ -415,8 +522,6 @@ function pruneDeployLogs(project: string, history: DeployRecord[]): void {
     (r) => r != null && r.project === project && typeof r.logFile === "string",
   );
   if (records.length === 0) return;
-  const referenced = brokenHistoryLogNames();
-  if (referenced === null) return;
   const kept = new Set(records.map((r) => path.basename(r.logFile)));
   for (const name of referenced) kept.add(name);
   const newest = records.reduce(
@@ -488,7 +593,7 @@ export function appendHistory(record: DeployRecord): void {
   // pruneDeployLogs itself: every filename in the <file>.broken recovery copy
   // stays alive for as long as the copy exists, however many deploys later.
   // A genuinely fresh install has nothing to prune anyway.
-  if (previous !== null) pruneDeployLogs(record.project, capped);
+  if (previous !== null) pruneDeployLogs(projectLogNames(record), capped);
 }
 
 /** Коммит в кэше вкладки «Коммиты» (совпадает по форме с Commit из main/git.ts) */

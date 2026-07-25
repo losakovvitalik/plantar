@@ -23,6 +23,22 @@ export function deployLogTimestamp(file: string): string | null {
 }
 
 /**
+ * Порядок файлов deploy-логов: имя содержит ISO-метку времени, поэтому
+ * сравнение имён — это сравнение по времени.
+ *
+ * By base name, not by the whole path: a renamed project has one log directory
+ * per name it deployed under, and whole paths would sort by directory once
+ * several of them are mixed. Codepoint comparison rather than localeCompare —
+ * these names are fixed-format ASCII, and locale collation has its own ideas
+ * about the hyphens the timestamp is built from.
+ */
+export function byLogName(a: string, b: string): number {
+  const left = path.basename(a);
+  const right = path.basename(b);
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/**
  * Последний прогон проекта. logFiles — файлы deploy-*.log из папки логов
  * проекта, history — записи истории этого проекта в хронологическом порядке.
  *
@@ -35,8 +51,7 @@ export function resolveLastRun(
   logFiles: string[],
   history: DeployRecord[],
 ): LastDeployRun | null {
-  // Имя содержит ISO-метку времени — сортировка по имени = сортировка по времени
-  const latest = [...logFiles].sort().at(-1);
+  const latest = [...logFiles].sort(byLogName).at(-1);
   const lastRecord = history.at(-1);
   if (latest) {
     const known = history.some(

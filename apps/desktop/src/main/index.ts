@@ -55,11 +55,14 @@ import {
   type ServerRecord,
   type AppSettings,
   type DeployRecord,
+  type ProjectHistoryIdentity,
   type StatusTabCacheEntry,
   appendHistory,
   dataDir,
   deployLogTimestamp,
   listDeployLogs,
+  matchesProject,
+  projectNames,
   readAppStatusCache,
   readCommitsCache,
   readHistory,
@@ -185,27 +188,57 @@ function relatedFilePath(project: ProjectRecord, id: RelatedFileId): string {
   return found.path;
 }
 
-/** Current name of a project: from plantar.json, falling back to the stored one */
-function currentProjectName(project: ProjectRecord): string {
+/** The name the project goes by now: from plantar.json, with the record as fallback */
+function currentName(project: ProjectRecord): string {
   try {
     return projectConfig(project).name;
   } catch {
+    /* plantar.json недоступен — используем имя на момент добавления */
     return project.name;
   }
 }
 
-/** Записи истории деплоев проекта, новыми вперёд (имя берём из plantar.json, с фолбэком) */
-function projectHistory(project: ProjectRecord): DeployRecord[] {
+/**
+ * The project to look its history records up by: the id of the project record
+ * plus every name it deployed under — runs from before a rename are recorded
+ * under the previous name and without an id (from the CLI or before the field
+ * existed).
+ */
+function historyIdentity(project: ProjectRecord): ProjectHistoryIdentity {
   const server = getServer(project.serverId);
-  let name = project.name;
-  try {
-    name = projectConfig(project).name;
-  } catch {
-    /* plantar.json недоступен — используем имя на момент добавления */
-  }
+  const hostOf = new Map(readServers().map((s) => [s.id, s.host]));
+  // A previous name that another project on the same host goes by today belongs
+  // to that project: its records and its log directory are no longer ours
+  const taken = new Set(
+    readProjects()
+      .filter((p) => p.id !== project.id && hostOf.get(p.serverId) === server.host)
+      .map((p) => currentName(p)),
+  );
+  return {
+    projectId: project.id,
+    names: [currentName(project), ...projectNames(project).filter((n) => !taken.has(n))],
+    host: server.host,
+  };
+}
+
+/** Записи истории деплоев проекта, новыми вперёд (включая прогоны до переименования) */
+function projectHistory(project: ProjectRecord): DeployRecord[] {
+  const identity = historyIdentity(project);
   return readHistory()
-    .filter((r) => r.project === name && r.host === server.host)
+    .filter((r) => matchesProject(r, identity))
     .reverse();
+}
+
+/**
+ * The names the project was renamed from: the history records and the log
+ * directory stay under the old name, so the name is remembered, not lost
+ */
+function previousNamesAfterRename(
+  project: ProjectRecord,
+  name: string,
+): string[] | undefined {
+  if (name === project.name) return project.previousNames;
+  return [...new Set([...(project.previousNames ?? []), project.name])];
 }
 
 /** Статус приложения проекта по карте pm2-процессов сервера (имя → статус)
@@ -719,6 +752,7 @@ async function runDeploy(
     }
     appendHistory({
       project: config.name,
+      projectId: project.id,
       host: server.host,
       startedAt,
       finishedAt: new Date().toISOString(),
@@ -757,6 +791,7 @@ async function runDeploy(
       logWriter.write(`\n${t("deployLogError")}: ${message}`);
       appendHistory({
         project: config.name,
+        projectId: project.id,
         host: server.host,
         startedAt,
         finishedAt: new Date().toISOString(),
@@ -823,6 +858,7 @@ async function runExternalInPlace(
     );
     appendHistory({
       project: config.name,
+      projectId: project.id,
       host: server.host,
       startedAt,
       finishedAt: new Date().toISOString(),
@@ -858,6 +894,7 @@ async function runExternalInPlace(
       logWriter.write(`\n${t("deployLogError")}: ${message}`);
       appendHistory({
         project: config.name,
+        projectId: project.id,
         host: server.host,
         startedAt,
         finishedAt: new Date().toISOString(),
@@ -900,6 +937,7 @@ async function runRollback(
     );
     appendHistory({
       project: config.name,
+      projectId: project.id,
       host: server.host,
       startedAt,
       finishedAt: new Date().toISOString(),
@@ -917,6 +955,7 @@ async function runRollback(
       logWriter.write(`\n${t("deployLogError")}: ${message}`);
       appendHistory({
         project: config.name,
+        projectId: project.id,
         host: server.host,
         startedAt,
         finishedAt: new Date().toISOString(),
@@ -937,17 +976,9 @@ async function runRollback(
  * был прерван.
  */
 function restoredDeployState(project: ProjectRecord): DeployRunState | null {
-  const server = getServer(project.serverId);
-  let name = project.name;
-  try {
-    name = projectConfig(project).name;
-  } catch {
-    /* plantar.json недоступен — используем имя на момент добавления */
-  }
-  const history = readHistory().filter(
-    (r) => r.project === name && r.host === server.host,
-  );
-  const last = resolveLastRun(listDeployLogs(name), history);
+  const identity = historyIdentity(project);
+  const history = readHistory().filter((r) => matchesProject(r, identity));
+  const last = resolveLastRun(listDeployLogs(identity.names), history);
   if (!last) return null;
   let text = "";
   try {
@@ -1298,17 +1329,28 @@ app.whenReady().then(() => {
   ipcMain.handle("projects:remove", (_e, id: string) =>
     toResult(async () => {
       const project = readProjects().find((p) => p.id === id);
-      // Resolve the name before the clone goes away — it comes from plantar.json
-      const name = project ? currentProjectName(project) : null;
+      // Resolve the names before the clone goes away — the current one comes
+      // from plantar.json. Every name the project deployed under is cleaned up,
+      // not only the current one: the runs from before a rename live in the
+      // directory of the name of the time
+      const names = project
+        ? [...new Set([currentName(project), ...projectNames(project)])]
+        : [];
       if (project?.source === "git") removeCloneDir(project.path);
       const remaining = readProjects().filter((p) => p.id !== id);
       writeProjects(remaining);
-      // The log directory is keyed by name only, so it is removed only when no
-      // remaining project resolves to that name: the same app deployed to a
-      // staging and a production server shares one directory. The history
-      // records go with the files — they are keyed by name too, and rows whose
-      // log no longer exists would come back if that name were added again
-      if (name !== null && !remaining.some((p) => currentProjectName(p) === name)) {
+      // The log directory is keyed by name only, so a name is cleaned up only
+      // when no remaining project claims it — either as its current name (the
+      // same app deployed to a staging and a production server shares one
+      // directory) or as a name it was renamed from, whose earlier runs are
+      // still in that directory. The history records go with the files: records
+      // without an id are keyed by name too, and rows whose log no longer exists
+      // would come back if that name were added again
+      const claimed = new Set(
+        remaining.flatMap((p) => [currentName(p), ...projectNames(p)]),
+      );
+      for (const name of names) {
+        if (claimed.has(name)) continue;
         removeProjectLogs(name);
         removeProjectHistory(name);
       }
@@ -1391,7 +1433,14 @@ app.whenReady().then(() => {
           };
           writeProjects(
             readProjects().map((p) =>
-              p.id === project.id ? { ...p, name: config.name, external } : p,
+              p.id === project.id
+                ? {
+                    ...p,
+                    name: config.name,
+                    previousNames: previousNamesAfterRename(p, config.name),
+                    external,
+                  }
+                : p,
             ),
           );
           return config;
@@ -1408,7 +1457,12 @@ app.whenReady().then(() => {
           writeProjects(
             readProjects().map((p) =>
               p.id === project.id
-                ? { ...p, name: config.name, subdir: subdir || undefined }
+                ? {
+                    ...p,
+                    name: config.name,
+                    previousNames: previousNamesAfterRename(p, config.name),
+                    subdir: subdir || undefined,
+                  }
                 : p,
             ),
           );
