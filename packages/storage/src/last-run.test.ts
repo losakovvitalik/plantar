@@ -84,6 +84,22 @@ describe("resolveLastRun", () => {
     });
   });
 
+  it("папки разных имён проекта: прогон берётся по метке времени, а не по пути", () => {
+    // Проект переименовали: прогон с записью лежит в папке прежнего имени,
+    // а прерванный, самый свежий — в папке нового. Сортировка целых путей
+    // поставила бы последней папку site-old и потеряла бы прерванный прогон
+    const rec = record({
+      startedAt: "2026-07-11T10:00:00.000Z",
+      finishedAt: "2026-07-11T10:01:00.000Z",
+      logFile: "/data/logs/site-old/deploy-2026-07-11T10-00-00-000Z.log",
+    });
+    const interrupted = "/data/logs/site-new/deploy-2026-07-12T10-00-00-000Z.log";
+
+    expect(resolveLastRun([interrupted, rec.logFile], [rec])).toEqual({
+      logFile: interrupted,
+    });
+  });
+
   it("файл с нечитаемой меткой времени не считается прерванным прогоном", () => {
     const rec = record({});
     expect(resolveLastRun(["/data/logs/site/deploy-manual.log", rec.logFile], [rec])).toEqual(

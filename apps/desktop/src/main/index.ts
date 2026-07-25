@@ -1437,7 +1437,7 @@ app.whenReady().then(() => {
                 ? {
                     ...p,
                     name: config.name,
-                    previousNames: previousNamesAfterRename(project, config.name),
+                    previousNames: previousNamesAfterRename(p, config.name),
                     external,
                   }
                 : p,
@@ -1460,7 +1460,7 @@ app.whenReady().then(() => {
                 ? {
                     ...p,
                     name: config.name,
-                    previousNames: previousNamesAfterRename(project, config.name),
+                    previousNames: previousNamesAfterRename(p, config.name),
                     subdir: subdir || undefined,
                   }
                 : p,

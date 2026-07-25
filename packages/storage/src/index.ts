@@ -18,7 +18,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { type Language, systemLanguage } from "@plantar/i18n";
-import { deployLogTimestamp } from "./last-run";
+import { byLogName, deployLogTimestamp } from "./last-run";
 
 export type { Language } from "@plantar/i18n";
 export { type LastDeployRun, deployLogTimestamp, resolveLastRun } from "./last-run";
@@ -78,9 +78,8 @@ export function listDeployLogs(projectNames: string[]): string[] {
       if (/^deploy-.*\.log$/.test(file)) files.push(path.join(dir, file));
     }
   }
-  // The file name carries the ISO timestamp: sorting by it sorts by time,
-  // which sorting whole paths would not do once several directories are mixed
-  return files.sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+  // The same order resolveLastRun uses: by the ISO timestamp in the file name
+  return files.sort(byLogName);
 }
 
 /**
