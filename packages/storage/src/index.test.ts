@@ -362,6 +362,7 @@ describe("очистка файлов deploy-логов", () => {
       withoutStartedAt as DeployRecord,
       run("site-a", "2026-07-02T10:00:00.000Z"),
     ]);
+    const undated = writeLog("site-a", "2026-07-01T10:00:00.000Z");
     const interrupted = writeLog("site-a", "2026-07-12T11:00:00.000Z");
 
     appendHistory(run("site-a", "2026-07-12T10:00:00.000Z"));
@@ -369,6 +370,9 @@ describe("очистка файлов deploy-логов", () => {
     // Запись без startedAt стоит первой: если её не отсеять, «новее самой
     // свежей записи» перестаёт срабатывать сразу для всей папки
     expect(existsSync(interrupted)).toBe(true);
+    // При этом сама запись осталась в истории и видна в интерфейсе — её файл
+    // отсеиванием трогать нельзя
+    expect(existsSync(undated)).toBe(true);
   });
 
   it("снимки серверных логов не удаляются", () => {

@@ -345,7 +345,12 @@ function readHistoryOrNull(): DeployRecord[] | null {
   // named in the copy. This is also the most hand-recoverable form of a broken
   // history, the records are all there. Only the history gets the copy: the
   // other stores neither delete files nor are read through this function.
-  if (history !== null) keepBrokenCopy(file);
+  if (history !== null) {
+    console.error(
+      `plantar: history store ${file} is not a list, falling back to defaults`,
+    );
+    keepBrokenCopy(file);
+  }
   return null;
 }
 
@@ -486,7 +491,10 @@ function projectLogNames(records: DeployRecord[]): string[] {
   const names: string[] = [];
   const ids = new Set<string>();
   for (const record of records) {
-    if (record == null) continue;
+    // A hand-edited history can carry a non-string project: capHistory folds it
+    // into a template literal without complaint, and it would reach safeLogDir
+    // as a path.join argument and throw out of appendHistory
+    if (typeof record?.project !== "string") continue;
     names.push(record.project);
     if (record.projectId) ids.add(record.projectId);
   }
@@ -544,27 +552,28 @@ function pruneLogDir(
   referenced: Set<string>,
 ): void {
   // A hand-edited or foreign history.json can hold anything Array.isArray lets
-  // through. A malformed record (not an object, or no logFile / startedAt
-  // string) is skipped rather than trusted: it must neither abort the pass for
-  // the healthy records nor throw out of appendHistory — on the desktop success
-  // path that would report a deploy that actually succeeded as failed. The
-  // startedAt check also guards the newest-record cutoff below: a record
-  // without one seeds the reduce with undefined, every comparison against it is
-  // false, and the interrupted-run protection silently switches itself off for
-  // the whole directory.
+  // through. A malformed record (not an object, or no logFile string) is
+  // skipped rather than trusted: it must neither abort the pass for the healthy
+  // records nor throw out of appendHistory — on the desktop success path that
+  // would report a deploy that actually succeeded as failed.
   const records = history.filter(
-    (r) =>
-      r != null &&
-      r.project === project &&
-      typeof r.logFile === "string" &&
-      typeof r.startedAt === "string",
+    (r) => r != null && r.project === project && typeof r.logFile === "string",
   );
   if (records.length === 0) return;
+  // Protection comes first: a record still listed in the UI keeps its file,
+  // whatever else is wrong with it. Only the cutoff below needs a startedAt.
   const kept = new Set(records.map((r) => path.basename(r.logFile)));
   for (const name of referenced) kept.add(name);
-  const newest = records.reduce(
+  // A record without a startedAt string cannot seed the newest-record cutoff:
+  // the reduce would start from undefined, every comparison against it is
+  // false, and the interrupted-run protection would silently switch itself off
+  // for the whole directory. With no dated record at all the cutoff is unknown,
+  // so nothing is pruned rather than everything.
+  const dated = records.filter((r) => typeof r.startedAt === "string");
+  if (dated.length === 0) return;
+  const newest = dated.reduce(
     (max, r) => (r.startedAt > max ? r.startedAt : max),
-    records[0].startedAt,
+    dated[0].startedAt,
   );
   const dir = safeLogDir(project);
   if (dir === null || !existsSync(dir)) return;
