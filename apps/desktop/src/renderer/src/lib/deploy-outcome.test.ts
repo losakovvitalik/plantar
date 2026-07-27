@@ -63,6 +63,22 @@ describe("deployOutcome", () => {
     });
   });
 
+  // Вкладка «История» зовёт эту же функцию, поэтому в ней та же кнопка
+  // «Открыть сайт» не появляется у прогона, который не ответил
+  it("запись истории (kind может отсутствовать): решение то же", () => {
+    const record = { status: "success" as const, url: "https://site.example/" };
+    expect(deployOutcome(record)).toEqual({
+      kind: "link",
+      url: "https://site.example/",
+      rolledBack: false,
+    });
+    expect(deployOutcome({ ...record, urlReachable: false })).toEqual({
+      kind: "unreachable",
+      url: "https://site.example/",
+      rolledBack: false,
+    });
+  });
+
   it("прогон не завершился успехом: показывать нечего", () => {
     expect(deployOutcome(null, false)).toEqual({ kind: "none" });
     expect(deployOutcome(run({ status: "running" }), false)).toEqual({ kind: "none" });

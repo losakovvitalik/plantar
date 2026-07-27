@@ -105,6 +105,10 @@ const MESSAGES = {
     ru: "→ Проверяю, что сайт открывается: {url}",
     en: "→ Checking that the site opens: {url}",
   },
+  checkingSitePlainHttp: {
+    ru: "→ По https ответа нет, проверяю обычный адрес: {url}",
+    en: "→ Nothing answered over https, checking the plain address: {url}",
+  },
   siteCheckNoResponse: {
     ru: "! Деплой завершён, но сайт {url} пока не отвечает. Попробуйте открыть его через минуту-другую; если не поможет — посмотрите логи.",
     en: "! The deploy finished, but the site {url} is not responding yet. Try opening it in a minute or two; if that does not help, check the logs.",

@@ -63,12 +63,15 @@ describe("waitForStableProcess", () => {
 });
 
 describe("verifySiteAvailable", () => {
+  const HTTPS = "https://site.example/";
+  const HTTP = "http://site.example/";
+
   it("адрес ответил — проверка пройдена", async () => {
     const conn = fakeConn([[/curl/, { code: 0, stdout: "200\n" }]], []);
 
     await expect(
-      verifySiteAvailable(conn, "https://site.example/", "appAvailable", () => {}),
-    ).resolves.toBe(true);
+      verifySiteAvailable(conn, HTTPS, "appAvailable", () => {}),
+    ).resolves.toEqual({ reachable: true, url: HTTPS });
   });
 
   it("адрес не ответил — результат уходит вызывающему, а не только в лог", async () => {
@@ -76,10 +79,50 @@ describe("verifySiteAvailable", () => {
     const conn = fakeConn([[/curl/, { code: 1, stdout: "000\n" }]], []);
 
     await expect(
-      verifySiteAvailable(conn, "https://site.example/", "appAvailable", (line) =>
-        lines.push(line),
-      ),
-    ).resolves.toBe(false);
-    expect(lines.join("\n")).toContain("https://site.example/");
+      verifySiteAvailable(conn, HTTPS, "appAvailable", (line) => lines.push(line)),
+    ).resolves.toEqual({ reachable: false, url: HTTPS });
+    expect(lines.join("\n")).toContain(HTTPS);
+  });
+
+  it("импортированное приложение по http: молчание https — не приговор", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn(
+      [
+        [/'https:\/\//, { code: 1, stdout: "000\n" }],
+        [/'http:\/\//, { code: 0, stdout: "200\n" }],
+      ],
+      commands,
+    );
+
+    await expect(
+      verifySiteAvailable(conn, HTTPS, "appAvailable", () => {}, { httpFallback: true }),
+    ).resolves.toEqual({ reachable: true, url: HTTP });
+    expect(commands).toHaveLength(2);
+  });
+
+  it("не ответил ни один адрес: адрес остаётся настроенным", async () => {
+    const conn = fakeConn([[/curl/, { code: 1, stdout: "000\n" }]], []);
+
+    await expect(
+      verifySiteAvailable(conn, HTTPS, "appAvailable", () => {}, { httpFallback: true }),
+    ).resolves.toEqual({ reachable: false, url: HTTPS });
+  });
+
+  it("ответ 502 — до приложения не достучались, http-запасной проверки нет", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn([[/curl/, { code: 1, stdout: "502\n" }]], commands);
+
+    await expect(
+      verifySiteAvailable(conn, HTTPS, "appAvailable", () => {}, { httpFallback: true }),
+    ).resolves.toEqual({ reachable: false, url: HTTPS });
+    expect(commands).toHaveLength(1);
+  });
+
+  it("управляемый деплой: nginx и сертификат настроил Plantar — http не спрашиваем", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn([[/curl/, { code: 1, stdout: "000\n" }]], commands);
+
+    await verifySiteAvailable(conn, HTTPS, "siteAvailable", () => {});
+    expect(commands).toHaveLength(1);
   });
 });

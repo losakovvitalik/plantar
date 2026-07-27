@@ -249,12 +249,32 @@ describe("deployExternalInPlace: сборка команд", () => {
       () => {},
     );
     expect(result.urlReachable).toBe(false);
+    expect(result.url).toBe("https://new.example.com/");
+  });
+
+  it("приложение отдаётся по http: доступность подтверждена, адрес — тот, что ответил", async () => {
+    const conn = fakeConn(
+      [
+        [/cat .*package\.json/, { stdout: "{}" }],
+        [/'https:\/\//, { code: 1, stdout: "000\n" }],
+        [/'http:\/\//, { code: 0, stdout: "200\n" }],
+      ],
+      [],
+    );
+    const result = await deployExternalInPlace(
+      conn,
+      target({ url: "https://old.example.com/" }),
+      () => {},
+    );
+    expect(result.urlReachable).toBe(true);
+    expect(result.url).toBe("http://old.example.com/");
   });
 
   it("адреса нет — проверять нечего", async () => {
     const conn = fakeConn([[/cat .*package\.json/, { stdout: "{}" }]], []);
     const result = await deployExternalInPlace(conn, target(), () => {});
     expect(result.urlReachable).toBeUndefined();
+    expect(result.url).toBeUndefined();
   });
 
   it("бот: стабильность процесса проверяется по pm2 jlist прежнего имени", async () => {

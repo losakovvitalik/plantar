@@ -100,23 +100,21 @@ export async function waitForStableProcess(
   log(t("processStable"));
 }
 
-/**
- * Смоук-проверка после деплоя: запрос к публичному адресу с самого сервера,
- * чтобы проверить всю цепочку nginx → приложение (без влияния DNS и сети
- * пользователя). Редиректы и коды авторизации — сайт отвечает; 502/503/504
- * или отсутствие ответа — прокси не достучался до приложения. Неудача не
- * роняет деплой, а заменяет «сайт доступен» предупреждением.
- *
- * Returns whether the address answered, so the caller can avoid presenting
- * an address that did not respond as a working link.
- */
-export async function verifySiteAvailable(
+/** Результат смоук-проверки адреса после деплоя */
+export interface SiteCheckResult {
+  /** Адрес ответил */
+  reachable: boolean;
+  /** Адрес, который ответил: отличается от проверяемого, когда по https
+   *  не ответило ничего, а приложение отдаётся по обычному http */
+  url: string;
+}
+
+/** Одна попытка (с ретраями): ответ есть — code === 0; пустой код или 000 —
+ *  по адресу не ответило вообще ничего */
+async function probeUrl(
   conn: SshConnection,
   url: string,
-  liveMessage: "siteAvailable" | "appAvailable",
-  log: (line: string) => void,
-): Promise<boolean> {
-  log(t("checkingSiteUrl", { url }));
+): Promise<{ answered: boolean; code: string }> {
   // -k: проверяем доступность, а не сертификат; ретраи — nginx/приложению
   // может понадобиться пара секунд после перезагрузки
   const check = await conn.exec(
@@ -125,15 +123,65 @@ export async function verifySiteAvailable(
       `case "$code" in ''|000|502|503|504) sleep 2;; *) echo "$code"; exit 0;; esac; ` +
       `done; echo "$code"; exit 1`,
   );
-  const code = check.stdout.trim().split("\n").pop() ?? "";
-  if (check.code === 0) {
-    log(t(liveMessage, { url }));
-    return true;
+  return {
+    answered: check.code === 0,
+    code: check.stdout.trim().split("\n").pop() ?? "",
+  };
+}
+
+/** По адресу не ответило вообще ничего (в отличие от 502/503/504, когда
+ *  веб-сервер на месте, но не достучался до приложения) */
+function noAnswer(code: string): boolean {
+  return code === "" || code === "000";
+}
+
+const HTTPS_PREFIX = "https://";
+
+/**
+ * Смоук-проверка после деплоя: запрос к публичному адресу с самого сервера,
+ * чтобы проверить всю цепочку nginx → приложение (без влияния DNS и сети
+ * пользователя). Редиректы и коды авторизации — сайт отвечает; 502/503/504
+ * или отсутствие ответа — прокси не достучался до приложения. Неудача не
+ * роняет деплой, а заменяет «сайт доступен» предупреждением.
+ *
+ * Returns whether the address answered — and which address did, so the caller
+ * can avoid presenting an address that did not respond as a working link.
+ *
+ * httpFallback — for an imported app: its web server is set up by hand and
+ * Plantar only recorded the server_name, which may well be served over plain
+ * http. Nothing at all answered on https — ask http before calling the address
+ * unreachable. Managed deploys do not use it: there Plantar itself set up
+ * nginx and the certificate, so a silent https is a real failure.
+ */
+export async function verifySiteAvailable(
+  conn: SshConnection,
+  url: string,
+  liveMessage: "siteAvailable" | "appAvailable",
+  log: (line: string) => void,
+  options: { httpFallback?: boolean } = {},
+): Promise<SiteCheckResult> {
+  log(t("checkingSiteUrl", { url }));
+  let probe = await probeUrl(conn, url);
+  let checked = url;
+  if (
+    !probe.answered &&
+    noAnswer(probe.code) &&
+    options.httpFallback &&
+    url.startsWith(HTTPS_PREFIX)
+  ) {
+    checked = `http://${url.slice(HTTPS_PREFIX.length)}`;
+    log(t("checkingSitePlainHttp", { url: checked }));
+    probe = await probeUrl(conn, checked);
   }
-  if (code === "" || code === "000") {
-    log(t("siteCheckNoResponse", { url }));
+  if (probe.answered) {
+    log(t(liveMessage, { url: checked }));
+    return { reachable: true, url: checked };
+  }
+  if (noAnswer(probe.code)) {
+    log(t("siteCheckNoResponse", { url: checked }));
   } else {
-    log(t("siteCheckBadGateway", { url, code }));
+    log(t("siteCheckBadGateway", { url: checked, code: probe.code }));
   }
-  return false;
+  // Не ответил ни один адрес — приложение остаётся при своём настроенном
+  return { reachable: false, url };
 }

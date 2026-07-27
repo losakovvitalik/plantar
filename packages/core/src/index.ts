@@ -760,7 +760,12 @@ async function deployStatic(
   } else {
     url = `http://${conn.host}/`;
   }
-  const urlReachable = await verifySiteAvailable(conn, url, "siteAvailable", log);
+  const { reachable: urlReachable } = await verifySiteAvailable(
+    conn,
+    url,
+    "siteAvailable",
+    log,
+  );
   return { target, fileCount, url, urlReachable };
 }
 
@@ -976,7 +981,12 @@ async function deployNode(
   } else {
     url = `http://${conn.host}/`;
   }
-  const urlReachable = await verifySiteAvailable(conn, url, "appAvailable", log);
+  const { reachable: urlReachable } = await verifySiteAvailable(
+    conn,
+    url,
+    "appAvailable",
+    log,
+  );
   return { target, fileCount, url, urlReachable, port };
 }
 

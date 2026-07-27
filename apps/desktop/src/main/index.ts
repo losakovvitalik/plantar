@@ -861,6 +861,9 @@ async function runExternalInPlace(
         checkoutCommit ? { checkout: checkoutCommit } : {},
       ),
     );
+    // Ссылка ведёт на тот адрес, который ответил: приложение с настроенным
+    // вручную nginx может отдаваться по обычному http, а не по https
+    const checkedUrl = result.url ?? url;
     appendHistory({
       project: config.name,
       projectId: project.id,
@@ -869,7 +872,7 @@ async function runExternalInPlace(
       finishedAt: new Date().toISOString(),
       status: "success",
       kind,
-      url,
+      url: checkedUrl,
       urlReachable: result.urlReachable,
       commit: result.commit?.hash,
       logFile: logWriter.file,
@@ -887,8 +890,12 @@ async function runExternalInPlace(
     if (readSettings().notifyOnDeploySuccess) {
       notifyDeployResult(projectId, config.name, true);
     }
-    run.finish({ status: "success", url, urlReachable: result.urlReachable });
-    return { url };
+    run.finish({
+      status: "success",
+      url: checkedUrl,
+      urlReachable: result.urlReachable,
+    });
+    return { url: checkedUrl };
   } catch (err) {
     const message = (err as Error).message;
     const code = (err as { code?: string }).code;

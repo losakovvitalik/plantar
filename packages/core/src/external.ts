@@ -189,6 +189,10 @@ export interface ExternalDeployResult {
   /** Whether the address answered the availability check; undefined when
    *  there was no address to check */
   urlReachable?: boolean;
+  /** Адрес, который проверялся: у импортированного приложения им может
+   *  оказаться http-вариант домена, если по https не ответило ничего.
+   *  undefined — проверять было нечего */
+  url?: string;
 }
 
 const LOCKFILES: Array<[file: string, manager: string]> = [
@@ -317,15 +321,26 @@ export async function deployExternalInPlace(
     await waitForApp(conn, target.pm2Name, target.port, log);
   }
   let urlReachable: boolean | undefined;
+  let checkedUrl = target.url;
   if (target.url) {
-    urlReachable = await verifySiteAvailable(conn, target.url, "appAvailable", log);
+    // httpFallback: адрес взят из server_name чужого конфига nginx — тот
+    // может слушать только 80-й порт, и тогда https молчит всегда
+    const check = await verifySiteAvailable(conn, target.url, "appAvailable", log, {
+      httpFallback: true,
+    });
+    urlReachable = check.reachable;
+    checkedUrl = check.url;
   }
   log(options.checkout ? t("externalRollbackDone") : t("externalDeployDone"));
 
   const commit = await conn.exec(
     `git -C ${dir} log -1 --format=${shellQuote(GIT_LOG_FORMAT)} 2>/dev/null`,
   );
-  return { commit: parseServerCommits(commit.stdout)[0] ?? null, urlReachable };
+  return {
+    commit: parseServerCommits(commit.stdout)[0] ?? null,
+    urlReachable,
+    url: checkedUrl,
+  };
 }
 
 /**

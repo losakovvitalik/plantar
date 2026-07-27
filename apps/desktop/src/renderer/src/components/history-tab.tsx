@@ -8,6 +8,7 @@ import {
 import { useEffect, useState } from "react";
 import type { DeployRecord, Language, ProjectRecord } from "@plantar/storage";
 import { type Translate, useI18n } from "../i18n";
+import { deployOutcome } from "../lib/deploy-outcome";
 import { Button } from "./ui/button";
 import { DeployLogView } from "./deploy-log-view";
 
@@ -85,6 +86,9 @@ export function HistoryTab({ project }: Props) {
     <div className="thin-scroll flex h-full flex-col gap-2 overflow-y-auto">
       {records.map((record) => {
         const isOpen = openLog === record.logFile;
+        // Одно правило со вкладкой «Деплой»: адрес, не ответивший на проверку,
+        // не выдаётся за работающую ссылку ни там, ни здесь
+        const outcome = deployOutcome(record);
         return (
           <div
             key={record.logFile}
@@ -124,11 +128,11 @@ export function HistoryTab({ project }: Props) {
                   )}
                 </div>
               </button>
-              {record.status === "success" && record.url && (
+              {outcome.kind === "link" && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => void window.plantar.openExternal(record.url!)}
+                  onClick={() => void window.plantar.openExternal(outcome.url)}
                   className="shrink-0"
                 >
                   {t("history.openSite")}
