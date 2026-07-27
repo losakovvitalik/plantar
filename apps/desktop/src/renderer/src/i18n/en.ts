@@ -114,8 +114,9 @@ export const en: Record<MessageKey, string> = {
   "deploy.showCommands": "Show commands",
   "deploy.deployedAt": "App deployed: {url}",
   "deploy.deployedNoResponse":
-    "The app was updated, but it did not respond at {url}. Check that this address is set up on the server.",
+    "The app was updated, but it did not respond at {url}. This address may not be set up on the server yet, or the change may need a few more minutes.",
   "deploy.botDeployed": "Bot deployed and running.",
+  "deploy.deployedDone": "The app was updated and is running.",
   "deploy.terminalEmpty": "Every deploy step will show up here.",
   "deploy.showMoreError": "Show more",
   "deploy.hideError": "Collapse",
@@ -132,7 +133,7 @@ export const en: Record<MessageKey, string> = {
     "Restore the previous version of the app on the server? The current version will be stopped.",
   "deploy.rolledBackAt": "Previous version restored: {url}",
   "deploy.rolledBackNoResponse":
-    "The previous version was restored, but the app did not respond at {url}. Check that this address is set up on the server.",
+    "The previous version was restored, but the app did not respond at {url}. This address may not be set up on the server yet, or the change may need a few more minutes.",
   "deploy.rolledBackDone": "Previous version restored.",
   "deploy.externalHint":
     "This app was imported from the server and is updated carefully: Plantar pulls fresh code from the repository right into the app folder, installs dependencies, builds and restarts the app under its old name. Web server settings and other apps are left untouched.",

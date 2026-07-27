@@ -80,7 +80,7 @@ interface Props {
   repoUrl?: string;
   /** Текущая ветка git-проекта */
   initialBranch?: string;
-  /** Импортированный проект: домен только проверяется, веб-сервер Plantar не трогает */
+  /** Imported project: the domain is only checked, Plantar leaves the web server alone */
   external?: boolean;
 }
 

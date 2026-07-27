@@ -61,7 +61,7 @@ interface RunView {
   kind: "deploy" | "rollback" | "migrate";
   startedAt: string;
   url: string | null;
-  /** Ответил ли адрес на проверку доступности; null — проверять было нечего */
+  /** Whether the address answered the availability check; null — nothing to check */
   urlReachable: boolean | null;
   error: { message: string; code?: string } | null;
 }
@@ -216,7 +216,7 @@ export function DeployTab({
 
   const running = run?.status === "running";
   const rollingBack = running && run?.kind === "rollback";
-  const outcome = deployOutcome(run);
+  const outcome = deployOutcome(run, config?.type === "bot");
   const error = run?.status === "error" ? run.error : null;
 
   // Длительность текущего шага: долгие команды (npm install, сборка) не пишут в лог
@@ -646,7 +646,9 @@ export function DeployTab({
           <p className="self-start text-sm font-semibold text-moss">
             {outcome.rolledBack
               ? t("deploy.rolledBackDone")
-              : t("deploy.botDeployed")}
+              : outcome.isBot
+                ? t("deploy.botDeployed")
+                : t("deploy.deployedDone")}
           </p>
         )
       )}

@@ -1,9 +1,9 @@
-/** Итог успешного прогона глазами вкладки «Деплой» */
+/** Result of a successful run as the "Deploy" tab presents it */
 export type DeployOutcome =
   | { kind: "none" }
   | { kind: "link"; url: string; rolledBack: boolean }
   | { kind: "unreachable"; url: string; rolledBack: boolean }
-  | { kind: "done"; rolledBack: boolean };
+  | { kind: "done"; rolledBack: boolean; isBot: boolean };
 
 interface RunResult {
   status: "running" | "success" | "error" | "interrupted";
@@ -13,15 +13,18 @@ interface RunResult {
 }
 
 /**
- * Ссылка на адрес приложения обещает рабочий сайт, поэтому она показывается
- * только когда адрес ответил на проверку. Не ответил — нейтральная строка:
- * код обновился, но по этому адресу приложения нет (у импортированного
- * приложения Plantar не настраивает веб-сервер, домен мог остаться прежним).
+ * A link to the app address promises a working site, so it is shown only when
+ * the address answered the check. It did not answer — a neutral line instead:
+ * the code was updated, but nothing answers at that address (for an imported
+ * app Plantar does not touch the web server, the domain may be unchanged).
+ *
+ * With no address at all there is nothing to link to: a bot simply runs, any
+ * other app is only reported as updated — its address is unknown to Plantar.
  */
-export function deployOutcome(run: RunResult | null): DeployOutcome {
+export function deployOutcome(run: RunResult | null, isBot: boolean): DeployOutcome {
   if (!run || run.status !== "success") return { kind: "none" };
   const rolledBack = run.kind === "rollback";
-  if (!run.url) return { kind: "done", rolledBack };
+  if (!run.url) return { kind: "done", rolledBack, isBot };
   return {
     kind: run.urlReachable === false ? "unreachable" : "link",
     url: run.url,

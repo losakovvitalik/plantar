@@ -12,7 +12,7 @@ const run = (over: Partial<Run> = {}): Run => ({
 describe("deployOutcome", () => {
   it("адрес не ответил: ссылки нет — деплой не выдаётся за работающий сайт", () => {
     expect(
-      deployOutcome(run({ url: "https://new.example.com/", urlReachable: false })),
+      deployOutcome(run({ url: "https://new.example.com/", urlReachable: false }), false),
     ).toEqual({
       kind: "unreachable",
       url: "https://new.example.com/",
@@ -22,12 +22,12 @@ describe("deployOutcome", () => {
 
   it("адрес ответил: ссылка", () => {
     expect(
-      deployOutcome(run({ url: "https://site.example/", urlReachable: true })),
+      deployOutcome(run({ url: "https://site.example/", urlReachable: true }), false),
     ).toEqual({ kind: "link", url: "https://site.example/", rolledBack: false });
   });
 
   it("проверки не было (старая запись истории): ссылка как раньше", () => {
-    expect(deployOutcome(run({ url: "https://site.example/" }))).toEqual({
+    expect(deployOutcome(run({ url: "https://site.example/" }), false)).toEqual({
       kind: "link",
       url: "https://site.example/",
       rolledBack: false,
@@ -38,6 +38,7 @@ describe("deployOutcome", () => {
     expect(
       deployOutcome(
         run({ kind: "rollback", url: "https://site.example/", urlReachable: false }),
+        false,
       ),
     ).toEqual({
       kind: "unreachable",
@@ -46,15 +47,27 @@ describe("deployOutcome", () => {
     });
   });
 
-  it("адреса нет (бот): сообщение без ссылки", () => {
-    expect(deployOutcome(run())).toEqual({ kind: "done", rolledBack: false });
+  it("адреса нет, это бот: сообщение про бота", () => {
+    expect(deployOutcome(run(), true)).toEqual({
+      kind: "done",
+      rolledBack: false,
+      isBot: true,
+    });
+  });
+
+  it("адреса нет у веб-приложения: сообщение не про бота", () => {
+    expect(deployOutcome(run(), false)).toEqual({
+      kind: "done",
+      rolledBack: false,
+      isBot: false,
+    });
   });
 
   it("прогон не завершился успехом: показывать нечего", () => {
-    expect(deployOutcome(null)).toEqual({ kind: "none" });
-    expect(deployOutcome(run({ status: "running" }))).toEqual({ kind: "none" });
+    expect(deployOutcome(null, false)).toEqual({ kind: "none" });
+    expect(deployOutcome(run({ status: "running" }), false)).toEqual({ kind: "none" });
     expect(
-      deployOutcome(run({ status: "error", url: "https://site.example/" })),
+      deployOutcome(run({ status: "error", url: "https://site.example/" }), false),
     ).toEqual({ kind: "none" });
   });
 });
