@@ -109,6 +109,10 @@ const MESSAGES = {
     ru: "→ По https ответа нет, проверяю обычный адрес: {url}",
     en: "→ Nothing answered over https, checking the plain address: {url}",
   },
+  siteCheckPlainHttpOnly: {
+    ru: "! По адресу {url} ответа нет, а {plainUrl} отвечает. Откройте {plainUrl} и посмотрите, ваше ли это приложение: так же отвечает и стандартная страница веб-сервера, если адрес на нём не настроен.",
+    en: "! Nothing answers at {url}, while {plainUrl} does. Open {plainUrl} and check whether it is your app: the web server's default page answers the same way when the address is not set up on it.",
+  },
   siteCheckNoResponse: {
     ru: "! Деплой завершён, но сайт {url} пока не отвечает. Попробуйте открыть его через минуту-другую; если не поможет — посмотрите логи.",
     en: "! The deploy finished, but the site {url} is not responding yet. Try opening it in a minute or two; if that does not help, check the logs.",

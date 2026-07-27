@@ -17,6 +17,7 @@ import type {
   ServerInfo,
   ServerMetricPoint,
   ServerMetrics,
+  SiteCheckStatus,
   TrafficStats,
 } from "@plantar/core";
 import type {
@@ -51,6 +52,7 @@ export type {
   ServerInfo,
   ServerMetricPoint,
   ServerMetrics,
+  SiteCheckStatus,
   TrafficStats,
   ProjectRecord,
   ServerRecord,
@@ -170,9 +172,9 @@ export interface DeployRunState {
   /** Время последней строки — счётчик текущего шага продолжается от неё */
   lastLineAt: string;
   url?: string;
-  /** Whether the address answered the availability check after the run;
+  /** How the address answered the availability check after the run;
    *  undefined when there was no address to check */
-  urlReachable?: boolean;
+  urlCheck?: SiteCheckStatus;
   error?: string;
   /** Машинный код ошибки (например npm-peer-conflict) для действий в GUI */
   errorCode?: string;
@@ -190,9 +192,9 @@ export interface DeployFinishedEvent {
   kind: "deploy" | "rollback" | "migrate";
   status: "success" | "error";
   url?: string;
-  /** Whether the address answered the availability check; undefined when
-   *  there was no address to check */
-  urlReachable?: boolean;
+  /** How the address answered the availability check; undefined when there
+   *  was no address to check */
+  urlCheck?: SiteCheckStatus;
   error?: string;
   code?: string;
 }

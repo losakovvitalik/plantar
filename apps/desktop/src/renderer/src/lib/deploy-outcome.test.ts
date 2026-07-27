@@ -12,7 +12,10 @@ const run = (over: Partial<Run> = {}): Run => ({
 describe("deployOutcome", () => {
   it("адрес не ответил: ссылки нет — деплой не выдаётся за работающий сайт", () => {
     expect(
-      deployOutcome(run({ url: "https://new.example.com/", urlReachable: false }), false),
+      deployOutcome(
+        run({ url: "https://new.example.com/", urlCheck: "no-answer" }),
+        false,
+      ),
     ).toEqual({
       kind: "unreachable",
       url: "https://new.example.com/",
@@ -22,8 +25,22 @@ describe("deployOutcome", () => {
 
   it("адрес ответил: ссылка", () => {
     expect(
-      deployOutcome(run({ url: "https://site.example/", urlReachable: true }), false),
+      deployOutcome(run({ url: "https://site.example/", urlCheck: "answered" }), false),
     ).toEqual({ kind: "link", url: "https://site.example/", rolledBack: false });
+  });
+
+  it("ответил только обычный http: ссылки нет, и настроенный адрес не подменяется", () => {
+    expect(
+      deployOutcome(
+        run({ url: "https://new.example.com/", urlCheck: "plain-http" }),
+        false,
+      ),
+    ).toEqual({
+      kind: "plainHttp",
+      url: "https://new.example.com/",
+      plainUrl: "http://new.example.com/",
+      rolledBack: false,
+    });
   });
 
   it("проверки не было (старая запись истории): ссылка как раньше", () => {
@@ -37,7 +54,7 @@ describe("deployOutcome", () => {
   it("возврат версии по неотвечающему адресу тоже без ссылки", () => {
     expect(
       deployOutcome(
-        run({ kind: "rollback", url: "https://site.example/", urlReachable: false }),
+        run({ kind: "rollback", url: "https://site.example/", urlCheck: "no-answer" }),
         false,
       ),
     ).toEqual({
@@ -63,8 +80,8 @@ describe("deployOutcome", () => {
     });
   });
 
-  // Вкладка «История» зовёт эту же функцию, поэтому в ней та же кнопка
-  // «Открыть сайт» не появляется у прогона, который не ответил
+  // The "History" tab calls the same function, so its "Open site" button is
+  // missing for exactly the runs the "Deploy" tab does not link either
   it("запись истории (kind может отсутствовать): решение то же", () => {
     const record = { status: "success" as const, url: "https://site.example/" };
     expect(deployOutcome(record)).toEqual({
@@ -72,11 +89,12 @@ describe("deployOutcome", () => {
       url: "https://site.example/",
       rolledBack: false,
     });
-    expect(deployOutcome({ ...record, urlReachable: false })).toEqual({
+    expect(deployOutcome({ ...record, urlCheck: "no-answer" })).toEqual({
       kind: "unreachable",
       url: "https://site.example/",
       rolledBack: false,
     });
+    expect(deployOutcome({ ...record, urlCheck: "plain-http" }).kind).toBe("plainHttp");
   });
 
   it("прогон не завершился успехом: показывать нечего", () => {

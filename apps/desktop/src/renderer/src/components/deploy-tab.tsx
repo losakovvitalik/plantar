@@ -17,6 +17,7 @@ import type {
   ProjectConfig,
   ProjectRecord,
   ServerRecord,
+  SiteCheckStatus,
 } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
 import { deployOutcome } from "../lib/deploy-outcome";
@@ -61,8 +62,8 @@ interface RunView {
   kind: "deploy" | "rollback" | "migrate";
   startedAt: string;
   url: string | null;
-  /** Whether the address answered the availability check; null — nothing to check */
-  urlReachable: boolean | null;
+  /** How the address answered the availability check; null — nothing to check */
+  urlCheck: SiteCheckStatus | null;
   error: { message: string; code?: string } | null;
 }
 
@@ -271,7 +272,7 @@ export function DeployTab({
             ...prev,
             status: event.status,
             url: event.url ?? null,
-            urlReachable: event.urlReachable ?? null,
+            urlCheck: event.urlCheck ?? null,
             error:
               event.status === "error"
                 ? { message: event.error ?? "", code: event.code }
@@ -293,7 +294,7 @@ export function DeployTab({
         kind: state.kind,
         startedAt: state.startedAt,
         url: state.url ?? null,
-        urlReachable: state.urlReachable ?? null,
+        urlCheck: state.urlCheck ?? null,
         error: state.error
           ? { message: state.error, code: state.errorCode }
           : null,
@@ -334,7 +335,7 @@ export function DeployTab({
       kind,
       startedAt: new Date().toISOString(),
       url: null,
-      urlReachable: null,
+      urlCheck: null,
       error: null,
     });
     setLines([]);
@@ -625,7 +626,7 @@ export function DeployTab({
         </div>
       )}
 
-      {outcome.kind === "link" ? (
+      {outcome.kind === "link" && (
         <button
           onClick={() => window.plantar.openExternal(outcome.url)}
           className="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-moss outline-none hover:underline focus-visible:ring-2 focus-visible:ring-moss/50"
@@ -635,22 +636,38 @@ export function DeployTab({
             : t("deploy.deployedAt", { url: outcome.url })}
           <ExternalLink className="size-3.5" />
         </button>
-      ) : outcome.kind === "unreachable" ? (
+      )}
+
+      {outcome.kind === "unreachable" && (
         <p className="self-start text-sm font-semibold text-ink-soft">
           {outcome.rolledBack
             ? t("deploy.rolledBackNoResponse", { url: outcome.url })
             : t("deploy.deployedNoResponse", { url: outcome.url })}
         </p>
-      ) : (
-        outcome.kind === "done" && (
-          <p className="self-start text-sm font-semibold text-moss">
-            {outcome.rolledBack
-              ? t("deploy.rolledBackDone")
-              : outcome.isBot
-                ? t("deploy.botDeployed")
-                : t("deploy.deployedDone")}
-          </p>
-        )
+      )}
+
+      {outcome.kind === "plainHttp" && (
+        <p className="self-start text-sm font-semibold text-ink-soft">
+          {outcome.rolledBack
+            ? t("deploy.rolledBackPlainHttp", {
+                url: outcome.url,
+                plainUrl: outcome.plainUrl,
+              })
+            : t("deploy.deployedPlainHttp", {
+                url: outcome.url,
+                plainUrl: outcome.plainUrl,
+              })}
+        </p>
+      )}
+
+      {outcome.kind === "done" && (
+        <p className="self-start text-sm font-semibold text-moss">
+          {outcome.rolledBack
+            ? t("deploy.rolledBackDone")
+            : outcome.isBot
+              ? t("deploy.botDeployed")
+              : t("deploy.deployedDone")}
+        </p>
       )}
 
       {linkError ? (

@@ -115,6 +115,8 @@ export const en: Record<MessageKey, string> = {
   "deploy.deployedAt": "App deployed: {url}",
   "deploy.deployedNoResponse":
     "The app was updated, but it did not respond at {url}. This address may not be set up on the server yet, or the change may need a few more minutes.",
+  "deploy.deployedPlainHttp":
+    "The app was updated, but it did not respond at {url}. The answer came from the unsecured address {plainUrl} — open it and see whether it is your app: the web server's default page answers exactly the same way when this address is not set up on it.",
   "deploy.botDeployed": "Bot deployed and running.",
   "deploy.deployedDone": "The app was updated and is running.",
   "deploy.terminalEmpty": "Every deploy step will show up here.",
@@ -134,6 +136,8 @@ export const en: Record<MessageKey, string> = {
   "deploy.rolledBackAt": "Previous version restored: {url}",
   "deploy.rolledBackNoResponse":
     "The previous version was restored, but the app did not respond at {url}. This address may not be set up on the server yet, or the change may need a few more minutes.",
+  "deploy.rolledBackPlainHttp":
+    "The previous version was restored, but the app did not respond at {url}. The answer came from the unsecured address {plainUrl} — open it and see whether it is your app: the web server's default page answers exactly the same way when this address is not set up on it.",
   "deploy.rolledBackDone": "Previous version restored.",
   "deploy.externalHint":
     "This app was imported from the server and is updated carefully: Plantar pulls fresh code from the repository right into the app folder, installs dependencies, builds and restarts the app under its old name. Web server settings and other apps are left untouched.",

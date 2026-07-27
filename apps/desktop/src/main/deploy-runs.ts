@@ -1,4 +1,5 @@
 import { BrowserWindow } from "electron";
+import type { SiteCheckStatus } from "@plantar/core";
 import { t } from "./i18n";
 
 /**
@@ -27,9 +28,9 @@ export interface DeployRunState {
   /** Время последней строки — счётчик текущего шага продолжается от неё */
   lastLineAt: string;
   url?: string;
-  /** Whether the address answered the availability check after the run;
+  /** How the address answered the availability check after the run;
    *  undefined when there was no address to check */
-  urlReachable?: boolean;
+  urlCheck?: SiteCheckStatus;
   error?: string;
   /** Машинный код ошибки (например npm-peer-conflict) для действий в GUI */
   errorCode?: string;
@@ -43,7 +44,7 @@ interface DeployRun {
   startedAt: string;
   lastLineAt: string;
   url?: string;
-  urlReachable?: boolean;
+  urlCheck?: SiteCheckStatus;
   error?: string;
   errorCode?: string;
 }
@@ -53,7 +54,7 @@ export interface DeployRunHandle {
   log(line: string): void;
   finish(
     result:
-      | { status: "success"; url?: string; urlReachable?: boolean }
+      | { status: "success"; url?: string; urlCheck?: SiteCheckStatus }
       | { status: "error"; error: string; code?: string },
   ): void;
 }
@@ -104,7 +105,7 @@ export function startDeployRun(projectId: string, kind: DeployKind): DeployRunHa
       if (result.status === "success") {
         run.status = "success";
         run.url = result.url;
-        run.urlReachable = result.urlReachable;
+        run.urlCheck = result.urlCheck;
       } else {
         run.status = "error";
         run.error = result.error;
@@ -115,7 +116,7 @@ export function startDeployRun(projectId: string, kind: DeployKind): DeployRunHa
         kind: run.kind,
         status: run.status,
         url: run.url,
-        urlReachable: run.urlReachable,
+        urlCheck: run.urlCheck,
         error: run.error,
         code: run.errorCode,
       });
@@ -142,7 +143,7 @@ export function deployRunState(projectId: string): DeployRunState | null {
     startedAt: run.startedAt,
     lastLineAt: run.lastLineAt,
     url: run.url,
-    urlReachable: run.urlReachable,
+    urlCheck: run.urlCheck,
     error: run.error,
     errorCode: run.errorCode,
   };

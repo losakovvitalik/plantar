@@ -100,23 +100,24 @@ export async function waitForStableProcess(
   log(t("processStable"));
 }
 
-/** Результат смоук-проверки адреса после деплоя */
-export interface SiteCheckResult {
-  /** Адрес ответил */
-  reachable: boolean;
-  /** Адрес, который ответил: отличается от проверяемого, когда по https
-   *  не ответило ничего, а приложение отдаётся по обычному http */
-  url: string;
-}
+/**
+ * Outcome of the post-deploy smoke check of the public address.
+ *
+ * plain-http is deliberately not a success: the answer came from an address
+ * the user never configured, and on port 80 an untouched nginx replies to any
+ * unknown host with its default site (or a redirect to https), so the answer
+ * does not prove the app is served there.
+ */
+export type SiteCheckStatus = "answered" | "plain-http" | "no-answer";
 
-/** Одна попытка (с ретраями): ответ есть — code === 0; пустой код или 000 —
- *  по адресу не ответило вообще ничего */
+/** One attempt (with retries): an answer means code === 0; an empty code or
+ *  000 means nothing at all answered at the address */
 async function probeUrl(
   conn: SshConnection,
   url: string,
 ): Promise<{ answered: boolean; code: string }> {
-  // -k: проверяем доступность, а не сертификат; ретраи — nginx/приложению
-  // может понадобиться пара секунд после перезагрузки
+  // -k: availability is what is checked here, not the certificate; retries —
+  // nginx or the app may need a couple of seconds after a restart
   const check = await conn.exec(
     `for i in 1 2 3 4 5; do ` +
       `code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 ${shellQuote(url)} 2>/dev/null || true); ` +
@@ -129,8 +130,8 @@ async function probeUrl(
   };
 }
 
-/** По адресу не ответило вообще ничего (в отличие от 502/503/504, когда
- *  веб-сервер на месте, но не достучался до приложения) */
+/** Nothing at all answered at the address — unlike 502/503/504, where the web
+ *  server is in place but could not reach the app */
 function noAnswer(code: string): boolean {
   return code === "" || code === "000";
 }
@@ -144,14 +145,16 @@ const HTTPS_PREFIX = "https://";
  * или отсутствие ответа — прокси не достучался до приложения. Неудача не
  * роняет деплой, а заменяет «сайт доступен» предупреждением.
  *
- * Returns whether the address answered — and which address did, so the caller
- * can avoid presenting an address that did not respond as a working link.
+ * Returns how the configured address answered, so the caller does not present
+ * an address that stayed silent as a working link. The configured address is
+ * the only one the result ever speaks about.
  *
  * httpFallback — for an imported app: its web server is set up by hand and
  * Plantar only recorded the server_name, which may well be served over plain
- * http. Nothing at all answered on https — ask http before calling the address
- * unreachable. Managed deploys do not use it: there Plantar itself set up
- * nginx and the certificate, so a silent https is a real failure.
+ * http. Nothing at all answered on https — ask http, but report that as
+ * plain-http rather than as a confirmed address (see SiteCheckStatus).
+ * Managed deploys do not use it: there Plantar itself set up nginx and the
+ * certificate, so a silent https is a real failure.
  */
 export async function verifySiteAvailable(
   conn: SshConnection,
@@ -159,29 +162,25 @@ export async function verifySiteAvailable(
   liveMessage: "siteAvailable" | "appAvailable",
   log: (line: string) => void,
   options: { httpFallback?: boolean } = {},
-): Promise<SiteCheckResult> {
+): Promise<SiteCheckStatus> {
   log(t("checkingSiteUrl", { url }));
-  let probe = await probeUrl(conn, url);
-  let checked = url;
-  if (
-    !probe.answered &&
-    noAnswer(probe.code) &&
-    options.httpFallback &&
-    url.startsWith(HTTPS_PREFIX)
-  ) {
-    checked = `http://${url.slice(HTTPS_PREFIX.length)}`;
-    log(t("checkingSitePlainHttp", { url: checked }));
-    probe = await probeUrl(conn, checked);
-  }
+  const probe = await probeUrl(conn, url);
   if (probe.answered) {
-    log(t(liveMessage, { url: checked }));
-    return { reachable: true, url: checked };
+    log(t(liveMessage, { url }));
+    return "answered";
   }
-  if (noAnswer(probe.code)) {
-    log(t("siteCheckNoResponse", { url: checked }));
-  } else {
-    log(t("siteCheckBadGateway", { url: checked, code: probe.code }));
+  if (!noAnswer(probe.code)) {
+    log(t("siteCheckBadGateway", { url, code: probe.code }));
+    return "no-answer";
   }
-  // Не ответил ни один адрес — приложение остаётся при своём настроенном
-  return { reachable: false, url };
+  if (options.httpFallback && url.startsWith(HTTPS_PREFIX)) {
+    const plainUrl = `http://${url.slice(HTTPS_PREFIX.length)}`;
+    log(t("checkingSitePlainHttp", { url: plainUrl }));
+    if ((await probeUrl(conn, plainUrl)).answered) {
+      log(t("siteCheckPlainHttpOnly", { url, plainUrl }));
+      return "plain-http";
+    }
+  }
+  log(t("siteCheckNoResponse", { url }));
+  return "no-answer";
 }

@@ -65,13 +65,15 @@ describe("waitForStableProcess", () => {
 describe("verifySiteAvailable", () => {
   const HTTPS = "https://site.example/";
   const HTTP = "http://site.example/";
+  /** The live messages are the only ones marked with a tick */
+  const confirmed = (lines: string[]) => lines.some((line) => line.startsWith("✓"));
 
   it("адрес ответил — проверка пройдена", async () => {
     const conn = fakeConn([[/curl/, { code: 0, stdout: "200\n" }]], []);
 
     await expect(
       verifySiteAvailable(conn, HTTPS, "appAvailable", () => {}),
-    ).resolves.toEqual({ reachable: true, url: HTTPS });
+    ).resolves.toBe("answered");
   });
 
   it("адрес не ответил — результат уходит вызывающему, а не только в лог", async () => {
@@ -80,12 +82,13 @@ describe("verifySiteAvailable", () => {
 
     await expect(
       verifySiteAvailable(conn, HTTPS, "appAvailable", (line) => lines.push(line)),
-    ).resolves.toEqual({ reachable: false, url: HTTPS });
+    ).resolves.toBe("no-answer");
     expect(lines.join("\n")).toContain(HTTPS);
   });
 
-  it("импортированное приложение по http: молчание https — не приговор", async () => {
+  it("ответил только обычный http: это отдельный исход, а не подтверждение", async () => {
     const commands: string[] = [];
+    const lines: string[] = [];
     const conn = fakeConn(
       [
         [/'https:\/\//, { code: 1, stdout: "000\n" }],
@@ -95,17 +98,41 @@ describe("verifySiteAvailable", () => {
     );
 
     await expect(
-      verifySiteAvailable(conn, HTTPS, "appAvailable", () => {}, { httpFallback: true }),
-    ).resolves.toEqual({ reachable: true, url: HTTP });
+      verifySiteAvailable(conn, HTTPS, "appAvailable", (line) => lines.push(line), {
+        httpFallback: true,
+      }),
+    ).resolves.toBe("plain-http");
     expect(commands).toHaveLength(2);
+    expect(lines.join("\n")).toContain(HTTP);
+    expect(confirmed(lines)).toBe(false);
   });
 
-  it("не ответил ни один адрес: адрес остаётся настроенным", async () => {
+  it("редирект дефолтного сервера nginx: домен просто указывает на сервер — не подтверждение", async () => {
+    const lines: string[] = [];
+    const conn = fakeConn(
+      [
+        [/'https:\/\//, { code: 1, stdout: "000\n" }],
+        // return 301 https://… of an untouched nginx: any host resolving to
+        // the server gets it, so an answer here says nothing about the app
+        [/'http:\/\//, { code: 0, stdout: "301\n" }],
+      ],
+      [],
+    );
+
+    await expect(
+      verifySiteAvailable(conn, HTTPS, "appAvailable", (line) => lines.push(line), {
+        httpFallback: true,
+      }),
+    ).resolves.toBe("plain-http");
+    expect(confirmed(lines)).toBe(false);
+  });
+
+  it("не ответил ни один адрес: исход — «не ответило»", async () => {
     const conn = fakeConn([[/curl/, { code: 1, stdout: "000\n" }]], []);
 
     await expect(
       verifySiteAvailable(conn, HTTPS, "appAvailable", () => {}, { httpFallback: true }),
-    ).resolves.toEqual({ reachable: false, url: HTTPS });
+    ).resolves.toBe("no-answer");
   });
 
   it("ответ 502 — до приложения не достучались, http-запасной проверки нет", async () => {
@@ -114,7 +141,7 @@ describe("verifySiteAvailable", () => {
 
     await expect(
       verifySiteAvailable(conn, HTTPS, "appAvailable", () => {}, { httpFallback: true }),
-    ).resolves.toEqual({ reachable: false, url: HTTPS });
+    ).resolves.toBe("no-answer");
     expect(commands).toHaveLength(1);
   });
 
@@ -122,7 +149,9 @@ describe("verifySiteAvailable", () => {
     const commands: string[] = [];
     const conn = fakeConn([[/curl/, { code: 1, stdout: "000\n" }]], commands);
 
-    await verifySiteAvailable(conn, HTTPS, "siteAvailable", () => {});
+    await expect(
+      verifySiteAvailable(conn, HTTPS, "siteAvailable", () => {}),
+    ).resolves.toBe("no-answer");
     expect(commands).toHaveLength(1);
   });
 });

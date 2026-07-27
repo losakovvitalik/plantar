@@ -86,8 +86,8 @@ export function HistoryTab({ project }: Props) {
     <div className="thin-scroll flex h-full flex-col gap-2 overflow-y-auto">
       {records.map((record) => {
         const isOpen = openLog === record.logFile;
-        // Одно правило со вкладкой «Деплой»: адрес, не ответивший на проверку,
-        // не выдаётся за работающую ссылку ни там, ни здесь
+        // Same rule as the "Deploy" tab: an address that did not answer the
+        // check is not passed off as a working link here either
         const outcome = deployOutcome(record);
         return (
           <div

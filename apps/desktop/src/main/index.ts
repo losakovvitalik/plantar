@@ -759,7 +759,7 @@ async function runDeploy(
       status: "success",
       kind: migrate ? kind : undefined,
       url: result.url,
-      urlReachable: result.urlReachable,
+      urlCheck: result.urlCheck,
       commit: deployedCommit?.hash,
       logFile: logWriter.file,
     });
@@ -779,11 +779,7 @@ async function runDeploy(
     if (settings.notifyOnDeploySuccess) {
       notifyDeployResult(projectId, config.name, true);
     }
-    run.finish({
-      status: "success",
-      url: result.url,
-      urlReachable: result.urlReachable,
-    });
+    run.finish({ status: "success", url: result.url, urlCheck: result.urlCheck });
     return { url: result.url };
   } catch (err) {
     const message = (err as Error).message;
@@ -861,9 +857,6 @@ async function runExternalInPlace(
         checkoutCommit ? { checkout: checkoutCommit } : {},
       ),
     );
-    // Ссылка ведёт на тот адрес, который ответил: приложение с настроенным
-    // вручную nginx может отдаваться по обычному http, а не по https
-    const checkedUrl = result.url ?? url;
     appendHistory({
       project: config.name,
       projectId: project.id,
@@ -872,8 +865,8 @@ async function runExternalInPlace(
       finishedAt: new Date().toISOString(),
       status: "success",
       kind,
-      url: checkedUrl,
-      urlReachable: result.urlReachable,
+      url,
+      urlCheck: result.urlCheck,
       commit: result.commit?.hash,
       logFile: logWriter.file,
     });
@@ -890,12 +883,8 @@ async function runExternalInPlace(
     if (readSettings().notifyOnDeploySuccess) {
       notifyDeployResult(projectId, config.name, true);
     }
-    run.finish({
-      status: "success",
-      url: checkedUrl,
-      urlReachable: result.urlReachable,
-    });
-    return { url: checkedUrl };
+    run.finish({ status: "success", url, urlCheck: result.urlCheck });
+    return { url };
   } catch (err) {
     const message = (err as Error).message;
     const code = (err as { code?: string }).code;
@@ -1009,7 +998,7 @@ function restoredDeployState(project: ProjectRecord): DeployRunState | null {
     startedAt,
     lastLineAt: record?.finishedAt ?? startedAt,
     url: record?.url,
-    urlReachable: record?.urlReachable,
+    urlCheck: record?.urlCheck,
     error: record?.error,
     errorCode: record?.code,
   };

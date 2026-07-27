@@ -7,6 +7,7 @@ import {
   waitForApp,
   waitForStableProcess,
 } from "./process-checks";
+import type { SiteCheckStatus } from "./process-checks";
 
 /**
  * Бережный режим для импортированных приложений: Plantar обновляет их
@@ -186,13 +187,9 @@ export interface ExternalTarget {
 export interface ExternalDeployResult {
   /** Развёрнутый коммит; null — прочитать не удалось */
   commit: ServerCommit | null;
-  /** Whether the address answered the availability check; undefined when
-   *  there was no address to check */
-  urlReachable?: boolean;
-  /** Адрес, который проверялся: у импортированного приложения им может
-   *  оказаться http-вариант домена, если по https не ответило ничего.
-   *  undefined — проверять было нечего */
-  url?: string;
+  /** How the configured address answered the availability check; undefined
+   *  when there was no address to check */
+  urlCheck?: SiteCheckStatus;
 }
 
 const LOCKFILES: Array<[file: string, manager: string]> = [
@@ -320,27 +317,21 @@ export async function deployExternalInPlace(
   } else {
     await waitForApp(conn, target.pm2Name, target.port, log);
   }
-  let urlReachable: boolean | undefined;
-  let checkedUrl = target.url;
+  let urlCheck: SiteCheckStatus | undefined;
   if (target.url) {
-    // httpFallback: адрес взят из server_name чужого конфига nginx — тот
-    // может слушать только 80-й порт, и тогда https молчит всегда
-    const check = await verifySiteAvailable(conn, target.url, "appAvailable", log, {
+    // httpFallback: the address comes from the server_name of a hand-written
+    // nginx config, which may listen on port 80 only — then https always stays
+    // silent, and a plain-http answer is worth reporting as its own outcome
+    urlCheck = await verifySiteAvailable(conn, target.url, "appAvailable", log, {
       httpFallback: true,
     });
-    urlReachable = check.reachable;
-    checkedUrl = check.url;
   }
   log(options.checkout ? t("externalRollbackDone") : t("externalDeployDone"));
 
   const commit = await conn.exec(
     `git -C ${dir} log -1 --format=${shellQuote(GIT_LOG_FORMAT)} 2>/dev/null`,
   );
-  return {
-    commit: parseServerCommits(commit.stdout)[0] ?? null,
-    urlReachable,
-    url: checkedUrl,
-  };
+  return { commit: parseServerCommits(commit.stdout)[0] ?? null, urlCheck };
 }
 
 /**
