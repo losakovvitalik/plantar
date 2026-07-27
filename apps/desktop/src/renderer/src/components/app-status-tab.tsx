@@ -86,13 +86,14 @@ export function AppStatusTab({
         if (!monitoring.ok) throw new Error(monitoring.error);
         if (type !== "static") next.appMetrics = monitoring.data.appMetrics;
         if (type !== "bot") {
-          if (monitoring.data.goaccess === null) {
-            next.goaccessMissing = true;
-          } else {
-            const traffic = await window.plantar.getTrafficStats(project.id);
-            if (!traffic.ok) throw new Error(traffic.error);
-            next.traffic = traffic.data;
-          }
+          // Visits are asked for before the statistics tool is checked: an
+          // imported app whose config declares no access_log of its own is
+          // answered from the project record alone, so its state is known even
+          // without the tool. Any other app needs the tool to read the log
+          const traffic = await window.plantar.getTrafficStats(project.id);
+          if (traffic.ok) next.traffic = traffic.data;
+          else if (monitoring.data.goaccess === null) next.goaccessMissing = true;
+          else throw new Error(traffic.error);
         }
         if (syncPromise) {
           const sync = await syncPromise;
@@ -525,17 +526,23 @@ function TrafficCard({
   // «Журнала нет» и «журнал пока пуст» — разные ситуации: без своего журнала
   // посещения не появятся, сколько сайт ни открывай
   if (traffic.logMissing || traffic.totalHits === 0) {
+    // An imported app whose config has no access_log of its own writes visits
+    // into the server-wide log: a deploy creates nothing there, so the button
+    // is not offered — it would promise a result it cannot deliver
+    const message = traffic.sharedLog
+      ? "appStatus.trafficSharedLog"
+      : traffic.logMissing
+        ? "appStatus.trafficNoLog"
+        : "appStatus.trafficEmpty";
     return (
       <div className="rounded-xl border border-line bg-card p-5">
         <h3 className="text-[13px] font-bold tracking-wide text-ink-soft uppercase">
           {t("appStatus.trafficTitle")}
         </h3>
         <p className="mt-2 max-w-md text-[13px] leading-relaxed text-ink-soft">
-          {traffic.logMissing
-            ? t("appStatus.trafficNoLog")
-            : t("appStatus.trafficEmpty")}
+          {t(message)}
         </p>
-        {traffic.logMissing && (
+        {traffic.logMissing && !traffic.sharedLog && (
           <Button variant="outline" size="sm" className="mt-3" onClick={onDeploy}>
             <Rocket />
             {t("deploy.start")}

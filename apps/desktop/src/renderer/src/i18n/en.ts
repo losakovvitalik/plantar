@@ -459,6 +459,8 @@ export const en: Record<MessageKey, string> = {
     "No visits recorded yet. They will appear once people start opening the site.",
   "appStatus.trafficNoLog":
     "The app does not have its own visit log yet, so site visits are not shown here. The log will appear after the first deploy through Plantar.",
+  "appStatus.trafficSharedLog":
+    "The app records visits into the server's shared log, mixed together with the other sites there, so visits to this particular site cannot be told apart. A log of its own appears if the app is moved under Plantar management.",
   "appStatus.needGoaccess":
     "To see visits, install the “Visit statistics” tool on the server screen.",
   "appStatus.openServer": "Open the server screen",

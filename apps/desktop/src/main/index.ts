@@ -127,6 +127,7 @@ import {
 } from "./deploy-runs";
 import { forgetServer, startAppMonitor, stopAppMonitor } from "./app-monitor";
 import { createAppTray, destroyTray, refreshTrayMenu } from "./tray";
+import { markSharedLog, SHARED_LOG_TRAFFIC, trafficLogPath } from "./traffic-log";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
 
@@ -1696,11 +1697,13 @@ app.whenReady().then(() => {
         } catch {
           /* plantar.json недоступен — используем имя на момент добавления */
         }
-        const logPath =
-          project.external?.accessLogPath ?? `/var/log/nginx/${name}.access.log`;
-        return withServer(server, args.password, (conn) =>
+        const logPath = trafficLogPath(project, name);
+        // No log of its own — there is nothing to read, so no connection either
+        if (logPath === null) return SHARED_LOG_TRAFFIC;
+        const stats = await withServer(server, args.password, (conn) =>
           getTrafficStats(conn, logPath),
         );
+        return markSharedLog(project, stats);
       }),
   );
 
