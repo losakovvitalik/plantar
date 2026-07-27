@@ -62,12 +62,6 @@ export function AppStatusTab({
   const [enableMetricsOpen, setEnableMetricsOpen] = useState(false);
 
   const type = config?.type;
-  // An imported app whose nginx config declares no access_log of its own writes
-  // visits into the server-wide log: the statistics tool would find nothing for
-  // it there, so installing it is not worth offering. `access_log off;` is a
-  // switch rather than a path, so the literal "off" counts as no log either
-  const discoveredLog = project.external?.accessLogPath;
-  const sharedLogOnly = !!project.external && (!discoveredLog || discoveredLog === "off");
 
   const load = useCallback(
     async (password?: string) => {
@@ -92,13 +86,14 @@ export function AppStatusTab({
         if (!monitoring.ok) throw new Error(monitoring.error);
         if (type !== "static") next.appMetrics = monitoring.data.appMetrics;
         if (type !== "bot") {
-          if (monitoring.data.goaccess === null) {
-            next.goaccessMissing = true;
-          } else {
-            const traffic = await window.plantar.getTrafficStats(project.id);
-            if (!traffic.ok) throw new Error(traffic.error);
-            next.traffic = traffic.data;
-          }
+          // Visits are asked for before the statistics tool is checked: an
+          // imported app whose config declares no access_log of its own is
+          // answered from the project record alone, so its state is known even
+          // without the tool. Any other app needs the tool to read the log
+          const traffic = await window.plantar.getTrafficStats(project.id);
+          if (traffic.ok) next.traffic = traffic.data;
+          else if (monitoring.data.goaccess === null) next.goaccessMissing = true;
+          else throw new Error(traffic.error);
         }
         if (syncPromise) {
           const sync = await syncPromise;
@@ -215,16 +210,12 @@ export function AppStatusTab({
                   {t("appStatus.trafficTitle")}
                 </h3>
                 <p className="mt-2 max-w-md text-[13px] leading-relaxed text-ink-soft">
-                  {sharedLogOnly
-                    ? t("appStatus.trafficSharedLog")
-                    : t("appStatus.needGoaccess")}
+                  {t("appStatus.needGoaccess")}
                 </p>
-                {!sharedLogOnly && (
-                  <Button variant="outline" size="sm" className="mt-3" onClick={onOpenServer}>
-                    {t("appStatus.openServer")}
-                    <ArrowRight />
-                  </Button>
-                )}
+                <Button variant="outline" size="sm" className="mt-3" onClick={onOpenServer}>
+                  {t("appStatus.openServer")}
+                  <ArrowRight />
+                </Button>
               </div>
             ) : (
               snapshot.traffic && (
