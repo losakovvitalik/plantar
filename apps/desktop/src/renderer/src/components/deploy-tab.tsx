@@ -647,17 +647,28 @@ export function DeployTab({
       )}
 
       {outcome.kind === "plainHttp" && (
-        <p className="self-start text-sm font-semibold text-ink-soft">
-          {outcome.rolledBack
-            ? t("deploy.rolledBackPlainHttp", {
-                url: outcome.url,
-                plainUrl: outcome.plainUrl,
-              })
-            : t("deploy.deployedPlainHttp", {
-                url: outcome.url,
-                plainUrl: outcome.plainUrl,
-              })}
-        </p>
+        <div className="flex flex-col items-start gap-1 self-start">
+          <p className="text-sm font-semibold text-ink-soft">
+            {outcome.rolledBack
+              ? t("deploy.rolledBackPlainHttp", {
+                  url: outcome.url,
+                  plainUrl: outcome.plainUrl,
+                })
+              : t("deploy.deployedPlainHttp", {
+                  url: outcome.url,
+                  plainUrl: outcome.plainUrl,
+                })}
+          </p>
+          {/* The text asks the user to open the plain address, so it has to be
+              openable from here — neutral styling, not the confirmed link */}
+          <button
+            onClick={() => window.plantar.openExternal(outcome.plainUrl)}
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink-soft outline-none hover:underline focus-visible:ring-2 focus-visible:ring-moss/50"
+          >
+            {t("deploy.openPlainUrl", { url: outcome.plainUrl })}
+            <ExternalLink className="size-3.5" />
+          </button>
+        </div>
       )}
 
       {outcome.kind === "done" && (

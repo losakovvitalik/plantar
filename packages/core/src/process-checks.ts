@@ -115,11 +115,12 @@ export type SiteCheckStatus = "answered" | "plain-http" | "no-answer";
 async function probeUrl(
   conn: SshConnection,
   url: string,
+  attempts = 5,
 ): Promise<{ answered: boolean; code: string }> {
   // -k: availability is what is checked here, not the certificate; retries —
   // nginx or the app may need a couple of seconds after a restart
   const check = await conn.exec(
-    `for i in 1 2 3 4 5; do ` +
+    `for i in $(seq 1 ${attempts}); do ` +
       `code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 ${shellQuote(url)} 2>/dev/null || true); ` +
       `case "$code" in ''|000|502|503|504) sleep 2;; *) echo "$code"; exit 0;; esac; ` +
       `done; echo "$code"; exit 1`,
@@ -176,7 +177,10 @@ export async function verifySiteAvailable(
   if (options.httpFallback && url.startsWith(HTTPS_PREFIX)) {
     const plainUrl = `http://${url.slice(HTTPS_PREFIX.length)}`;
     log(t("checkingSitePlainHttp", { url: plainUrl }));
-    if ((await probeUrl(conn, plainUrl)).answered) {
+    // Fewer attempts than the first probe: by now the https loop has already
+    // waited out a full retry cycle, so the app has had its time to come up —
+    // this probe only tells apart the schemes, and the user waits for it
+    if ((await probeUrl(conn, plainUrl, 2)).answered) {
       log(t("siteCheckPlainHttpOnly", { url, plainUrl }));
       return "plain-http";
     }

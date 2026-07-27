@@ -43,6 +43,18 @@ describe("deployOutcome", () => {
     });
   });
 
+  // The status travels through storage and IPC, so the https prefix the plain
+  // address is derived from cannot be taken on trust
+  it("исход plain-http на адресе без https: адрес не режется, исход — «не ответило»", () => {
+    expect(
+      deployOutcome(run({ url: "http://1.2.3.4/", urlCheck: "plain-http" }), false),
+    ).toEqual({
+      kind: "unreachable",
+      url: "http://1.2.3.4/",
+      rolledBack: false,
+    });
+  });
+
   it("проверки не было (старая запись истории): ссылка как раньше", () => {
     expect(deployOutcome(run({ url: "https://site.example/" }), false)).toEqual({
       kind: "link",

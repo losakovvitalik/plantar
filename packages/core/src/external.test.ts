@@ -239,7 +239,7 @@ describe("deployExternalInPlace: сборка команд", () => {
     const conn = fakeConn(
       [
         [/cat .*package\.json/, { stdout: "{}" }],
-        [/for i in 1 2 3 4 5/, { code: 1, stdout: "000\n" }],
+        [/curl -sk/, { code: 1, stdout: "000\n" }],
       ],
       [],
     );

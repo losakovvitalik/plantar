@@ -114,9 +114,10 @@ export const en: Record<MessageKey, string> = {
   "deploy.showCommands": "Show commands",
   "deploy.deployedAt": "App deployed: {url}",
   "deploy.deployedNoResponse":
-    "The app was updated, but it did not respond at {url}. This address may not be set up on the server yet, or the change may need a few more minutes.",
+    "The app was updated, but it did not respond at {url} — the deploy log has the details.",
   "deploy.deployedPlainHttp":
     "The app was updated, but it did not respond at {url}. The answer came from the unsecured address {plainUrl} — open it and see whether it is your app: the web server's default page answers exactly the same way when this address is not set up on it.",
+  "deploy.openPlainUrl": "Open {url}",
   "deploy.botDeployed": "Bot deployed and running.",
   "deploy.deployedDone": "The app was updated and is running.",
   "deploy.terminalEmpty": "Every deploy step will show up here.",
@@ -135,7 +136,7 @@ export const en: Record<MessageKey, string> = {
     "Restore the previous version of the app on the server? The current version will be stopped.",
   "deploy.rolledBackAt": "Previous version restored: {url}",
   "deploy.rolledBackNoResponse":
-    "The previous version was restored, but the app did not respond at {url}. This address may not be set up on the server yet, or the change may need a few more minutes.",
+    "The previous version was restored, but the app did not respond at {url} — the deploy log has the details.",
   "deploy.rolledBackPlainHttp":
     "The previous version was restored, but the app did not respond at {url}. The answer came from the unsecured address {plainUrl} — open it and see whether it is your app: the web server's default page answers exactly the same way when this address is not set up on it.",
   "deploy.rolledBackDone": "Previous version restored.",
@@ -330,6 +331,10 @@ export const en: Record<MessageKey, string> = {
   "history.seconds": "{seconds} s",
   "history.minutesSeconds": "{minutes} min {seconds} s",
   "history.openSite": "Open site",
+  "history.openSiteNoResponse":
+    "There was no answer at this address right after the deploy — the log has the details.",
+  "history.openSitePlainHttp":
+    "There was no answer at the secure address right after the deploy, the unsecured {url} will open — the log has the details.",
   "history.rollback": "Version restored",
 
   "logs.sourceApp": "App",

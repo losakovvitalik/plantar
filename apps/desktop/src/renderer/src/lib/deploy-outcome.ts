@@ -46,6 +46,9 @@ export function deployOutcome(run: RunResult | null, isBot = false): DeployOutco
   if (!url) return { kind: "done", rolledBack, isBot };
   if (run.urlCheck === "no-answer") return { kind: "unreachable", url, rolledBack };
   if (run.urlCheck === "plain-http") {
+    // plain-http is only ever set for an https address, but the record travels
+    // through storage and the IPC boundary — do not take the prefix on trust
+    if (!url.startsWith(HTTPS_PREFIX)) return { kind: "unreachable", url, rolledBack };
     return {
       kind: "plainHttp",
       url,

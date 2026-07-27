@@ -105,6 +105,10 @@ describe("verifySiteAvailable", () => {
     expect(commands).toHaveLength(2);
     expect(lines.join("\n")).toContain(HTTP);
     expect(confirmed(lines)).toBe(false);
+    // The https loop has already waited out its retries, so the fallback probe
+    // is short: it only tells the schemes apart, and the user waits for it
+    expect(commands[0]).toContain("seq 1 5");
+    expect(commands[1]).toContain("seq 1 2");
   });
 
   it("редирект дефолтного сервера nginx: домен просто указывает на сервер — не подтверждение", async () => {
