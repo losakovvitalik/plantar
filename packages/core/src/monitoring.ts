@@ -325,6 +325,10 @@ export interface TrafficStats {
   /** У приложения нет собственного access-лога (внешний конфиг без access_log
    *  или ещё не было деплоя) — посещения не записываются вовсе */
   logMissing?: boolean;
+  /** The app writes visits into the server-wide nginx log, together with every
+   *  other site there, so its own visits cannot be separated out. Only an
+   *  imported app whose config has no access_log of its own ends up like this */
+  sharedLog?: boolean;
   totalHits: number;
   totalVisitors: number;
   /** По дням за хранимый период лога, старые сначала; date — yyyy-mm-dd */

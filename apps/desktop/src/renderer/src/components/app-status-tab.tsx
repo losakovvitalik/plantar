@@ -525,17 +525,23 @@ function TrafficCard({
   // «Журнала нет» и «журнал пока пуст» — разные ситуации: без своего журнала
   // посещения не появятся, сколько сайт ни открывай
   if (traffic.logMissing || traffic.totalHits === 0) {
+    // An imported app whose config has no access_log of its own writes visits
+    // into the server-wide log: a deploy creates nothing there, so the button
+    // is not offered — it would promise a result it cannot deliver
+    const message = traffic.sharedLog
+      ? "appStatus.trafficSharedLog"
+      : traffic.logMissing
+        ? "appStatus.trafficNoLog"
+        : "appStatus.trafficEmpty";
     return (
       <div className="rounded-xl border border-line bg-card p-5">
         <h3 className="text-[13px] font-bold tracking-wide text-ink-soft uppercase">
           {t("appStatus.trafficTitle")}
         </h3>
         <p className="mt-2 max-w-md text-[13px] leading-relaxed text-ink-soft">
-          {traffic.logMissing
-            ? t("appStatus.trafficNoLog")
-            : t("appStatus.trafficEmpty")}
+          {t(message)}
         </p>
-        {traffic.logMissing && (
+        {traffic.logMissing && !traffic.sharedLog && (
           <Button variant="outline" size="sm" className="mt-3" onClick={onDeploy}>
             <Rocket />
             {t("deploy.start")}
