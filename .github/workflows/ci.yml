@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A fix pushed mid-review supersedes the previous run
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: |
+          for p in cli config core i18n ssh storage; do
+            echo "== @plantar/$p"
+            pnpm --filter "@plantar/$p" exec tsc --noEmit
+          done
+          echo "== @plantar/desktop"
+          pnpm --filter @plantar/desktop run typecheck
+
+      - name: Test
+        run: |
+          pnpm --filter @plantar/core test
+          pnpm --filter @plantar/storage test
+          pnpm --filter @plantar/desktop test
