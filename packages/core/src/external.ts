@@ -186,6 +186,9 @@ export interface ExternalTarget {
 export interface ExternalDeployResult {
   /** Развёрнутый коммит; null — прочитать не удалось */
   commit: ServerCommit | null;
+  /** Whether the address answered the availability check; undefined when
+   *  there was no address to check */
+  urlReachable?: boolean;
 }
 
 const LOCKFILES: Array<[file: string, manager: string]> = [
@@ -313,15 +316,16 @@ export async function deployExternalInPlace(
   } else {
     await waitForApp(conn, target.pm2Name, target.port, log);
   }
+  let urlReachable: boolean | undefined;
   if (target.url) {
-    await verifySiteAvailable(conn, target.url, "appAvailable", log);
+    urlReachable = await verifySiteAvailable(conn, target.url, "appAvailable", log);
   }
   log(options.checkout ? t("externalRollbackDone") : t("externalDeployDone"));
 
   const commit = await conn.exec(
     `git -C ${dir} log -1 --format=${shellQuote(GIT_LOG_FORMAT)} 2>/dev/null`,
   );
-  return { commit: parseServerCommits(commit.stdout)[0] ?? null };
+  return { commit: parseServerCommits(commit.stdout)[0] ?? null, urlReachable };
 }
 
 /**

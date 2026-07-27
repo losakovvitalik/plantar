@@ -4,6 +4,7 @@ import type { SshConnection } from "@plantar/ssh";
 import {
   AppNotRespondingError,
   ProcessUnstableError,
+  verifySiteAvailable,
   waitForApp,
   waitForStableProcess,
 } from "./process-checks";
@@ -58,5 +59,27 @@ describe("waitForStableProcess", () => {
 
     const logsCommand = commands.find((c) => c.startsWith("pm2 logs"));
     expect(logsCommand).toBe(`pm2 logs ${QUOTED_NAME} --nostream --lines 30 2>&1`);
+  });
+});
+
+describe("verifySiteAvailable", () => {
+  it("адрес ответил — проверка пройдена", async () => {
+    const conn = fakeConn([[/curl/, { code: 0, stdout: "200\n" }]], []);
+
+    await expect(
+      verifySiteAvailable(conn, "https://site.example/", "appAvailable", () => {}),
+    ).resolves.toBe(true);
+  });
+
+  it("адрес не ответил — результат уходит вызывающему, а не только в лог", async () => {
+    const lines: string[] = [];
+    const conn = fakeConn([[/curl/, { code: 1, stdout: "000\n" }]], []);
+
+    await expect(
+      verifySiteAvailable(conn, "https://site.example/", "appAvailable", (line) =>
+        lines.push(line),
+      ),
+    ).resolves.toBe(false);
+    expect(lines.join("\n")).toContain("https://site.example/");
   });
 });

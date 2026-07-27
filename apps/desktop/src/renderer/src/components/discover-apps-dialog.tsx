@@ -284,7 +284,7 @@ function DiscoveredAppCard({
           {type !== "bot" && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor={`disc-domain-${app.pm2Name}`}>
-                {t("projectSettings.domain")}
+                {t("projectSettings.domainExternal")}
               </Label>
               <Input
                 id={`disc-domain-${app.pm2Name}`}
@@ -292,6 +292,9 @@ function DiscoveredAppCard({
                 onChange={(e) => setDomain(e.target.value)}
                 placeholder={t("projectSettings.domainPlaceholder")}
               />
+              <p className="text-[12px] leading-snug text-ink-soft/80">
+                {t("projectSettings.domainExternalHint")}
+              </p>
             </div>
           )}
           {type !== "bot" && (

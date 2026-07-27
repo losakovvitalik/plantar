@@ -113,6 +113,8 @@ export const en: Record<MessageKey, string> = {
   "deploy.noDomain": ", no domain",
   "deploy.showCommands": "Show commands",
   "deploy.deployedAt": "App deployed: {url}",
+  "deploy.deployedNoResponse":
+    "The app was updated, but it did not respond at {url}. Check that this address is set up on the server.",
   "deploy.botDeployed": "Bot deployed and running.",
   "deploy.terminalEmpty": "Every deploy step will show up here.",
   "deploy.showMoreError": "Show more",
@@ -129,6 +131,8 @@ export const en: Record<MessageKey, string> = {
   "deploy.rollbackConfirm":
     "Restore the previous version of the app on the server? The current version will be stopped.",
   "deploy.rolledBackAt": "Previous version restored: {url}",
+  "deploy.rolledBackNoResponse":
+    "The previous version was restored, but the app did not respond at {url}. Check that this address is set up on the server.",
   "deploy.rolledBackDone": "Previous version restored.",
   "deploy.externalHint":
     "This app was imported from the server and is updated carefully: Plantar pulls fresh code from the repository right into the app folder, installs dependencies, builds and restarts the app under its old name. Web server settings and other apps are left untouched.",
@@ -366,6 +370,9 @@ export const en: Record<MessageKey, string> = {
   "projectSettings.domainPlaceholder": "app.example.com",
   "projectSettings.domainHint":
     "With a domain the site gets an HTTPS certificate automatically. If left empty, the site opens by the server IP.",
+  "projectSettings.domainExternal": "App address",
+  "projectSettings.domainExternalHint":
+    "The address is only used to check whether the app responds after an update. For an imported app Plantar sets up neither the address nor the HTTPS certificate: both stay exactly as they are on the server. If the app opens at a different address, or has none at all, the field can be corrected or left empty.",
   "projectSettings.runtime": "Runtime",
   "projectSettings.packageManager": "Package manager",
   "projectSettings.buildDir": "Build folder",

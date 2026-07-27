@@ -402,6 +402,9 @@ export interface DeployResult {
   fileCount: number;
   /** Адрес сайта; у ботов его нет */
   url?: string;
+  /** Whether the address answered the availability check; undefined when
+   *  there was no address to check */
+  urlReachable?: boolean;
   /** Порт Node.js-приложения; статические сайты и боты его не используют */
   port?: number;
 }
@@ -757,8 +760,8 @@ async function deployStatic(
   } else {
     url = `http://${conn.host}/`;
   }
-  await verifySiteAvailable(conn, url, "siteAvailable", log);
-  return { target, fileCount, url };
+  const urlReachable = await verifySiteAvailable(conn, url, "siteAvailable", log);
+  return { target, fileCount, url, urlReachable };
 }
 
 const APP_PORT_RANGE = { from: 3001, to: 3999 };
@@ -973,8 +976,8 @@ async function deployNode(
   } else {
     url = `http://${conn.host}/`;
   }
-  await verifySiteAvailable(conn, url, "appAvailable", log);
-  return { target, fileCount, url, port };
+  const urlReachable = await verifySiteAvailable(conn, url, "appAvailable", log);
+  return { target, fileCount, url, urlReachable, port };
 }
 
 async function deployBot(

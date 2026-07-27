@@ -106,13 +106,16 @@ export async function waitForStableProcess(
  * пользователя). Редиректы и коды авторизации — сайт отвечает; 502/503/504
  * или отсутствие ответа — прокси не достучался до приложения. Неудача не
  * роняет деплой, а заменяет «сайт доступен» предупреждением.
+ *
+ * Returns whether the address answered, so the caller can avoid presenting
+ * an address that did not respond as a working link.
  */
 export async function verifySiteAvailable(
   conn: SshConnection,
   url: string,
   liveMessage: "siteAvailable" | "appAvailable",
   log: (line: string) => void,
-): Promise<void> {
+): Promise<boolean> {
   log(t("checkingSiteUrl", { url }));
   // -k: проверяем доступность, а не сертификат; ретраи — nginx/приложению
   // может понадобиться пара секунд после перезагрузки
@@ -125,9 +128,12 @@ export async function verifySiteAvailable(
   const code = check.stdout.trim().split("\n").pop() ?? "";
   if (check.code === 0) {
     log(t(liveMessage, { url }));
-  } else if (code === "" || code === "000") {
+    return true;
+  }
+  if (code === "" || code === "000") {
     log(t("siteCheckNoResponse", { url }));
   } else {
     log(t("siteCheckBadGateway", { url, code }));
   }
+  return false;
 }

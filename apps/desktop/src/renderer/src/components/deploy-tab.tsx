@@ -19,6 +19,7 @@ import type {
   ServerRecord,
 } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
+import { deployOutcome } from "../lib/deploy-outcome";
 import { passwordFor } from "../lib/server-auth";
 import { MigrateProjectDialog } from "./migrate-project-dialog";
 import { Button } from "./ui/button";
@@ -60,6 +61,8 @@ interface RunView {
   kind: "deploy" | "rollback" | "migrate";
   startedAt: string;
   url: string | null;
+  /** Ответил ли адрес на проверку доступности; null — проверять было нечего */
+  urlReachable: boolean | null;
   error: { message: string; code?: string } | null;
 }
 
@@ -213,10 +216,7 @@ export function DeployTab({
 
   const running = run?.status === "running";
   const rollingBack = running && run?.kind === "rollback";
-  const success = run?.status === "success";
-  const url = success ? (run?.url ?? null) : null;
-  const deployed = success && run?.kind !== "rollback";
-  const rolledBack = success && run?.kind === "rollback";
+  const outcome = deployOutcome(run);
   const error = run?.status === "error" ? run.error : null;
 
   // Длительность текущего шага: долгие команды (npm install, сборка) не пишут в лог
@@ -271,6 +271,7 @@ export function DeployTab({
             ...prev,
             status: event.status,
             url: event.url ?? null,
+            urlReachable: event.urlReachable ?? null,
             error:
               event.status === "error"
                 ? { message: event.error ?? "", code: event.code }
@@ -292,6 +293,7 @@ export function DeployTab({
         kind: state.kind,
         startedAt: state.startedAt,
         url: state.url ?? null,
+        urlReachable: state.urlReachable ?? null,
         error: state.error
           ? { message: state.error, code: state.errorCode }
           : null,
@@ -332,6 +334,7 @@ export function DeployTab({
       kind,
       startedAt: new Date().toISOString(),
       url: null,
+      urlReachable: null,
       error: null,
     });
     setLines([]);
@@ -622,24 +625,28 @@ export function DeployTab({
         </div>
       )}
 
-      {url ? (
+      {outcome.kind === "link" ? (
         <button
-          onClick={() => window.plantar.openExternal(url)}
+          onClick={() => window.plantar.openExternal(outcome.url)}
           className="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-moss outline-none hover:underline focus-visible:ring-2 focus-visible:ring-moss/50"
         >
-          {rolledBack
-            ? t("deploy.rolledBackAt", { url })
-            : t("deploy.deployedAt", { url })}
+          {outcome.rolledBack
+            ? t("deploy.rolledBackAt", { url: outcome.url })
+            : t("deploy.deployedAt", { url: outcome.url })}
           <ExternalLink className="size-3.5" />
         </button>
-      ) : deployed ? (
-        <p className="self-start text-sm font-semibold text-moss">
-          {t("deploy.botDeployed")}
+      ) : outcome.kind === "unreachable" ? (
+        <p className="self-start text-sm font-semibold text-ink-soft">
+          {outcome.rolledBack
+            ? t("deploy.rolledBackNoResponse", { url: outcome.url })
+            : t("deploy.deployedNoResponse", { url: outcome.url })}
         </p>
       ) : (
-        rolledBack && (
+        outcome.kind === "done" && (
           <p className="self-start text-sm font-semibold text-moss">
-            {t("deploy.rolledBackDone")}
+            {outcome.rolledBack
+              ? t("deploy.rolledBackDone")
+              : t("deploy.botDeployed")}
           </p>
         )
       )}

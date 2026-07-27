@@ -235,6 +235,28 @@ describe("deployExternalInPlace: сборка команд", () => {
     expect(commands.some((c) => c.includes("pull --ff-only"))).toBe(false);
   });
 
+  it("адрес не ответил: деплой успешен, но результат проверки уходит вызывающему", async () => {
+    const conn = fakeConn(
+      [
+        [/cat .*package\.json/, { stdout: "{}" }],
+        [/for i in 1 2 3 4 5/, { code: 1, stdout: "000\n" }],
+      ],
+      [],
+    );
+    const result = await deployExternalInPlace(
+      conn,
+      target({ url: "https://new.example.com/" }),
+      () => {},
+    );
+    expect(result.urlReachable).toBe(false);
+  });
+
+  it("адреса нет — проверять нечего", async () => {
+    const conn = fakeConn([[/cat .*package\.json/, { stdout: "{}" }]], []);
+    const result = await deployExternalInPlace(conn, target(), () => {});
+    expect(result.urlReachable).toBeUndefined();
+  });
+
   it("бот: стабильность процесса проверяется по pm2 jlist прежнего имени", async () => {
     const commands: string[] = [];
     const conn = fakeConn(
