@@ -127,7 +127,7 @@ import {
 } from "./deploy-runs";
 import { forgetServer, startAppMonitor, stopAppMonitor } from "./app-monitor";
 import { createAppTray, destroyTray, refreshTrayMenu } from "./tray";
-import { SHARED_LOG_TRAFFIC, trafficLogPath } from "./traffic-log";
+import { markSharedLog, SHARED_LOG_TRAFFIC, trafficLogPath } from "./traffic-log";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
 
@@ -1700,9 +1700,10 @@ app.whenReady().then(() => {
         const logPath = trafficLogPath(project, name);
         // No log of its own — there is nothing to read, so no connection either
         if (logPath === null) return SHARED_LOG_TRAFFIC;
-        return withServer(server, args.password, (conn) =>
+        const stats = await withServer(server, args.password, (conn) =>
           getTrafficStats(conn, logPath),
         );
+        return markSharedLog(project, stats);
       }),
   );
 

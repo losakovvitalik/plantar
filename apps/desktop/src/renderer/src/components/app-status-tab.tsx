@@ -62,6 +62,12 @@ export function AppStatusTab({
   const [enableMetricsOpen, setEnableMetricsOpen] = useState(false);
 
   const type = config?.type;
+  // An imported app whose nginx config declares no access_log of its own writes
+  // visits into the server-wide log: the statistics tool would find nothing for
+  // it there, so installing it is not worth offering. `access_log off;` is a
+  // switch rather than a path, so the literal "off" counts as no log either
+  const discoveredLog = project.external?.accessLogPath;
+  const sharedLogOnly = !!project.external && (!discoveredLog || discoveredLog === "off");
 
   const load = useCallback(
     async (password?: string) => {
@@ -209,12 +215,16 @@ export function AppStatusTab({
                   {t("appStatus.trafficTitle")}
                 </h3>
                 <p className="mt-2 max-w-md text-[13px] leading-relaxed text-ink-soft">
-                  {t("appStatus.needGoaccess")}
+                  {sharedLogOnly
+                    ? t("appStatus.trafficSharedLog")
+                    : t("appStatus.needGoaccess")}
                 </p>
-                <Button variant="outline" size="sm" className="mt-3" onClick={onOpenServer}>
-                  {t("appStatus.openServer")}
-                  <ArrowRight />
-                </Button>
+                {!sharedLogOnly && (
+                  <Button variant="outline" size="sm" className="mt-3" onClick={onOpenServer}>
+                    {t("appStatus.openServer")}
+                    <ArrowRight />
+                  </Button>
+                )}
               </div>
             ) : (
               snapshot.traffic && (
