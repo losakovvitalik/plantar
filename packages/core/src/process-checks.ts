@@ -60,7 +60,7 @@ export async function waitForApp(
       `if [ "$code" != "000" ]; then exit 0; fi; sleep 1; done; exit 1`,
   );
   if (check.code !== 0) {
-    const logs = await conn.exec(`pm2 logs '${name}' --nostream --lines 30 2>&1`);
+    const logs = await conn.exec(`pm2 logs ${shellQuote(name)} --nostream --lines 30 2>&1`);
     throw new AppNotRespondingError(
       t("appNotResponding", { port, logs: logs.stdout.slice(-3000) }),
     );
@@ -92,7 +92,7 @@ export async function waitForStableProcess(
   const stable =
     app && app.pm2_env.status === "online" && now - app.pm2_env.pm_uptime >= 4000;
   if (!stable) {
-    const logs = await conn.exec(`pm2 logs '${name}' --nostream --lines 30 2>&1`);
+    const logs = await conn.exec(`pm2 logs ${shellQuote(name)} --nostream --lines 30 2>&1`);
     throw new ProcessUnstableError(
       t("processUnstable", { name, logs: logs.stdout.slice(-3000) }),
     );
