@@ -326,6 +326,24 @@ describe("очистка файлов deploy-логов", () => {
     expect(existsSync(survivor)).toBe(true);
   });
 
+  it("файл вытесненной записи другого проекта тоже удаляется", () => {
+    const evicted = writeLog("site-b", "2026-07-01T10:00:00.000Z");
+    const survivor = writeLog("site-b", "2026-07-02T10:00:00.000Z");
+    seedHistory([
+      run("site-b", "2026-07-01T10:00:00.000Z"),
+      ...Array.from({ length: 200 }, (_, i) =>
+        run("site-b", `2026-07-02T10:00:00.${String(i).padStart(3, "0")}Z`),
+      ),
+    ]);
+
+    // Лимит срабатывает при деплое другого проекта: файл вытесненной записи
+    // site-b соберётся только при обходе всех задетых лимитом проектов
+    appendHistory(run("site-a", "2026-07-12T10:00:00.000Z"));
+
+    expect(existsSync(evicted)).toBe(false);
+    expect(existsSync(survivor)).toBe(true);
+  });
+
   it("свежий файл без записи остаётся: это прерванный прогон", () => {
     seedHistory([]);
     const interrupted = writeLog("site-a", "2026-07-12T11:00:00.000Z");
@@ -333,6 +351,28 @@ describe("очистка файлов deploy-логов", () => {
     appendHistory(run("site-a", "2026-07-12T10:00:00.000Z"));
 
     expect(existsSync(interrupted)).toBe(true);
+  });
+
+  it("запись без startedAt не отключает защиту прерванного прогона", () => {
+    const { startedAt: _dropped, ...withoutStartedAt } = run(
+      "site-a",
+      "2026-07-01T10:00:00.000Z",
+    );
+    seedHistory([
+      withoutStartedAt as DeployRecord,
+      run("site-a", "2026-07-02T10:00:00.000Z"),
+    ]);
+    const undated = writeLog("site-a", "2026-07-01T10:00:00.000Z");
+    const interrupted = writeLog("site-a", "2026-07-12T11:00:00.000Z");
+
+    appendHistory(run("site-a", "2026-07-12T10:00:00.000Z"));
+
+    // Запись без startedAt стоит первой: если её не отсеять, «новее самой
+    // свежей записи» перестаёт срабатывать сразу для всей папки
+    expect(existsSync(interrupted)).toBe(true);
+    // При этом сама запись осталась в истории и видна в интерфейсе — её файл
+    // отсеиванием трогать нельзя
+    expect(existsSync(undated)).toBe(true);
   });
 
   it("снимки серверных логов не удаляются", () => {
@@ -404,6 +444,22 @@ describe("очистка файлов deploy-логов", () => {
     appendHistory(run("site", "2026-07-12T11:00:00.000Z"));
     appendHistory(run("site", "2026-07-12T12:00:00.000Z"));
 
+    expect(existsSync(referenced)).toBe(true);
+  });
+
+  it("история верного JSON, но не той формы, тоже сохраняется копией", () => {
+    const referenced = writeLog("site", "2026-07-01T10:00:00.000Z");
+    // Валидный JSON не той формы разбирается без ошибки, поэтому копию для
+    // ручного восстановления сохраняет само чтение истории
+    corruptStore(
+      "history.json",
+      JSON.stringify({ records: [run("site", "2026-07-01T10:00:00.000Z")] }),
+    );
+
+    appendHistory(run("site", "2026-07-12T10:00:00.000Z"));
+    appendHistory(run("site", "2026-07-12T11:00:00.000Z"));
+
+    expect(existsSync(path.join(dataDir(), "history.json.broken"))).toBe(true);
     expect(existsSync(referenced)).toBe(true);
   });
 

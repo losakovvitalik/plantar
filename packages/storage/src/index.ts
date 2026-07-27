@@ -186,6 +186,16 @@ export interface ProjectRecord {
   external?: ExternalAppInfo;
 }
 
+/** Keeps the unusable file as <file>.broken, the first occurrence only */
+function keepBrokenCopy(file: string): void {
+  const backup = `${file}.broken`;
+  try {
+    if (!existsSync(backup)) copyFileSync(file, backup);
+  } catch {
+    // best effort — recovering the backup must not introduce a new crash
+  }
+}
+
 /**
  * Reads a JSON store, or null when the file is missing or corrupted. The
  * corrupted file is kept as <file>.broken (first occurrence only) so data can
@@ -198,12 +208,7 @@ function readJsonOrNull<T>(file: string): T | null {
     return JSON.parse(readFileSync(file, "utf8")) as T;
   } catch (err) {
     console.error(`plantar: corrupted JSON store ${file}, falling back to defaults`, err);
-    const backup = `${file}.broken`;
-    try {
-      if (!existsSync(backup)) copyFileSync(file, backup);
-    } catch {
-      // best effort — recovering the backup must not introduce a new crash
-    }
+    keepBrokenCopy(file);
     return null;
   }
 }
@@ -330,9 +335,23 @@ function historyFile(): string {
 
 /** History as it is on disk; null — the file is missing, corrupted or not a list */
 function readHistoryOrNull(): DeployRecord[] | null {
-  const history = readJsonOrNull<DeployRecord[]>(historyFile());
+  const file = historyFile();
+  const history = readJsonOrNull<DeployRecord[]>(file);
   // Same wrong-shape guard as readJsonList — appendHistory pushes into this
-  return Array.isArray(history) ? history : null;
+  if (Array.isArray(history)) return history;
+  // Valid JSON of the wrong shape ({"records": [...]}, say) parses fine, so
+  // readJsonOrNull leaves no recovery copy — but the history is lost all the
+  // same, and losing it here costs files: pruneDeployLogs keeps alive every log
+  // named in the copy. This is also the most hand-recoverable form of a broken
+  // history, the records are all there. Only the history gets the copy: the
+  // other stores neither delete files nor are read through this function.
+  if (history !== null) {
+    console.error(
+      `plantar: history store ${file} is not a list, falling back to defaults`,
+    );
+    keepBrokenCopy(file);
+  }
+  return null;
 }
 
 export function readHistory(): DeployRecord[] {
@@ -443,6 +462,13 @@ const RECENT_RUN_WINDOW_MS = 24 * 60 * 60 * 1000;
  * text (path separators and quotes cannot occur inside a name), and they are
  * exactly the logs a manual recovery would resurrect. An unreadable copy
  * yields null: the caller must not prune blind while recovery data may exist.
+ *
+ * The guarantee covers the first loss of the history only: the copy is written
+ * once and never overwritten, so after a second one the names here are those of
+ * the already recovered history, and the files of the history lost afterwards
+ * are pruned as usual. Keeping the copy is what protects the recovery of the
+ * copy — a copy that walked forward with every corruption would protect
+ * nothing.
  */
 function brokenHistoryLogNames(): Set<string> | null {
   const marker = `${historyFile()}.broken`;
@@ -455,16 +481,28 @@ function brokenHistoryLogNames(): Set<string> | null {
 }
 
 /**
- * The log directories the record's project writes to: the directory is keyed by
+ * The log directories the records' projects write to: the directory is keyed by
  * the project name as of the deploy, so a project that was renamed has one per
  * name it deployed under. A record without an id (from the CLI, or written
- * before the field existed) only knows its own name.
+ * before the field existed) only knows its own name. Projects are read once for
+ * the whole batch — the caller passes every project the pass has to visit.
  */
-function projectLogNames(record: DeployRecord): string[] {
-  const project = record.projectId
-    ? readProjects().find((p) => p.id === record.projectId)
-    : undefined;
-  return [record.project, ...(project ? projectNames(project) : [])];
+function projectLogNames(records: DeployRecord[]): string[] {
+  const names: string[] = [];
+  const ids = new Set<string>();
+  for (const record of records) {
+    // A hand-edited history can carry a non-string project: capHistory folds it
+    // into a template literal without complaint, and it would reach safeLogDir
+    // as a path.join argument and throw out of appendHistory
+    if (typeof record?.project !== "string") continue;
+    names.push(record.project);
+    if (record.projectId) ids.add(record.projectId);
+  }
+  if (ids.size === 0) return names;
+  for (const project of readProjects()) {
+    if (ids.has(project.id)) names.push(...projectNames(project));
+  }
+  return names;
 }
 
 /**
@@ -515,18 +553,27 @@ function pruneLogDir(
 ): void {
   // A hand-edited or foreign history.json can hold anything Array.isArray lets
   // through. A malformed record (not an object, or no logFile string) is
-  // skipped rather than trusted: it must neither abort the pass for the
-  // healthy records nor throw out of appendHistory — on the desktop success
-  // path that would report a deploy that actually succeeded as failed.
+  // skipped rather than trusted: it must neither abort the pass for the healthy
+  // records nor throw out of appendHistory — on the desktop success path that
+  // would report a deploy that actually succeeded as failed.
   const records = history.filter(
     (r) => r != null && r.project === project && typeof r.logFile === "string",
   );
   if (records.length === 0) return;
+  // Protection comes first: a record still listed in the UI keeps its file,
+  // whatever else is wrong with it. Only the cutoff below needs a startedAt.
   const kept = new Set(records.map((r) => path.basename(r.logFile)));
   for (const name of referenced) kept.add(name);
-  const newest = records.reduce(
+  // A record without a startedAt string cannot seed the newest-record cutoff:
+  // the reduce would start from undefined, every comparison against it is
+  // false, and the interrupted-run protection would silently switch itself off
+  // for the whole directory. With no dated record at all the cutoff is unknown,
+  // so nothing is pruned rather than everything.
+  const dated = records.filter((r) => typeof r.startedAt === "string");
+  if (dated.length === 0) return;
+  const newest = dated.reduce(
     (max, r) => (r.startedAt > max ? r.startedAt : max),
-    records[0].startedAt,
+    dated[0].startedAt,
   );
   const dir = safeLogDir(project);
   if (dir === null || !existsSync(dir)) return;
@@ -593,7 +640,19 @@ export function appendHistory(record: DeployRecord): void {
   // pruneDeployLogs itself: every filename in the <file>.broken recovery copy
   // stays alive for as long as the copy exists, however many deploys later.
   // A genuinely fresh install has nothing to prune anyway.
-  if (previous !== null) pruneDeployLogs(projectLogNames(record), capped);
+  if (previous === null) return;
+  // One capHistory call evicts records of every project at once — the first
+  // append after an upgrade from an unbounded history trims them all — so the
+  // pass covers the projects it actually evicted from, not just this record's:
+  // otherwise their run files stay on disk until that project deploys again,
+  // which for an abandoned project is never. Evicted records are found by
+  // reference (capHistory puts the very same objects into its result); records
+  // are not unique by their fields, so a value comparison would not do. With
+  // nothing evicted — the usual case — the set is this record's project alone
+  // and the pass scans exactly as many directories as before.
+  const kept = new Set(capped);
+  const evicted = history.filter((r) => !kept.has(r));
+  pruneDeployLogs(projectLogNames([record, ...evicted]), capped);
 }
 
 /** Коммит в кэше вкладки «Коммиты» (совпадает по форме с Commit из main/git.ts) */
