@@ -541,6 +541,7 @@ export default function App() {
             selectedProject.source === "git" ? selectedProject.repoUrl : undefined
           }
           initialBranch={selectedProject.branch}
+          external={Boolean(selectedProject.external)}
           submitLabel={t("common.save")}
           savedMessage={settingsSaved ? t("app.settingsSaved") : undefined}
           onDeploy={() => {

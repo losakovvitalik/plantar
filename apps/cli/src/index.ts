@@ -147,6 +147,7 @@ withConnectionOptions(program.command("deploy"))
         finishedAt: new Date().toISOString(),
         status: "success",
         url: result.url,
+        urlCheck: result.urlCheck,
         logFile: logWriter.file,
       });
       console.log(`\n${t("deployLogFile", { file: logWriter.file })}`);

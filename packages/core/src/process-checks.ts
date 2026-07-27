@@ -101,33 +101,90 @@ export async function waitForStableProcess(
 }
 
 /**
+ * Outcome of the post-deploy smoke check of the public address.
+ *
+ * plain-http is deliberately not a success: the answer came from an address
+ * the user never configured, and on port 80 an untouched nginx replies to any
+ * unknown host with its default site (or a redirect to https), so the answer
+ * does not prove the app is served there.
+ */
+export type SiteCheckStatus = "answered" | "plain-http" | "no-answer";
+
+/** One attempt (with retries): an answer means code === 0; an empty code or
+ *  000 means nothing at all answered at the address */
+async function probeUrl(
+  conn: SshConnection,
+  url: string,
+  attempts = 5,
+): Promise<{ answered: boolean; code: string }> {
+  // -k: availability is what is checked here, not the certificate; retries —
+  // nginx or the app may need a couple of seconds after a restart
+  const check = await conn.exec(
+    `for i in $(seq 1 ${attempts}); do ` +
+      `code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 ${shellQuote(url)} 2>/dev/null || true); ` +
+      `case "$code" in ''|000|502|503|504) sleep 2;; *) echo "$code"; exit 0;; esac; ` +
+      `done; echo "$code"; exit 1`,
+  );
+  return {
+    answered: check.code === 0,
+    code: check.stdout.trim().split("\n").pop() ?? "",
+  };
+}
+
+/** Nothing at all answered at the address — unlike 502/503/504, where the web
+ *  server is in place but could not reach the app */
+function noAnswer(code: string): boolean {
+  return code === "" || code === "000";
+}
+
+const HTTPS_PREFIX = "https://";
+
+/**
  * Смоук-проверка после деплоя: запрос к публичному адресу с самого сервера,
  * чтобы проверить всю цепочку nginx → приложение (без влияния DNS и сети
  * пользователя). Редиректы и коды авторизации — сайт отвечает; 502/503/504
  * или отсутствие ответа — прокси не достучался до приложения. Неудача не
  * роняет деплой, а заменяет «сайт доступен» предупреждением.
+ *
+ * Returns how the configured address answered, so the caller does not present
+ * an address that stayed silent as a working link. The configured address is
+ * the only one the result ever speaks about.
+ *
+ * httpFallback — for an imported app: its web server is set up by hand and
+ * Plantar only recorded the server_name, which may well be served over plain
+ * http. Nothing at all answered on https — ask http, but report that as
+ * plain-http rather than as a confirmed address (see SiteCheckStatus).
+ * Managed deploys do not use it: there Plantar itself set up nginx and the
+ * certificate, so a silent https is a real failure.
  */
 export async function verifySiteAvailable(
   conn: SshConnection,
   url: string,
   liveMessage: "siteAvailable" | "appAvailable",
   log: (line: string) => void,
-): Promise<void> {
+  options: { httpFallback?: boolean } = {},
+): Promise<SiteCheckStatus> {
   log(t("checkingSiteUrl", { url }));
-  // -k: проверяем доступность, а не сертификат; ретраи — nginx/приложению
-  // может понадобиться пара секунд после перезагрузки
-  const check = await conn.exec(
-    `for i in 1 2 3 4 5; do ` +
-      `code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 ${shellQuote(url)} 2>/dev/null || true); ` +
-      `case "$code" in ''|000|502|503|504) sleep 2;; *) echo "$code"; exit 0;; esac; ` +
-      `done; echo "$code"; exit 1`,
-  );
-  const code = check.stdout.trim().split("\n").pop() ?? "";
-  if (check.code === 0) {
+  const probe = await probeUrl(conn, url);
+  if (probe.answered) {
     log(t(liveMessage, { url }));
-  } else if (code === "" || code === "000") {
-    log(t("siteCheckNoResponse", { url }));
-  } else {
-    log(t("siteCheckBadGateway", { url, code }));
+    return "answered";
   }
+  if (!noAnswer(probe.code)) {
+    log(t("siteCheckBadGateway", { url, code: probe.code }));
+    return "no-answer";
+  }
+  if (options.httpFallback && url.startsWith(HTTPS_PREFIX)) {
+    const plainUrl = `http://${url.slice(HTTPS_PREFIX.length)}`;
+    log(t("checkingSitePlainHttp", { url: plainUrl }));
+    // Fewer attempts than the first probe: by now the https loop has already
+    // waited out a full retry cycle, so the app has had its time to come up —
+    // this probe only tells apart the schemes, and the user waits for it
+    if ((await probeUrl(conn, plainUrl, 2)).answered) {
+      log(t("siteCheckPlainHttpOnly", { url, plainUrl }));
+      return "plain-http";
+    }
+  }
+  log(t("siteCheckNoResponse", { url }));
+  return "no-answer";
 }

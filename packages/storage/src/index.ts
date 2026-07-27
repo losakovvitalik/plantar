@@ -320,6 +320,10 @@ export interface DeployRecord {
    *  migrate — the run moved an external project under Plantar management */
   kind?: "deploy" | "rollback" | "migrate";
   url?: string;
+  /** How the address answered the availability check (mirrors SiteCheckStatus
+   *  from @plantar/core, which storage does not depend on); absent on runs with
+   *  no address to check and on records written before the field existed */
+  urlCheck?: "answered" | "plain-http" | "no-answer";
   error?: string;
   /** Машинный код ошибки (например npm-peer-conflict) — по нему GUI
    *  предлагает действие; у старых записей отсутствует */

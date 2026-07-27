@@ -235,6 +235,45 @@ describe("deployExternalInPlace: сборка команд", () => {
     expect(commands.some((c) => c.includes("pull --ff-only"))).toBe(false);
   });
 
+  it("адрес не ответил: деплой успешен, но результат проверки уходит вызывающему", async () => {
+    const conn = fakeConn(
+      [
+        [/cat .*package\.json/, { stdout: "{}" }],
+        [/curl -sk/, { code: 1, stdout: "000\n" }],
+      ],
+      [],
+    );
+    const result = await deployExternalInPlace(
+      conn,
+      target({ url: "https://new.example.com/" }),
+      () => {},
+    );
+    expect(result.urlCheck).toBe("no-answer");
+  });
+
+  it("ответил только обычный http: деплой успешен, исход — plain-http", async () => {
+    const conn = fakeConn(
+      [
+        [/cat .*package\.json/, { stdout: "{}" }],
+        [/'https:\/\//, { code: 1, stdout: "000\n" }],
+        [/'http:\/\//, { code: 0, stdout: "200\n" }],
+      ],
+      [],
+    );
+    const result = await deployExternalInPlace(
+      conn,
+      target({ url: "https://old.example.com/" }),
+      () => {},
+    );
+    expect(result.urlCheck).toBe("plain-http");
+  });
+
+  it("адреса нет — проверять нечего", async () => {
+    const conn = fakeConn([[/cat .*package\.json/, { stdout: "{}" }]], []);
+    const result = await deployExternalInPlace(conn, target(), () => {});
+    expect(result.urlCheck).toBeUndefined();
+  });
+
   it("бот: стабильность процесса проверяется по pm2 jlist прежнего имени", async () => {
     const commands: string[] = [];
     const conn = fakeConn(

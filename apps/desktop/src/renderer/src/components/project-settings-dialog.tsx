@@ -80,6 +80,8 @@ interface Props {
   repoUrl?: string;
   /** Текущая ветка git-проекта */
   initialBranch?: string;
+  /** Imported project: the domain is only checked, Plantar leaves the web server alone */
+  external?: boolean;
 }
 
 export function ProjectSettingsDialog({
@@ -97,6 +99,7 @@ export function ProjectSettingsDialog({
   initialSubdir,
   repoUrl,
   initialBranch,
+  external,
 }: Props) {
   const { t } = useI18n();
   const [type, setType] = useState<ProjectType>("static");
@@ -328,7 +331,13 @@ export function ProjectSettingsDialog({
 
           {type !== "bot" && (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="prj-domain">{t("projectSettings.domain")}</Label>
+              <Label htmlFor="prj-domain">
+                {t(
+                  external
+                    ? "projectSettings.domainExternal"
+                    : "projectSettings.domain",
+                )}
+              </Label>
               <Input
                 id="prj-domain"
                 value={domain}
@@ -336,7 +345,11 @@ export function ProjectSettingsDialog({
                 placeholder={t("projectSettings.domainPlaceholder")}
               />
               <p className="text-[12px] leading-snug text-ink-soft/80">
-                {t("projectSettings.domainHint")}
+                {t(
+                  external
+                    ? "projectSettings.domainExternalHint"
+                    : "projectSettings.domainHint",
+                )}
               </p>
             </div>
           )}

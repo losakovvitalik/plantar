@@ -759,6 +759,7 @@ async function runDeploy(
       status: "success",
       kind: migrate ? kind : undefined,
       url: result.url,
+      urlCheck: result.urlCheck,
       commit: deployedCommit?.hash,
       logFile: logWriter.file,
     });
@@ -778,7 +779,7 @@ async function runDeploy(
     if (settings.notifyOnDeploySuccess) {
       notifyDeployResult(projectId, config.name, true);
     }
-    run.finish({ status: "success", url: result.url });
+    run.finish({ status: "success", url: result.url, urlCheck: result.urlCheck });
     return { url: result.url };
   } catch (err) {
     const message = (err as Error).message;
@@ -865,6 +866,7 @@ async function runExternalInPlace(
       status: "success",
       kind,
       url,
+      urlCheck: result.urlCheck,
       commit: result.commit?.hash,
       logFile: logWriter.file,
     });
@@ -881,7 +883,7 @@ async function runExternalInPlace(
     if (readSettings().notifyOnDeploySuccess) {
       notifyDeployResult(projectId, config.name, true);
     }
-    run.finish({ status: "success", url });
+    run.finish({ status: "success", url, urlCheck: result.urlCheck });
     return { url };
   } catch (err) {
     const message = (err as Error).message;
@@ -996,6 +998,7 @@ function restoredDeployState(project: ProjectRecord): DeployRunState | null {
     startedAt,
     lastLineAt: record?.finishedAt ?? startedAt,
     url: record?.url,
+    urlCheck: record?.urlCheck,
     error: record?.error,
     errorCode: record?.code,
   };

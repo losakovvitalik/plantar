@@ -138,6 +138,7 @@ const api = {
       kind: string;
       status: string;
       url?: string;
+      urlCheck?: string;
       error?: string;
       code?: string;
     }) => void,
@@ -149,6 +150,7 @@ const api = {
         kind: string;
         status: string;
         url?: string;
+        urlCheck?: string;
         error?: string;
         code?: string;
       },

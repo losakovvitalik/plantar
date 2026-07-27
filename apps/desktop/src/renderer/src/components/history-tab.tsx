@@ -8,6 +8,7 @@ import {
 import { useEffect, useState } from "react";
 import type { DeployRecord, Language, ProjectRecord } from "@plantar/storage";
 import { type Translate, useI18n } from "../i18n";
+import { deployOutcome } from "../lib/deploy-outcome";
 import { Button } from "./ui/button";
 import { DeployLogView } from "./deploy-log-view";
 
@@ -85,6 +86,27 @@ export function HistoryTab({ project }: Props) {
     <div className="thin-scroll flex h-full flex-col gap-2 overflow-y-auto">
       {records.map((record) => {
         const isOpen = openLog === record.logFile;
+        // Same rule as the "Deploy" tab: an address that did not answer the
+        // check is not passed off as a working link here either. The button
+        // still stays — it only loses the confirmed look and says in its
+        // tooltip what the check saw right after that deploy
+        const outcome = deployOutcome(record);
+        const site =
+          outcome.kind === "link"
+            ? { url: outcome.url, hint: undefined, confirmed: true }
+            : outcome.kind === "unreachable"
+              ? {
+                  url: outcome.url,
+                  hint: t("history.openSiteNoResponse"),
+                  confirmed: false,
+                }
+              : outcome.kind === "plainHttp"
+                ? {
+                    url: outcome.plainUrl,
+                    hint: t("history.openSitePlainHttp", { url: outcome.plainUrl }),
+                    confirmed: false,
+                  }
+                : null;
         return (
           <div
             key={record.logFile}
@@ -124,12 +146,13 @@ export function HistoryTab({ project }: Props) {
                   )}
                 </div>
               </button>
-              {record.status === "success" && record.url && (
+              {site && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => void window.plantar.openExternal(record.url!)}
-                  className="shrink-0"
+                  title={site.hint}
+                  onClick={() => void window.plantar.openExternal(site.url)}
+                  className={site.confirmed ? "shrink-0" : "shrink-0 text-ink-soft"}
                 >
                   {t("history.openSite")}
                   <ExternalLink />
