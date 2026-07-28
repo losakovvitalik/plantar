@@ -1,5 +1,6 @@
 import type { TrafficStats } from "@plantar/core";
 import type { ProjectRecord } from "@plantar/storage";
+import { appAccessLogPath } from "../shared/access-log-path";
 
 /**
  * Access log to read app visits from, or null when the app has none of its own.
@@ -19,7 +20,7 @@ export function trafficLogPath(project: ProjectRecord, name: string): string | n
     const discovered = project.external.accessLogPath;
     return discovered && discovered !== "off" ? discovered : null;
   }
-  return `/var/log/nginx/${name}.access.log`;
+  return appAccessLogPath(name);
 }
 
 /**

@@ -19,6 +19,7 @@ import type {
   ServerRecord,
   TrafficStats,
 } from "../../../preload/index.d";
+import { appAccessLogPath } from "../../../shared/access-log-path";
 import { useI18n } from "../i18n";
 import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
@@ -287,8 +288,8 @@ export function AppStatusTab({
         <EnableVisitsLogDialog
           projectId={project.id}
           confFile={external.nginxConfFile}
-          // Display only — the main process derives the authoritative path
-          logPath={`/var/log/nginx/${config.name}.access.log`}
+          // Display only — enabling re-derives the same path in the main process
+          logPath={appAccessLogPath(config.name)}
           server={server}
           open={visitsLogOpen}
           onOpenChange={setVisitsLogOpen}
