@@ -88,6 +88,10 @@ user-invocable: true
 > Fix the ones that are real, with the minimal diff. For any finding you reject, do not touch the
 > code; instead state the reason. Apply 🟡 suggestions only when the fix is small and clearly right.
 >
+> Follow the project conventions in `CLAUDE.md`: file names kebab-case, code comments in English
+> (in new files and in new lines of existing ones alike), user-facing strings only through the i18n
+> dictionaries and added to both languages at once. Do not rewrite pre-existing comments.
+>
 > Then verify per touched package (`pnpm run typecheck && pnpm test` in `apps/desktop`,
 > `pnpm exec tsc --noEmit && pnpm test` in `packages/*` — never `npx tsc`), commit, and push to the
 > existing branch.
@@ -139,14 +143,21 @@ Worktree **не удаляй** — он нужен, если пользоват�
 Под таблицей, для каждой готовой issue:
 - 1–2 строки, что реально поменялось в коде;
 - что ревьюер находил и что фиксер отклонил (это пользователю важнее всего — там прячутся спорные места);
-- оставшиеся 🟡 последнего раунда, если были: по строке на каждую, с `path:line`. Мерж они не держат,
-  но решение — чинить сейчас или заводить follow-up issue — за пользователем. Их треды (и 🟢) остаются
-  на GitHub нерезолвленными — следующего ревьюера не будет, закрыть их после решения может только
-  пользователь;
+- оставшиеся 🟡 последнего раунда, если были: по строке на каждую, с `path:line`, и к каждой —
+  рекомендация: **чинить сейчас** (правка минимальна и однозначна — текст, перевод, удаление мусора
+  из ветки: докинуть коммитом дешевле, чем оформлять issue) или **follow-up issue** (нужно выбирать
+  решение или трогать архитектуру — такое не раздувает PR после approve). Мерж они не держат, решение
+  за пользователем — сам ничего не чини и issue не заводи. Их треды (и 🟢) остаются на GitHub
+  нерезолвленными — следующего ревьюера не будет, закрыть их после решения может только пользователь;
 - команда мержа, одной строкой (worktree удаляется первым: пока ветка checked out в worktree,
   `--delete-branch` не сможет удалить локальную ветку, gh вернёт ошибку, и до `git worktree remove`
   дело уже не дойдёт; бонус — remove откажет при ручных правках в worktree ещё до мержа):
   `git worktree remove ../plantar-worktrees/issue-<N> && gh pr merge <PR> --squash --delete-branch`
+
+Если пользователь согласился на триаж: follow-up issue заводи по-английски **до** запуска фиксера,
+чтобы у того была ссылка; затем один сабагент-фиксер на все «чинить сейчас» — он же отвечает в тредах
+(отложенным — ответ со ссылкой на созданную issue) и, как обычно, ничего не резолвит сам. Полировка —
+не ревью-раунд: K не растёт, после неё только повторный `gh pr checks`, а не шаг 2.
 
 Не мержи сам, даже если всё зелёное и пользователь раньше в этой сессии мержил такие же PR.
 
