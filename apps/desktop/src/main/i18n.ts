@@ -226,6 +226,18 @@ const MESSAGES = {
     ru: "Сменить ветку можно только у проекта, добавленного из GitHub.",
     en: "The branch can only be changed for a project added from GitHub.",
   },
+  externalOnlyAction: {
+    ru: "Это действие доступно только для приложения, импортированного с сервера.",
+    en: "This action is only available for an app imported from the server.",
+  },
+  httpsNeedsDomain: {
+    ru: "Сначала укажите адрес приложения в настройках проекта.",
+    en: "First set the app address in the project settings.",
+  },
+  accessLogUnavailable: {
+    ru: "Отдельный журнал посещений тут не завести: при импорте не нашлись настройки веб-сервера или порт этого приложения.",
+    en: "A separate visits log cannot be set up here: the import did not find the web server configuration or the port of this app.",
+  },
 } satisfies Messages<string>;
 
 export const t = createT(MESSAGES);

@@ -12,6 +12,7 @@ import {
   deployExternalInPlace,
   deployProject,
   discoverApps,
+  enableExternalAccessLog,
   getExternalSyncState,
   getExternalVersions,
   enableAppMetrics,
@@ -36,6 +37,7 @@ import {
   removeDeployedProject,
   resolveProjectPath,
   rollbackProject,
+  setupExternalHttps,
   writeExternalEnv,
   writeProjectEnv,
 } from "@plantar/core";
@@ -1846,6 +1848,53 @@ app.whenReady().then(() => {
     "projects:migrate",
     (_e, args: { projectId: string; password?: string; legacyPeerDeps?: boolean }) =>
       toResult(() => runDeploy(args.projectId, args.password, args.legacyPeerDeps, true)),
+  );
+  // HTTPS for an imported app in place: certbot edits the app's own nginx
+  // config, so no migration is needed. Runs only after an explicit
+  // confirmation in the GUI — careful mode never touches the server silently
+  ipcMain.handle(
+    "external:setupHttps",
+    (_e, args: { projectId: string; password?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        if (!project.external) throw new Error(t("externalOnlyAction"));
+        const config = projectConfig(project);
+        const domain = config.domain;
+        if (!domain) throw new Error(t("httpsNeedsDomain"));
+        const email = readSettings().letsEncryptEmail || undefined;
+        await withServer(getServer(project.serverId), args.password, (conn) =>
+          setupExternalHttps(conn, domain, () => {}, email),
+        );
+      }),
+  );
+  // A per-app access_log for an imported app in place: one additive line in
+  // the app's own nginx config (backed up, verified, restored on failure), so
+  // the Visits card works without migration. Explicit confirmed action only
+  ipcMain.handle(
+    "external:enableAccessLog",
+    (_e, args: { projectId: string; password?: string }) =>
+      toResult(async () => {
+        const project = getProject(args.projectId);
+        const external = project.external;
+        if (!external) throw new Error(t("externalOnlyAction"));
+        const config = projectConfig(project);
+        const confFile = external.nginxConfFile;
+        const appPort = config.port;
+        if (!confFile || !appPort) throw new Error(t("accessLogUnavailable"));
+        const logPath = `/var/log/nginx/${config.name}.access.log`;
+        await withServer(getServer(project.serverId), args.password, (conn) =>
+          enableExternalAccessLog(conn, { confFile, appPort, logPath }),
+        );
+        // The Visits card reads the discovered path — record the new log there
+        writeProjects(
+          readProjects().map((p) =>
+            p.id === project.id
+              ? { ...p, external: { ...external, accessLogPath: logPath } }
+              : p,
+          ),
+        );
+        return { logPath };
+      }),
   );
   // Идущие сейчас прогоны — начальное состояние индикаторов деплоя в сайдбаре
   ipcMain.handle("deploy:active", () => toResult(async () => activeDeployRuns()));

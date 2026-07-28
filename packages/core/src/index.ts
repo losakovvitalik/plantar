@@ -87,6 +87,8 @@ export {
   readRemoteTextFile,
   resolveProjectPath,
 } from "./files";
+export { addAccessLogDirective, enableExternalAccessLog } from "./nginx-external";
+export type { AccessLogInsertion, AccessLogTarget } from "./nginx-external";
 export type {
   RelatedFile,
   RelatedFileId,
@@ -594,6 +596,25 @@ async function setupSsl(
     log,
   );
   log(t("httpsConfigured"));
+}
+
+/**
+ * HTTPS for an imported app served by its own hand-written nginx config.
+ * `certbot --nginx` edits whatever config already serves the domain — it does
+ * not care that the config was not written by Plantar — and validates and
+ * reloads nginx itself, so Plantar rewrites no config file here.
+ */
+export async function setupExternalHttps(
+  conn: SshConnection,
+  domain: string,
+  log: (line: string) => void = () => {},
+  email?: string,
+): Promise<void> {
+  // An imported app may live on a server that never went through Plantar's
+  // setup — fail with a clear message instead of a "command not found"
+  const certbot = await conn.exec(TOOL_VERSION_COMMANDS.certbot);
+  if (certbot.code !== 0) throw new Error(t("certbotNotInstalled"));
+  await setupSsl(conn, domain, log, email);
 }
 
 export interface DeployOptions {

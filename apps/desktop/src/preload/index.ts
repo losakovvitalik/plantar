@@ -103,6 +103,10 @@ const api = {
     invoke("deploy:rollbackExternal", { projectId, commit, password }),
   migrateProject: (projectId: string, password?: string) =>
     invoke("projects:migrate", { projectId, password }),
+  setupExternalHttps: (projectId: string, password?: string) =>
+    invoke("external:setupHttps", { projectId, password }),
+  enableExternalAccessLog: (projectId: string, password?: string) =>
+    invoke("external:enableAccessLog", { projectId, password }),
   getDeployState: (projectId: string) => invoke("deploy:state", projectId),
   getActiveDeploys: () => invoke("deploy:active"),
 

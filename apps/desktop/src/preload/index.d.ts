@@ -436,6 +436,18 @@ declare global {
         projectId: string,
         password?: string,
       ) => Promise<IpcResult<{ url?: string }>>;
+      /** HTTPS для импортированного приложения на месте: certbot дополняет
+       *  его собственный конфиг nginx — без переноса под управление Plantar */
+      setupExternalHttps: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<void>>;
+      /** Отдельный журнал посещений для импортированного приложения: одна
+       *  добавленная строка в его конфиге nginx, с копией и проверкой */
+      enableExternalAccessLog: (
+        projectId: string,
+        password?: string,
+      ) => Promise<IpcResult<{ logPath: string }>>;
       /** Состояние прогона деплоя: живое из памяти main, после перезапуска —
        *  последний прогон с диска; null — проект ни разу не деплоили */
       getDeployState: (

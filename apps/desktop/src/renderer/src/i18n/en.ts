@@ -382,7 +382,7 @@ export const en: Record<MessageKey, string> = {
     "With a domain the site gets an HTTPS certificate automatically. If left empty, the site opens by the server IP.",
   "projectSettings.domainExternal": "App address",
   "projectSettings.domainExternalHint":
-    "The address is only used to check whether the app responds after an update. For an imported app Plantar sets up neither the address nor the HTTPS certificate: both stay exactly as they are on the server. If the app opens at a different address, or has none at all, the field can be corrected or left empty.",
+    "The address is only used to check whether the app responds after an update. Plantar does not change the address itself on the server: if the app opens at a different address, or has none at all, the field can be corrected or left empty. A secure connection (HTTPS) for the address can be enabled on the Status tab.",
   "projectSettings.runtime": "Runtime",
   "projectSettings.packageManager": "Package manager",
   "projectSettings.buildDir": "Build folder",
@@ -461,6 +461,9 @@ export const en: Record<MessageKey, string> = {
     "The app does not have its own visit log yet, so site visits are not shown here. The log will appear after the first deploy through Plantar.",
   "appStatus.trafficSharedLog":
     "The app records visits into the server's shared log, mixed together with the other sites there, so visits to this particular site cannot be told apart. A log of its own appears if the app is moved under Plantar management.",
+  "appStatus.trafficSharedLogEnable":
+    "The app records visits into the server's shared log, mixed together with the other sites there, so visits to this particular site cannot be told apart. Plantar can set up a separate log for the app: one line will be added to its web server configuration.",
+  "appStatus.trafficEnableLog": "Keep a separate log…",
   "appStatus.needGoaccess":
     "To see visits, install the “Visit statistics” tool on the server screen.",
   "appStatus.openServer": "Open the server screen",
@@ -479,6 +482,31 @@ export const en: Record<MessageKey, string> = {
     "A regular deploy brings the app back to the latest version of the branch.",
   "appStatus.behindTipHint":
     "After a version restore the app folder is pinned to an older version of the code — updating the code on the server by hand will fail until the next deploy via Plantar.",
+  "appStatus.httpsTitle": "Secure connection (HTTPS)",
+  "appStatus.httpsExternalNote":
+    "If the site opens at an https:// address and the browser shows no insecure-connection warning, everything is already set up and nothing needs to be done. If there is no secure connection, Plantar can obtain a free certificate and enable it, carefully extending the existing web server configuration.",
+  "appStatus.httpsSetup": "Set up HTTPS…",
+
+  "httpsDialog.title": "Set up HTTPS for {domain}",
+  "httpsDialog.what":
+    "The certificate tool (certbot) will run on the server. It will verify that {domain} really points at this server, obtain a free Let's Encrypt certificate and extend the existing web server configuration so the site opens over a secure connection. The plain address (http) will start redirecting to the secure one.",
+  "httpsDialog.safety":
+    "The certificate will renew automatically. If it cannot be issued, the tool restores the configuration by itself — the site keeps working as before.",
+  "httpsDialog.confirm": "Set up HTTPS",
+  "httpsDialog.busy": "Setting up…",
+  "httpsDialog.done":
+    "HTTPS is set up: the site opens at the secure address, and the certificate will renew automatically.",
+
+  "visitsLog.title": "Keep a separate visits log",
+  "visitsLog.what":
+    "One line will be added to the app's web server configuration — it tells the server to record visits to this site into a separate file:",
+  "visitsLog.file": "Configuration file: {file}",
+  "visitsLog.safety":
+    "Before the change Plantar saves a copy of the configuration file and verifies the result; if the check fails, the previous file is put back. No existing line is modified.",
+  "visitsLog.after":
+    "Statistics start accumulating from this moment — earlier visits will not appear in them.",
+  "visitsLog.confirm": "Add the log",
+  "visitsLog.busy": "Adding…",
 
   "monitoring.title": "Monitoring",
   "monitoring.description":

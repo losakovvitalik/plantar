@@ -296,6 +296,42 @@ const MESSAGES = {
     ru: "✓ Выбранная версия развёрнута. Обычный деплой вернёт приложение на последнюю версию ветки.",
     en: "✓ The selected version is deployed. A regular deploy will bring the app back to the latest version of the branch.",
   },
+  certbotNotInstalled: {
+    ru: "На сервере нет инструмента выпуска сертификатов (certbot). Он устанавливается вместе с остальными инструментами при настройке сервера в Plantar.",
+    en: "The certificate tool (certbot) is not installed on the server. It is installed together with the other tools when the server is set up in Plantar.",
+  },
+  nginxConfReadFailed: {
+    ru: "Не удалось прочитать настройки веб-сервера ({file}):\n{stderr}",
+    en: "Failed to read the web server configuration ({file}):\n{stderr}",
+  },
+  accessLogNoBlock: {
+    ru: "В настройках веб-сервера ({file}) не нашлось места для журнала: нет блока, который направляет запросы этому приложению и ещё не ведёт свой журнал. Настройки не менялись.",
+    en: "No place for the log was found in the web server configuration ({file}): there is no block that routes requests to this app and does not already keep a log of its own. Nothing was changed.",
+  },
+  accessLogBackingUp: {
+    ru: "→ Сохраняю копию настроек веб-сервера: {backup}",
+    en: "→ Saving a copy of the web server configuration: {backup}",
+  },
+  accessLogWriting: {
+    ru: "→ Добавляю журнал посещений в {file}…",
+    en: "→ Adding the visits log to {file}…",
+  },
+  accessLogWriteFailed: {
+    ru: "Не удалось записать настройки веб-сервера — прежняя версия файла возвращена на место.\n{stderr}",
+    en: "Failed to write the web server configuration — the previous version of the file was put back.\n{stderr}",
+  },
+  nginxCheckFailedRestored: {
+    ru: "Изменённые настройки веб-сервера не прошли проверку — прежняя версия файла возвращена на место, сайты работают как раньше.\n{stderr}",
+    en: "The changed web server configuration failed validation — the previous version of the file was put back, the sites keep working as before.\n{stderr}",
+  },
+  nginxReloadFailedRestored: {
+    ru: "Веб-сервер не принял новые настройки — прежняя версия файла возвращена на место.\n{stderr}",
+    en: "The web server did not accept the new configuration — the previous version of the file was put back.\n{stderr}",
+  },
+  accessLogEnabled: {
+    ru: "✓ Журнал посещений включён: {logPath}",
+    en: "✓ The visits log is enabled: {logPath}",
+  },
 } satisfies Messages<string>;
 
 export const t = createT(MESSAGES);
