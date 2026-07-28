@@ -130,7 +130,7 @@ import {
 import { forgetServer, startAppMonitor, stopAppMonitor } from "./app-monitor";
 import { createAppTray, destroyTray, refreshTrayMenu } from "./tray";
 import { markSharedLog, SHARED_LOG_TRAFFIC, trafficLogPath } from "./traffic-log";
-import { appAccessLogPath } from "../shared/access-log-path";
+import { appAccessLogPath } from "@plantar/core/paths";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
 

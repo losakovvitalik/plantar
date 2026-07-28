@@ -9,6 +9,7 @@ import { readPackageJson, type ProjectConfig } from "@plantar/config";
 import { t } from "./messages";
 
 import { ENV_FILE_RE, findDomainConflicts, parseNginxSites, parsePm2Jlist } from "./discover";
+import { appAccessLogPath, appErrorLogPath } from "./paths";
 import {
   run,
   verifySiteAvailable,
@@ -317,13 +318,14 @@ export async function getSiteLogs(
   siteName: string,
   lines = 50,
 ): Promise<SiteLogs> {
-  const read = async (kind: "access" | "error") => {
-    const result = await conn.exec(
-      `tail -n ${lines} '/var/log/nginx/${siteName}.${kind}.log' 2>/dev/null`,
-    );
+  const read = async (logPath: string) => {
+    const result = await conn.exec(`tail -n ${lines} '${logPath}' 2>/dev/null`);
     return result.stdout.trimEnd();
   };
-  return { access: await read("access"), error: await read("error") };
+  return {
+    access: await read(appAccessLogPath(siteName)),
+    error: await read(appErrorLogPath(siteName)),
+  };
 }
 
 /** Источник живых логов: приложение (pm2) или nginx */
@@ -349,10 +351,7 @@ export function logStreamCommand(
     ? [shellQuote(paths.out), shellQuote(paths.err)]
     : source === "app"
       ? [pm2Log("out"), pm2Log("error")]
-      : [
-          shellQuote(`/var/log/nginx/${siteName}.access.log`),
-          shellQuote(`/var/log/nginx/${siteName}.error.log`),
-        ];
+      : [shellQuote(appAccessLogPath(siteName)), shellQuote(appErrorLogPath(siteName))];
   // Жалобы самих tail (нет файла и т.п.) глушатся, чтобы не мешаться с логами;
   // >&2 до 2>/dev/null: сначала stdout уходит в канал stderr, потом stderr tail — в null.
   // cat ждёт EOF по stdin (закрытие канала) и убивает tail — иначе они висят на сервере
@@ -544,8 +543,8 @@ async function configureNginx(
     listen ${listen};
     server_name ${serverName};
 ${rootLines}
-    access_log /var/log/nginx/${config.name}.access.log;
-    error_log /var/log/nginx/${config.name}.error.log;
+    access_log ${appAccessLogPath(config.name)};
+    error_log ${appErrorLogPath(config.name)};
 
     ${location}
 }`;
