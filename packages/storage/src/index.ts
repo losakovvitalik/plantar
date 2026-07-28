@@ -541,7 +541,12 @@ function projectLogNames(records: DeployRecord[]): string[] {
  * visited. Each is pruned against the records recorded under its own name,
  * whoever wrote them — that is what keeps the pass from deleting the runs of
  * another project sharing the directory, and what makes the newest-record
- * cutoff mean "newest run that landed in this directory".
+ * cutoff mean "newest run that landed in this directory". A directory whose
+ * records the cap evicted in full (every old-name record of a renamed project
+ * falls out in one call once the new name accumulates the limit) has no record
+ * of its own left to define that cutoff, and none will ever come back — so for
+ * it the cutoff falls back to the newest startedAt across the whole capped
+ * history instead of leaving the directory unpruned forever.
  */
 function pruneDeployLogs(names: string[], history: DeployRecord[]): void {
   const referenced = brokenHistoryLogNames();
@@ -563,7 +568,6 @@ function pruneLogDir(
   const records = history.filter(
     (r) => r != null && r.project === project && typeof r.logFile === "string",
   );
-  if (records.length === 0) return;
   // Protection comes first: a record still listed in the UI keeps its file,
   // whatever else is wrong with it. Only the cutoff below needs a startedAt.
   const kept = new Set(records.map((r) => path.basename(r.logFile)));
@@ -571,9 +575,17 @@ function pruneLogDir(
   // A record without a startedAt string cannot seed the newest-record cutoff:
   // the reduce would start from undefined, every comparison against it is
   // false, and the interrupted-run protection would silently switch itself off
-  // for the whole directory. With no dated record at all the cutoff is unknown,
-  // so nothing is pruned rather than everything.
-  const dated = records.filter((r) => typeof r.startedAt === "string");
+  // for the whole directory. With records but none of them dated the cutoff is
+  // unknown, so nothing is pruned rather than everything. With no record at
+  // all — the cap evicted every record of this directory in one call, and they
+  // never come back — the cutoff falls back to the newest startedAt across the
+  // whole capped history: nothing recorded anywhere started later, and a run
+  // still in flight here is protected by the two time windows below as usual.
+  const own = records.filter((r) => typeof r.startedAt === "string");
+  const dated =
+    records.length > 0
+      ? own
+      : history.filter((r) => r != null && typeof r.startedAt === "string");
   if (dated.length === 0) return;
   const newest = dated.reduce(
     (max, r) => (r.startedAt > max ? r.startedAt : max),
