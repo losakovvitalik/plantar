@@ -1,4 +1,4 @@
-import { Activity, ArrowRight, RefreshCw, Rocket } from "lucide-react";
+import { Activity, ArrowRight, Lock, RefreshCw, Rocket, ScrollText } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
   Bar,
@@ -23,6 +23,8 @@ import { useI18n } from "../i18n";
 import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
 import { EnableAppMetricsDialog } from "./enable-app-metrics-dialog";
+import { EnableVisitsLogDialog } from "./enable-visits-log-dialog";
+import { ExternalHttpsDialog } from "./external-https-dialog";
 import { MetricsCharts, WindowToggle } from "./metrics-charts";
 import { Button } from "./ui/button";
 import {
@@ -60,8 +62,20 @@ export function AppStatusTab({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enableMetricsOpen, setEnableMetricsOpen] = useState(false);
+  const [httpsOpen, setHttpsOpen] = useState(false);
+  const [visitsLogOpen, setVisitsLogOpen] = useState(false);
 
   const type = config?.type;
+  const external = project.external;
+  // In-place web server actions of an imported app (issue #30): HTTPS via
+  // certbot needs a known address; a per-app visits log needs the recorded
+  // nginx config and the app port to find the right server block. A config
+  // that already declares an access_log (a stale path, or `access_log off`)
+  // is not patched — adding a second directive would not take effect
+  const httpsAvailable = Boolean(external && type && type !== "bot" && config?.domain);
+  const canEnableVisitsLog = Boolean(
+    external?.nginxConfFile && config?.port && !external.accessLogPath,
+  );
 
   const load = useCallback(
     async (password?: string) => {
@@ -219,9 +233,36 @@ export function AppStatusTab({
               </div>
             ) : (
               snapshot.traffic && (
-                <TrafficCard traffic={snapshot.traffic} lang={lang} onDeploy={onDeploy} />
+                <TrafficCard
+                  traffic={snapshot.traffic}
+                  lang={lang}
+                  onDeploy={onDeploy}
+                  onEnableLog={
+                    canEnableVisitsLog ? () => setVisitsLogOpen(true) : undefined
+                  }
+                />
               )
             ))}
+
+          {httpsAvailable && (
+            <div className="rounded-xl border border-line bg-card p-5">
+              <h3 className="text-[13px] font-bold tracking-wide text-ink-soft uppercase">
+                {t("appStatus.httpsTitle")}
+              </h3>
+              <p className="mt-2 max-w-md text-[13px] leading-relaxed text-ink-soft">
+                {t("appStatus.httpsExternalNote")}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => setHttpsOpen(true)}
+              >
+                <Lock />
+                {t("appStatus.httpsSetup")}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -232,6 +273,29 @@ export function AppStatusTab({
         askPassword={askPassword}
         onEnabled={() => load()}
       />
+      {httpsAvailable && config?.domain && (
+        <ExternalHttpsDialog
+          projectId={project.id}
+          domain={config.domain}
+          server={server}
+          open={httpsOpen}
+          onOpenChange={setHttpsOpen}
+          askPassword={askPassword}
+        />
+      )}
+      {canEnableVisitsLog && external?.nginxConfFile && config && (
+        <EnableVisitsLogDialog
+          projectId={project.id}
+          confFile={external.nginxConfFile}
+          // Display only — the main process derives the authoritative path
+          logPath={`/var/log/nginx/${config.name}.access.log`}
+          server={server}
+          open={visitsLogOpen}
+          onOpenChange={setVisitsLogOpen}
+          askPassword={askPassword}
+          onEnabled={() => load()}
+        />
+      )}
     </div>
   );
 }
@@ -516,10 +580,14 @@ function TrafficCard({
   traffic,
   lang,
   onDeploy,
+  onEnableLog,
 }: {
   traffic: TrafficStats;
   lang: string;
   onDeploy: () => void;
+  /** Opens the per-app visits log consent dialog; absent when the app's
+   *  nginx config or port was not discovered at import time */
+  onEnableLog?: () => void;
 }) {
   const { t } = useI18n();
 
@@ -527,10 +595,14 @@ function TrafficCard({
   // посещения не появятся, сколько сайт ни открывай
   if (traffic.logMissing || traffic.totalHits === 0) {
     // An imported app whose config has no access_log of its own writes visits
-    // into the server-wide log: a deploy creates nothing there, so the button
-    // is not offered — it would promise a result it cannot deliver
+    // into the server-wide log: a deploy creates nothing there, so the deploy
+    // button is not offered — it would promise a result it cannot deliver.
+    // When the recorded config is editable in place, a per-app log can be
+    // enabled right here instead (issue #30)
     const message = traffic.sharedLog
-      ? "appStatus.trafficSharedLog"
+      ? onEnableLog
+        ? "appStatus.trafficSharedLogEnable"
+        : "appStatus.trafficSharedLog"
       : traffic.logMissing
         ? "appStatus.trafficNoLog"
         : "appStatus.trafficEmpty";
@@ -546,6 +618,12 @@ function TrafficCard({
           <Button variant="outline" size="sm" className="mt-3" onClick={onDeploy}>
             <Rocket />
             {t("deploy.start")}
+          </Button>
+        )}
+        {traffic.sharedLog && onEnableLog && (
+          <Button variant="outline" size="sm" className="mt-3" onClick={onEnableLog}>
+            <ScrollText />
+            {t("appStatus.trafficEnableLog")}
           </Button>
         )}
       </div>

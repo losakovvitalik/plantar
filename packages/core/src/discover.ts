@@ -1,4 +1,5 @@
 import { type SshConnection, shellQuote } from "@plantar/ssh";
+import { blankComments, findBlocks, proxyPassPorts, upstreamPorts } from "./nginx-parse";
 
 /**
  * Обнаружение приложений, запущенных на сервере до подключения Plantar.
@@ -181,35 +182,6 @@ export interface NginxSite {
   errorLog?: string;
 }
 
-/**
- * Вырезает блоки вида `<keyword> … { … }` с учётом вложенных скобок.
- * Комментарии срезаются заранее — скобки в них ломали бы подсчёт.
- */
-function extractBlocks(text: string, keyword: string): Array<{ header: string; body: string }> {
-  const clean = text
-    .split("\n")
-    .map((line) => line.replace(/#.*$/, ""))
-    .join("\n");
-  const blocks: Array<{ header: string; body: string }> = [];
-  const re = new RegExp(`(?:^|[\\s;}])(${keyword}\\b[^{;]*)\\{`, "g");
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(clean))) {
-    const start = match.index + match[0].length;
-    let depth = 1;
-    let i = start;
-    while (i < clean.length && depth > 0) {
-      if (clean[i] === "{") depth++;
-      else if (clean[i] === "}") depth--;
-      i++;
-    }
-    blocks.push({ header: match[1].trim(), body: clean.slice(start, i - 1) });
-    re.lastIndex = i;
-  }
-  return blocks;
-}
-
-const LOCAL_HOST_RE = "(?:127\\.0\\.0\\.1|localhost|0\\.0\\.0\\.0)";
-
 /** Разбирает дамп `nginx -T`: server-блоки с доменами и портами проксирования */
 export function parseNginxSites(dump: string): NginxSite[] {
   // nginx -T перед содержимым каждого файла печатает маркер с его путём
@@ -225,37 +197,23 @@ export function parseNginxSites(dump: string): NginxSite[] {
     }
   }
   if (files.length === 0) files.push({ file: "", text: dump });
+  // Block parsing works on comment-blanked text (shared nginx-parse module)
+  const cleanFiles = files.map(({ file, text }) => ({ file, clean: blankComments(text) }));
 
   // upstream может объявляться в одном файле, а использоваться в другом
-  const upstreamPorts = new Map<string, number[]>();
-  for (const { text } of files) {
-    for (const block of extractBlocks(text, "upstream")) {
-      const name = block.header.split(/\s+/)[1];
-      if (!name) continue;
-      const ports = [
-        ...block.body.matchAll(new RegExp(`(?:^|\\s)server\\s+${LOCAL_HOST_RE}:(\\d+)`, "g")),
-      ].map((m) => Number(m[1]));
-      if (ports.length > 0) upstreamPorts.set(name, ports);
-    }
+  const upstreams = new Map<string, number[]>();
+  for (const { clean } of cleanFiles) {
+    for (const [name, ports] of upstreamPorts(clean)) upstreams.set(name, ports);
   }
 
   const sites: NginxSite[] = [];
-  for (const { file, text } of files) {
-    for (const block of extractBlocks(text, "server")) {
-      const body = block.body;
+  for (const { file, clean } of cleanFiles) {
+    for (const block of findBlocks(clean, "server")) {
+      const body = clean.slice(block.open, block.close);
       const serverNames = [...body.matchAll(/(?:^|\s)server_name\s+([^;]+);/g)].flatMap((m) =>
         m[1].trim().split(/\s+/),
       );
-      const proxyPorts: number[] = [];
-      for (const m of body.matchAll(/(?:^|\s)proxy_pass\s+(https?:\/\/[^;\s]+)/g)) {
-        const direct = m[1].match(new RegExp(`^https?://${LOCAL_HOST_RE}:(\\d+)`));
-        if (direct) {
-          proxyPorts.push(Number(direct[1]));
-          continue;
-        }
-        const upstream = m[1].match(/^https?:\/\/([^/:]+)/);
-        if (upstream) proxyPorts.push(...(upstreamPorts.get(upstream[1]) ?? []));
-      }
+      const proxyPorts = proxyPassPorts(body, upstreams);
       if (serverNames.length === 0 && proxyPorts.length === 0) continue;
       sites.push({
         file,
