@@ -532,4 +532,31 @@ describe("очистка файлов deploy-логов", () => {
     expect(existsSync(evicted)).toBe(false);
     expect(existsSync(survivor)).toBe(true);
   });
+
+  it("папка, все записи которой вытеснены разом, тоже чистится", () => {
+    writeServers([server("srv-1")]);
+    writeProjects([project({ previousNames: ["site-old"] })]);
+    const evicted = writeLog("site-old", "2026-07-01T10:00:00.000Z");
+    // A run started in the last 24 h in the same directory (the CLI deploying
+    // under the old name, say) must survive the fallback cutoff
+    const recent = writeLog(
+      "site-old",
+      new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+    );
+    // Enough new-name records that the single old-name one falls out of the
+    // shared per-project group in this very call — from then on the old
+    // directory has no record of its own, in this pass or in any later one
+    seedHistory([
+      run("site-old", "2026-07-01T10:00:00.000Z"),
+      ...Array.from({ length: 200 }, (_, i) =>
+        run("site-new", `2026-07-02T10:00:00.${String(i).padStart(3, "0")}Z`),
+      ),
+    ]);
+
+    appendHistory({ ...run("site-new", new Date().toISOString()), projectId: "prj-1" });
+
+    expect(readHistory().filter((r) => r.project === "site-old")).toHaveLength(0);
+    expect(existsSync(evicted)).toBe(false);
+    expect(existsSync(recent)).toBe(true);
+  });
 });
