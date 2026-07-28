@@ -15,7 +15,37 @@ import {
   getAppLogActivity,
   getAppMetricsHistory,
   getServerMetrics,
+  markSharedLog,
+  SHARED_LOG_TRAFFIC,
+  type TrafficStats,
 } from "./monitoring";
+
+describe("markSharedLog", () => {
+  const missing: TrafficStats = { ...SHARED_LOG_TRAFFIC, sharedLog: undefined };
+
+  it("imported app: a log that could not be read is the shared-log state", () => {
+    // A stale discovered path or a log removed without an nginx reload — no
+    // deploy would create one either way, so the deploy prompt stays hidden
+    expect(markSharedLog(true, missing).sharedLog).toBe(true);
+  });
+
+  it("managed project: a missing log stays a missing log", () => {
+    expect(markSharedLog(false, missing).sharedLog).toBeUndefined();
+  });
+
+  it("does not touch stats that were read", () => {
+    const read: TrafficStats = { ...missing, logMissing: false, totalHits: 12 };
+    expect(markSharedLog(true, read)).toBe(read);
+  });
+});
+
+describe("SHARED_LOG_TRAFFIC", () => {
+  it("marks a missing log that no deploy can create", () => {
+    expect(SHARED_LOG_TRAFFIC.logMissing).toBe(true);
+    expect(SHARED_LOG_TRAFFIC.sharedLog).toBe(true);
+    expect(SHARED_LOG_TRAFFIC.totalHits).toBe(0);
+  });
+});
 
 describe("downsampleAverage", () => {
   it("усредняет точки внутри корзины и выравнивает время по её началу", () => {

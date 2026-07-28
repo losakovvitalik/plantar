@@ -30,7 +30,12 @@ export interface ProjectRuntime {
 export interface McpProvider {
   listServers(): ServerRecord[];
   listProjects(): ProjectRecord[];
-  deployHistory(): DeployRecord[];
+  /**
+   * Deploy history records of the project, newest first. Matching records to
+   * the project (by id, current and previous names, host) stays in the host
+   * application so the MCP and GUI histories cannot diverge.
+   */
+  deployHistory(project: ProjectRecord): DeployRecord[];
   /** Tail of a local deploy log file, at most maxBytes */
   readDeployLogTail(file: string, maxBytes: number): string;
   /**

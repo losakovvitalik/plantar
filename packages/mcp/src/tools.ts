@@ -4,16 +4,13 @@ import {
   getServerInfo,
   getTrafficStats,
   listReleases,
+  markSharedLog,
+  pm2LogExpr,
   pm2ProcessHealth,
-  type TrafficStats,
+  SHARED_LOG_TRAFFIC,
 } from "@plantar/core";
 import { type SshConnection, shellQuote } from "@plantar/ssh";
-import {
-  matchesProject,
-  projectNames,
-  type ProjectRecord,
-  type ServerRecord,
-} from "@plantar/storage";
+import { type ProjectRecord, type ServerRecord } from "@plantar/storage";
 import { z } from "zod";
 import { t } from "./messages";
 import type { McpProvider } from "./provider";
@@ -40,18 +37,6 @@ export interface ToolDefinition {
 const DEPLOY_LOG_TAIL_BYTES = 32_000;
 
 const DEFAULT_LOG_LINES = 100;
-
-/** Visits summary of an app that writes into the server-wide nginx log */
-const SHARED_LOG_TRAFFIC: TrafficStats = {
-  logMissing: true,
-  sharedLog: true,
-  totalHits: 0,
-  totalVisitors: 0,
-  byDay: [],
-  byHour: [],
-  statusCodes: [],
-  topPaths: [],
-};
 
 function ok(data: unknown): ToolResult {
   return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
@@ -81,11 +66,6 @@ async function tailQuoted(
   const result = await conn.exec(`tail -n ${lines} ${quotedPath} 2>/dev/null`);
   return result.stdout.trimEnd();
 }
-
-/** pm2 keeps its logs under $HOME, which must stay expandable — only the file
- *  name is quoted, the shell glues the two parts into one argument */
-const pm2LogExpr = (pm2Name: string, suffix: "out" | "error") =>
-  `"$HOME/.pm2/logs/"${shellQuote(`${pm2Name}-${suffix}.log`)}`;
 
 export function createTools(provider: McpProvider): ToolDefinition[] {
   const tools: ToolDefinition[] = [
@@ -209,9 +189,7 @@ export function createTools(provider: McpProvider): ToolDefinition[] {
         const stats = await provider.withConnection(project.serverId, (conn) =>
           getTrafficStats(conn, logPath),
         );
-        // An imported app whose discovered log is unreadable is in the
-        // shared-log state: careful mode writes no nginx config of its own
-        return ok(project.external && stats.logMissing ? { ...stats, sharedLog: true } : stats);
+        return ok(markSharedLog(Boolean(project.external), stats));
       },
     },
     {
@@ -258,17 +236,8 @@ export function createTools(provider: McpProvider): ToolDefinition[] {
         limit?: number;
         includeLastRunLog?: boolean;
       }) => {
-        const { project, server } = findProject(provider, projectId);
-        const identity = {
-          projectId: project.id,
-          names: projectNames(project),
-          host: server.host,
-        };
-        const records = provider
-          .deployHistory()
-          .filter((record) => matchesProject(record, identity))
-          .reverse()
-          .slice(0, limit);
+        const { project } = findProject(provider, projectId);
+        const records = provider.deployHistory(project).slice(0, limit);
         let lastRunLog: string | undefined;
         if (includeLastRunLog && records[0]) {
           try {

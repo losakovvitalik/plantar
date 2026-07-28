@@ -170,21 +170,22 @@ describe("get_deploy_history", () => {
     ...over,
   });
 
-  it("returns the project's records newest first without local log paths", async () => {
-    const provider = makeProvider({
-      deployHistory: () => [
-        record({ startedAt: "2026-07-01T10:00:00.000Z" }),
-        record({ project: "other", projectId: "prj-2" }),
-        record({ startedAt: "2026-07-02T10:00:00.000Z", status: "error" }),
-      ],
-    });
+  it("returns the provider's records for the project without local log paths", async () => {
+    // Matching records to the project (renames, ID-less CLI runs) lives in
+    // the provider — the tool only limits and strips local paths
+    const deployHistory = vi.fn(() => [
+      record({ startedAt: "2026-07-02T10:00:00.000Z", status: "error" }),
+      record({ startedAt: "2026-07-01T10:00:00.000Z" }),
+    ]);
+    const provider = makeProvider({ deployHistory });
     const result = await toolByName(provider, "get_deploy_history").handler({
       projectId: "prj-1",
-      limit: 20,
+      limit: 1,
       includeLastRunLog: false,
     });
+    expect(deployHistory).toHaveBeenCalledWith(project);
     const data = parsed(result) as { records: Record<string, unknown>[]; lastRunLog?: string };
-    expect(data.records).toHaveLength(2);
+    expect(data.records).toHaveLength(1);
     expect(data.records[0]).toMatchObject({ status: "error" });
     expect(data.records[0]).not.toHaveProperty("logFile");
     expect(data.lastRunLog).toBeUndefined();

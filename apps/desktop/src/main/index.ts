@@ -27,6 +27,7 @@ import {
   installMonitoringTool,
   listProjectDir,
   logStreamCommand,
+  markSharedLog,
   nginxRelatedPaths,
   pm2ProcessHealth,
   pm2ProcessStatuses,
@@ -38,6 +39,7 @@ import {
   resolveProjectPath,
   rollbackProject,
   setupExternalHttps,
+  SHARED_LOG_TRAFFIC,
   writeExternalEnv,
   writeProjectEnv,
 } from "@plantar/core";
@@ -129,7 +131,7 @@ import {
 } from "./deploy-runs";
 import { forgetServer, startAppMonitor, stopAppMonitor } from "./app-monitor";
 import { createAppTray, destroyTray, refreshTrayMenu } from "./tray";
-import { markSharedLog, SHARED_LOG_TRAFFIC, trafficLogPath } from "./traffic-log";
+import { trafficLogPath } from "./traffic-log";
 import { appAccessLogPath, appErrorLogPath } from "@plantar/core/paths";
 import type { McpProvider, ProjectRuntime } from "@plantar/mcp";
 import { ensureMcpToken, syncMcpServer } from "./mcp";
@@ -247,13 +249,15 @@ function previousNamesAfterRename(
   return [...new Set([...(project.previousNames ?? []), project.name])];
 }
 
-/** Статус приложения проекта по карте pm2-процессов сервера (имя → статус)
- *  и адрес сайта для живой HTTP-проверки (у ботов и без конфига адреса нет) */
-function appStatusOf(
+/**
+ * Name and type of a project as plantar.json defines them (the record is the
+ * fallback when the config is unreadable) plus the site URL — the same address
+ * the post-deploy smoke test checks. Bots and unconfigured apps have no URL.
+ */
+function projectSite(
   project: ProjectRecord,
-  pm2: Map<string, string>,
   host: string,
-): { status: AppStatus; siteUrl?: string } {
+): { name: string; type?: string; siteUrl?: string } {
   let name = project.name;
   let type: string | undefined;
   let domain: string | undefined;
@@ -263,15 +267,25 @@ function appStatusOf(
     type = config.type;
     domain = config.domain;
   } catch {
-    /* plantar.json недоступен — используем имя на момент добавления */
+    // plantar.json is unreadable — fall back to the name at add time
   }
-  // Тот же адрес, что проверяет смоук-тест после деплоя
   const siteUrl =
     type && type !== "bot"
       ? domain
         ? `https://${domain}/`
         : `http://${host}/`
       : undefined;
+  return { name, type, siteUrl };
+}
+
+/** Статус приложения проекта по карте pm2-процессов сервера (имя → статус)
+ *  и адрес сайта для живой HTTP-проверки (у ботов и без конфига адреса нет) */
+function appStatusOf(
+  project: ProjectRecord,
+  pm2: Map<string, string>,
+  host: string,
+): { status: AppStatus; siteUrl?: string } {
+  const { name, type, siteUrl } = projectSite(project, host);
   // Статичный сайт живёт без pm2-процесса
   if (type === "static") return { status: "static", siteUrl };
   // Внешнее приложение работает под прежним именем pm2
@@ -361,24 +375,7 @@ const withServer = <T>(
 
 /** What the MCP tools need from a project's config; plantar.json stays here */
 function mcpProjectRuntime(project: ProjectRecord): ProjectRuntime {
-  let name = project.name;
-  let type: string | undefined;
-  let domain: string | undefined;
-  try {
-    const config = projectConfig(project);
-    name = config.name;
-    type = config.type;
-    domain = config.domain;
-  } catch {
-    /* plantar.json недоступен — используем имя на момент добавления */
-  }
-  // Тот же адрес, что проверяет смоук-тест после деплоя
-  const siteUrl =
-    type && type !== "bot"
-      ? domain
-        ? `https://${domain}/`
-        : `http://${getServer(project.serverId).host}/`
-      : undefined;
+  const { name, siteUrl } = projectSite(project, getServer(project.serverId).host);
   const external = project.external;
   return {
     name,
@@ -402,7 +399,9 @@ function mcpProjectRuntime(project: ProjectRecord): ProjectRuntime {
 const mcpProvider: McpProvider = {
   listServers: readServers,
   listProjects: readProjects,
-  deployHistory: readHistory,
+  // The same record lookup the GUI history uses: renames and ID-less CLI runs
+  // are matched there, so the two histories cannot diverge
+  deployHistory: projectHistory,
   readDeployLogTail: (file, maxBytes) => readLogTail(file, maxBytes),
   withConnection: async (serverId, fn) => {
     const server = getServer(serverId);
@@ -1774,7 +1773,7 @@ app.whenReady().then(() => {
         const stats = await withServer(server, args.password, (conn) =>
           getTrafficStats(conn, logPath),
         );
-        return markSharedLog(project, stats);
+        return markSharedLog(Boolean(project.external), stats);
       }),
   );
 

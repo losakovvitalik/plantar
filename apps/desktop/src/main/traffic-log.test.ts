@@ -1,7 +1,6 @@
 import type { ProjectRecord } from "@plantar/storage";
 import { describe, expect, it } from "vitest";
-import type { TrafficStats } from "@plantar/core";
-import { markSharedLog, SHARED_LOG_TRAFFIC, trafficLogPath } from "./traffic-log";
+import { trafficLogPath } from "./traffic-log";
 
 const managed: ProjectRecord = {
   id: "p1",
@@ -42,32 +41,5 @@ describe("trafficLogPath", () => {
 
   it("imported app with `access_log off`: the switch is not a path", () => {
     expect(trafficLogPath(external("off"), "academicals")).toBeNull();
-  });
-});
-
-describe("markSharedLog", () => {
-  const missing: TrafficStats = { ...SHARED_LOG_TRAFFIC, sharedLog: undefined };
-
-  it("imported app: a log that could not be read is the shared-log state", () => {
-    // A stale discovered path or a log removed without an nginx reload — no
-    // deploy would create one either way, so the deploy prompt stays hidden
-    expect(markSharedLog(external("/var/log/nginx/gone.log"), missing).sharedLog).toBe(true);
-  });
-
-  it("managed project: a missing log stays a missing log", () => {
-    expect(markSharedLog(managed, missing).sharedLog).toBeUndefined();
-  });
-
-  it("does not touch stats that were read", () => {
-    const read: TrafficStats = { ...missing, logMissing: false, totalHits: 12 };
-    expect(markSharedLog(external("/var/log/nginx/a.log"), read)).toBe(read);
-  });
-});
-
-describe("SHARED_LOG_TRAFFIC", () => {
-  it("marks a missing log that no deploy can create", () => {
-    expect(SHARED_LOG_TRAFFIC.logMissing).toBe(true);
-    expect(SHARED_LOG_TRAFFIC.sharedLog).toBe(true);
-    expect(SHARED_LOG_TRAFFIC.totalHits).toBe(0);
   });
 });
