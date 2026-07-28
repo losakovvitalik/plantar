@@ -1,6 +1,6 @@
 import type { TrafficStats } from "@plantar/core";
 import type { ProjectRecord } from "@plantar/storage";
-import { appAccessLogPath } from "../shared/access-log-path";
+import { appAccessLogPath } from "@plantar/core/paths";
 
 /**
  * Access log to read app visits from, or null when the app has none of its own.

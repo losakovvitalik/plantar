@@ -19,7 +19,7 @@ import type {
   ServerRecord,
   TrafficStats,
 } from "../../../preload/index.d";
-import { appAccessLogPath } from "../../../shared/access-log-path";
+import { appAccessLogPath } from "@plantar/core/paths";
 import { useI18n } from "../i18n";
 import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";

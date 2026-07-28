@@ -1,6 +1,7 @@
 import path from "node:path";
 import { type SshConnection } from "@plantar/ssh";
 import { t } from "./messages";
+import { appAccessLogPath, appErrorLogPath } from "./paths";
 
 export type RemoteFileKind = "dir" | "file" | "other";
 
@@ -113,8 +114,8 @@ export async function readRemoteTextFile(
 export function nginxRelatedPaths(name: string): { id: RelatedFileId; path: string }[] {
   return [
     { id: "conf", path: `/etc/nginx/sites-available/${name}.conf` },
-    { id: "access", path: `/var/log/nginx/${name}.access.log` },
-    { id: "error", path: `/var/log/nginx/${name}.error.log` },
+    { id: "access", path: appAccessLogPath(name) },
+    { id: "error", path: appErrorLogPath(name) },
   ];
 }
 
