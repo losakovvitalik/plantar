@@ -499,7 +499,7 @@ export const en: Record<MessageKey, string> = {
 
   "visitsLog.title": "Keep a separate visits log",
   "visitsLog.what":
-    "One line will be added to the app's web server configuration — it tells the server to record visits to this site into a separate file:",
+    "This line will be added to each part of the configuration that routes requests to the app — it tells the server to record visits to this site into a separate file:",
   "visitsLog.file": "Configuration file: {file}",
   "visitsLog.safety":
     "Before the change Plantar saves a copy of the configuration file and verifies the result; if the check fails, the previous file is put back. No existing line is modified.",
