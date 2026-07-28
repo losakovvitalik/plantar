@@ -436,14 +436,14 @@ declare global {
         projectId: string,
         password?: string,
       ) => Promise<IpcResult<{ url?: string }>>;
-      /** HTTPS для импортированного приложения на месте: certbot дополняет
-       *  его собственный конфиг nginx — без переноса под управление Plantar */
+      /** In-place HTTPS for an imported app: certbot amends its own nginx
+       *  config — no move under Plantar management */
       setupExternalHttps: (
         projectId: string,
         password?: string,
       ) => Promise<IpcResult<void>>;
-      /** Отдельный журнал посещений для импортированного приложения: одна
-       *  добавленная строка в его конфиге nginx, с копией и проверкой */
+      /** A separate visits log for an imported app: one added line in its
+       *  nginx config, with a backup and verification */
       enableExternalAccessLog: (
         projectId: string,
         password?: string,

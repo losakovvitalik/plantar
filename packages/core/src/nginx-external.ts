@@ -1,5 +1,6 @@
 import { type SshConnection, shellQuote } from "@plantar/ssh";
 import { t } from "./messages";
+import { blankComments, findBlocks, proxyPassPorts, upstreamPorts } from "./nginx-parse";
 import { run } from "./process-checks";
 
 /**
@@ -16,79 +17,6 @@ import { run } from "./process-checks";
  *  wildcard, and a stray copy there would be loaded as a second config */
 const NGINX_BACKUP_DIR = "/var/www/.plantar/nginx-backups";
 
-const LOCAL_HOST_RE = "(?:127\\.0\\.0\\.1|localhost|0\\.0\\.0\\.0)";
-
-/**
- * Replaces comments with spaces of the same length: braces inside comments
- * must not break block matching, while every position in the cleaned text
- * still maps 1:1 onto the original — required for position-based insertion.
- */
-function blankComments(text: string): string {
-  return text.replace(/#[^\n]*/g, (comment) => " ".repeat(comment.length));
-}
-
-interface RawBlock {
-  /** `<keyword> …` between the previous delimiter and the opening brace */
-  header: string;
-  /** Position right after the opening brace */
-  open: number;
-  /** Position of the closing brace; body = [open, close) */
-  close: number;
-}
-
-/** `<keyword> … { … }` blocks with their positions, nested braces respected */
-function findBlocks(clean: string, keyword: string): RawBlock[] {
-  const blocks: RawBlock[] = [];
-  const re = new RegExp(`(?:^|[\\s;{}])(${keyword}\\b[^{;]*)\\{`, "g");
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(clean))) {
-    const open = match.index + match[0].length;
-    let depth = 1;
-    let i = open;
-    while (i < clean.length && depth > 0) {
-      if (clean[i] === "{") depth++;
-      else if (clean[i] === "}") depth--;
-      i++;
-    }
-    blocks.push({ header: match[1].trim(), open, close: i - 1 });
-    re.lastIndex = i;
-  }
-  return blocks;
-}
-
-/** upstream name → local ports of its servers, from the same config file */
-function upstreamPorts(clean: string): Map<string, number[]> {
-  const ports = new Map<string, number[]>();
-  for (const block of findBlocks(clean, "upstream")) {
-    const name = block.header.split(/\s+/)[1];
-    if (!name) continue;
-    const body = clean.slice(block.open, block.close);
-    const found = [
-      ...body.matchAll(new RegExp(`(?:^|\\s)server\\s+${LOCAL_HOST_RE}:(\\d+)`, "g")),
-    ].map((m) => Number(m[1]));
-    if (found.length > 0) ports.set(name, found);
-  }
-  return ports;
-}
-
-/** Does the server block proxy requests to the app's local port? */
-function proxiesToPort(
-  body: string,
-  port: number,
-  upstreams: Map<string, number[]>,
-): boolean {
-  for (const m of body.matchAll(/(?:^|\s)proxy_pass\s+(https?:\/\/[^;\s]+)/g)) {
-    const direct = m[1].match(new RegExp(`^https?://${LOCAL_HOST_RE}:(\\d+)`));
-    if (direct) {
-      if (Number(direct[1]) === port) return true;
-      continue;
-    }
-    const upstream = m[1].match(/^https?:\/\/([^/:]+)/);
-    if (upstream && (upstreams.get(upstream[1]) ?? []).includes(port)) return true;
-  }
-  return false;
-}
-
 export interface AccessLogInsertion {
   /** New file content; every original line is preserved byte for byte */
   content: string;
@@ -103,14 +31,20 @@ export interface AccessLogInsertion {
  * `off` cancels other directives of its level, so adding one would not work
  * and would contradict the user's explicit choice. Purely additive: one new
  * line per block, right after the opening brace.
+ *
+ * `configUpstreams` carries upstream ports resolved from the whole active
+ * config (`nginx -T`): an upstream may be declared in another file, and
+ * discovery matches the port across files — the execute side must too.
+ * Same-file declarations win over the config-wide map.
  */
 export function addAccessLogDirective(
   confText: string,
   appPort: number,
   logPath: string,
+  configUpstreams: Map<string, number[]> = new Map(),
 ): AccessLogInsertion {
   const clean = blankComments(confText);
-  const upstreams = upstreamPorts(clean);
+  const upstreams = new Map([...configUpstreams, ...upstreamPorts(clean)]);
 
   const insertAt: number[] = [];
   for (const block of findBlocks(clean, "server")) {
@@ -118,7 +52,7 @@ export function addAccessLogDirective(
     // The whole body, nested location blocks included: discovery reads the
     // first access_log the same way, so any directive counts as "has one"
     if (/(?:^|[\s;{}])access_log\s/.test(body)) continue;
-    if (!proxiesToPort(body, appPort, upstreams)) continue;
+    if (!proxyPassPorts(body, upstreams).includes(appPort)) continue;
     insertAt.push(block.open);
   }
 
@@ -172,10 +106,18 @@ export async function enableExternalAccessLog(
     );
   }
 
+  // An upstream may be declared in a file other than the recorded one —
+  // resolve ports from the whole active config, the way discovery does.
+  // Best effort: if the dump fails, same-file upstreams still resolve
+  const dump = await conn.exec("nginx -T 2>/dev/null");
+  const configUpstreams =
+    dump.code === 0 ? upstreamPorts(blankComments(dump.stdout)) : new Map<string, number[]>();
+
   const { content, patched } = addAccessLogDirective(
     read.stdout,
     target.appPort,
     target.logPath,
+    configUpstreams,
   );
   if (patched === 0) {
     throw new Error(t("accessLogNoBlock", { file: target.confFile }));

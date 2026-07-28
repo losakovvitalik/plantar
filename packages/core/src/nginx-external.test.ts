@@ -114,6 +114,38 @@ server {
 }`);
   });
 
+  it("resolves the port through an upstream declared in another file of the config", () => {
+    // The upstream lives in a different file of nginx -T, so it is not in
+    // confText — it arrives via the config-wide map, the way discovery saw it
+    const conf = `server {
+    listen 80;
+    server_name academicals.ru;
+    location / {
+        proxy_pass http://app_backend;
+    }
+}`;
+    const configUpstreams = new Map([["app_backend", [3000]]]);
+    expect(addAccessLogDirective(conf, 3000, LOG, configUpstreams).patched).toBe(1);
+    // Without the config-wide map the upstream name resolves to nothing
+    expect(addAccessLogDirective(conf, 3000, LOG).patched).toBe(0);
+  });
+
+  it("prefers a same-file upstream declaration over the config-wide map", () => {
+    const conf = `upstream app_backend {
+    server 127.0.0.1:3000;
+}
+
+server {
+    listen 80;
+    location / {
+        proxy_pass http://app_backend;
+    }
+}`;
+    // A stale config-wide entry must not hide the same-file declaration
+    const configUpstreams = new Map([["app_backend", [4000]]]);
+    expect(addAccessLogDirective(conf, 3000, LOG, configUpstreams).patched).toBe(1);
+  });
+
   it("does not count braces inside comments when matching blocks", () => {
     const conf = `server {
     listen 80;
