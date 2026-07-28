@@ -568,6 +568,16 @@ export const en: Record<MessageKey, string> = {
   "settings.leEmailHint":
     "Let's Encrypt will email you if certificate auto-renewal goes wrong. Applies on the next deploy with a domain. Can be left empty.",
 
+  "settings.mcpServer": "Access for AI agents",
+  "settings.mcpServerHint":
+    "AI agents on this computer (such as Claude Code or Cursor) will be able to read information about your servers and apps: status, logs, visits, deploy history. They will not be able to change anything.",
+  "settings.mcpEndpoint": "Address",
+  "settings.mcpToken": "Access key",
+  "settings.mcpCredentialsHint":
+    "Enter the address and the access key in your agent's settings (MCP connection).",
+  "settings.mcpAfterSave":
+    "The address and the access key will appear here after the settings are saved.",
+
   "settings.github": "GitHub account",
   "settings.githubHint": "Sign in to deploy private repositories from a link.",
   "settings.githubConnected": "Connected as @{login}.",

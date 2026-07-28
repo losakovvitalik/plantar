@@ -130,7 +130,9 @@ import {
 import { forgetServer, startAppMonitor, stopAppMonitor } from "./app-monitor";
 import { createAppTray, destroyTray, refreshTrayMenu } from "./tray";
 import { markSharedLog, SHARED_LOG_TRAFFIC, trafficLogPath } from "./traffic-log";
-import { appAccessLogPath } from "@plantar/core/paths";
+import { appAccessLogPath, appErrorLogPath } from "@plantar/core/paths";
+import type { McpProvider, ProjectRuntime } from "@plantar/mcp";
+import { ensureMcpToken, syncMcpServer } from "./mcp";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
 
@@ -356,6 +358,61 @@ const withServer = <T>(
   password: string | undefined,
   fn: (conn: SshConnection) => Promise<T>,
 ): Promise<T> => withPooledConnection(server.id, () => connect(server, password), fn);
+
+/** What the MCP tools need from a project's config; plantar.json stays here */
+function mcpProjectRuntime(project: ProjectRecord): ProjectRuntime {
+  let name = project.name;
+  let type: string | undefined;
+  let domain: string | undefined;
+  try {
+    const config = projectConfig(project);
+    name = config.name;
+    type = config.type;
+    domain = config.domain;
+  } catch {
+    /* plantar.json недоступен — используем имя на момент добавления */
+  }
+  // Тот же адрес, что проверяет смоук-тест после деплоя
+  const siteUrl =
+    type && type !== "bot"
+      ? domain
+        ? `https://${domain}/`
+        : `http://${getServer(project.serverId).host}/`
+      : undefined;
+  const external = project.external;
+  return {
+    name,
+    pm2Name: external ? external.pm2Name : name,
+    siteUrl,
+    accessLogPath: trafficLogPath(project, name),
+    // An imported app keeps the error log its config names (none — null);
+    // a managed one gets the path Plantar's own nginx template writes
+    errorLogPath: external ? (external.errorLogPath ?? null) : appErrorLogPath(name),
+    outLogPath: external?.outLogPath,
+    errLogPath: external?.errLogPath,
+  };
+}
+
+/**
+ * The bridge the MCP tools run through: storage reads plus the SSH pool.
+ * Password-auth servers store no secret, so their tools work only while a
+ * live pooled connection exists — the same limitation the background
+ * monitor has (see forgetServer/startAppMonitor).
+ */
+const mcpProvider: McpProvider = {
+  listServers: readServers,
+  listProjects: readProjects,
+  deployHistory: readHistory,
+  readDeployLogTail: (file, maxBytes) => readLogTail(file, maxBytes),
+  withConnection: async (serverId, fn) => {
+    const server = getServer(serverId);
+    if (server.auth === "password" && !isConnected(server.id)) {
+      throw new Error(t("mcpConnectInApp"));
+    }
+    return withServer(server, undefined, fn);
+  },
+  projectRuntime: mcpProjectRuntime,
+};
 
 interface AddServerInput {
   name: string;
@@ -1133,12 +1190,23 @@ app.whenReady().then(() => {
   migratePlainKeys();
   createWindow();
 
+  // The MCP endpoint outlives restarts: settings enabled it, so bring it up.
+  // A failure (say, the port is taken) must not break startup — just log it.
+  syncMcpServer(readSettings(), mcpProvider).catch((err) =>
+    console.error("plantar: MCP server failed to start", err),
+  );
+
   ipcMain.handle("settings:get", () => toResult(async () => readSettings()));
   ipcMain.handle("settings:set", (_e, settings: AppSettings) =>
     toResult(async () => {
-      writeSettings(settings);
-      setLanguage(settings.language);
+      // The access token appears on first enable and never changes afterwards
+      const next = ensureMcpToken(settings);
+      writeSettings(next);
+      setLanguage(next.language);
       refreshTrayMenu();
+      // Applies the toggle without an app restart; a start failure surfaces
+      // in the dialog as a save error
+      await syncMcpServer(next, mcpProvider);
     }),
   );
 
