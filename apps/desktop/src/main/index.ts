@@ -1221,7 +1221,9 @@ app.whenReady().then(() => {
       refreshTrayMenu();
       if (syncError) {
         console.error("plantar: MCP server failed to start", syncError);
-        throw new Error(t("mcpStartFailed"));
+        // Sync can also fail while stopping the listener; the message must
+        // match the direction the switch was being moved in
+        throw new Error(t(next.mcpServerEnabled ? "mcpStartFailed" : "mcpStopFailed"));
       }
     }),
   );
