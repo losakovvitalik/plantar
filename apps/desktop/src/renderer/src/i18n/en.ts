@@ -576,7 +576,7 @@ export const en: Record<MessageKey, string> = {
   "settings.mcpCredentialsHint":
     "Enter the address and the access key in your agent's settings (MCP connection).",
   "settings.mcpAfterSave":
-    "The address and the access key will appear here after the settings are saved.",
+    "Save the settings and open them again — the address and the access key will appear here.",
 
   "settings.github": "GitHub account",
   "settings.githubHint": "Sign in to deploy private repositories from a link.",
