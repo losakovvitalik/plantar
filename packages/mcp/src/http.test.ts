@@ -116,6 +116,29 @@ describe("mcp http endpoint", () => {
     }
   });
 
+  it("falls back to a free port when the preferred one is taken", async () => {
+    // `server` from beforeAll occupies its port for the whole suite — ask for
+    // exactly that port to make the conflict deterministic
+    const fallback = await startMcpHttpServer({
+      provider,
+      token: TOKEN,
+      port: server.port,
+      fallbackToFreePort: true,
+    });
+    try {
+      expect(fallback.port).not.toBe(server.port);
+      expect(fallback.url).toContain(`:${fallback.port}/`);
+    } finally {
+      await fallback.close();
+    }
+  });
+
+  it("still fails on a taken port without the fallback", async () => {
+    await expect(
+      startMcpHttpServer({ provider, token: TOKEN, port: server.port }),
+    ).rejects.toMatchObject({ code: "EADDRINUSE" });
+  });
+
   it("executes a tool call end to end", async () => {
     const reply = await post(
       {

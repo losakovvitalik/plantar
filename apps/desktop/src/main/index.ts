@@ -1193,11 +1193,20 @@ app.whenReady().then(() => {
   // A failure (say, the port is taken) must not break startup — but the stored
   // toggle must not keep claiming the server is up when nothing is listening,
   // so it is turned off; re-enabling in settings reuses the saved token (#43)
-  syncMcpServer(readSettings(), mcpProvider).catch((err) => {
-    console.error("plantar: MCP server failed to start", err);
-    const current = readSettings();
-    if (current.mcpServerEnabled) writeSettings({ ...current, mcpServerEnabled: false });
-  });
+  syncMcpServer(readSettings(), mcpProvider)
+    .then((port) => {
+      // A bind conflict falls back to a free port — persist it so the address
+      // stays stable across restarts (#44). Settings are re-read right before
+      // the write so a concurrent settings:set is not clobbered.
+      if (port === null) return;
+      const current = readSettings();
+      if (current.mcpServerPort !== port) writeSettings({ ...current, mcpServerPort: port });
+    })
+    .catch((err) => {
+      console.error("plantar: MCP server failed to start", err);
+      const current = readSettings();
+      if (current.mcpServerEnabled) writeSettings({ ...current, mcpServerEnabled: false });
+    });
 
   ipcMain.handle("settings:get", () => toResult(async () => readSettings()));
   ipcMain.handle("settings:set", (_e, settings: AppSettings) =>
@@ -1211,7 +1220,11 @@ app.whenReady().then(() => {
       let applied = next;
       let syncError: unknown = null;
       try {
-        await syncMcpServer(next, mcpProvider);
+        const port = await syncMcpServer(next, mcpProvider);
+        // The listener may sit on a fallback port (the saved one was taken);
+        // store the port actually in use so the dialog shows the real
+        // address and later starts try it first (#44)
+        if (port !== null) applied = { ...applied, mcpServerPort: port };
       } catch (err) {
         syncError = err;
         applied = { ...next, mcpServerEnabled: false };
