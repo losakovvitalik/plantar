@@ -76,6 +76,15 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
       onOpenChange(false);
     } else {
       setSaveError(result.error);
+      // The main process may have stored a corrected state (the AI agent
+      // access toggle reverts when the listener fails to start) — reload so
+      // the dialog does not keep showing the endpoint as available (#43)
+      const fresh = await window.plantar.getSettings();
+      if (fresh.ok) {
+        setSettings(fresh.data);
+        // The other changes (language included) are saved even on failure
+        setLang(fresh.data.language);
+      }
     }
   }
 
