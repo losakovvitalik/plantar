@@ -29,6 +29,7 @@
     "@plantar/config": "workspace:*",
     "@plantar/core": "workspace:*",
     "@plantar/i18n": "workspace:*",
+    "@plantar/mcp": "workspace:*",
     "@plantar/ssh": "workspace:*",
     "@plantar/storage": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.6",

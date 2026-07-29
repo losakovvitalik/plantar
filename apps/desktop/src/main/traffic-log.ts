@@ -1,4 +1,3 @@
-import type { TrafficStats } from "@plantar/core";
 import type { ProjectRecord } from "@plantar/storage";
 import { appAccessLogPath } from "@plantar/core/paths";
 
@@ -22,26 +21,3 @@ export function trafficLogPath(project: ProjectRecord, name: string): string | n
   }
   return appAccessLogPath(name);
 }
-
-/**
- * A log that could not be read is a shared-log state for an imported app.
- *
- * Careful mode writes no nginx config, so nothing a deploy does would create a
- * log of its own — whether the discovered path went stale, the file was removed
- * without an nginx reload, or it never was a path at all.
- */
-export function markSharedLog(project: ProjectRecord, stats: TrafficStats): TrafficStats {
-  return project.external && stats.logMissing ? { ...stats, sharedLog: true } : stats;
-}
-
-/** Visits summary of an app that writes into the server-wide log */
-export const SHARED_LOG_TRAFFIC: TrafficStats = {
-  logMissing: true,
-  sharedLog: true,
-  totalHits: 0,
-  totalVisitors: 0,
-  byDay: [],
-  byHour: [],
-  statusCodes: [],
-  topPaths: [],
-};

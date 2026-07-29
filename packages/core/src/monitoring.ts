@@ -449,6 +449,25 @@ export async function getTrafficStats(
   return parseGoaccessReport(result.stdout);
 }
 
+/** Visits summary of an app that writes into the server-wide nginx log */
+export const SHARED_LOG_TRAFFIC: TrafficStats = {
+  ...EMPTY_TRAFFIC,
+  logMissing: true,
+  sharedLog: true,
+};
+
+/**
+ * A log that could not be read is a shared-log state for an imported app
+ * (`external` says whether the project is one).
+ *
+ * Careful mode writes no nginx config, so nothing a deploy does would create a
+ * log of its own — whether the discovered path went stale, the file was removed
+ * without an nginx reload, or it never was a path at all.
+ */
+export function markSharedLog(external: boolean, stats: TrafficStats): TrafficStats {
+  return external && stats.logMissing ? { ...stats, sharedLog: true } : stats;
+}
+
 /** Точка истории нагрузки сервера */
 export interface ServerMetricPoint {
   /** unix-секунды */

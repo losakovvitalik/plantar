@@ -1,0 +1,27 @@
+{
+  "name": "@plantar/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./meta": "./src/meta.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "@plantar/core": "workspace:*",
+    "@plantar/i18n": "workspace:*",
+    "@plantar/ssh": "workspace:*",
+    "@plantar/storage": "workspace:*",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

@@ -27,6 +27,7 @@ import {
   installMonitoringTool,
   listProjectDir,
   logStreamCommand,
+  markSharedLog,
   nginxRelatedPaths,
   pm2ProcessHealth,
   pm2ProcessStatuses,
@@ -38,6 +39,7 @@ import {
   resolveProjectPath,
   rollbackProject,
   setupExternalHttps,
+  SHARED_LOG_TRAFFIC,
   writeExternalEnv,
   writeProjectEnv,
 } from "@plantar/core";
@@ -129,8 +131,10 @@ import {
 } from "./deploy-runs";
 import { forgetServer, startAppMonitor, stopAppMonitor } from "./app-monitor";
 import { createAppTray, destroyTray, refreshTrayMenu } from "./tray";
-import { markSharedLog, SHARED_LOG_TRAFFIC, trafficLogPath } from "./traffic-log";
-import { appAccessLogPath } from "@plantar/core/paths";
+import { trafficLogPath } from "./traffic-log";
+import { appAccessLogPath, appErrorLogPath } from "@plantar/core/paths";
+import type { McpProvider, ProjectRuntime } from "@plantar/mcp";
+import { ensureMcpToken, syncMcpServer } from "./mcp";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
 
@@ -245,13 +249,15 @@ function previousNamesAfterRename(
   return [...new Set([...(project.previousNames ?? []), project.name])];
 }
 
-/** Статус приложения проекта по карте pm2-процессов сервера (имя → статус)
- *  и адрес сайта для живой HTTP-проверки (у ботов и без конфига адреса нет) */
-function appStatusOf(
+/**
+ * Name and type of a project as plantar.json defines them (the record is the
+ * fallback when the config is unreadable) plus the site URL — the same address
+ * the post-deploy smoke test checks. Bots and unconfigured apps have no URL.
+ */
+function projectSite(
   project: ProjectRecord,
-  pm2: Map<string, string>,
   host: string,
-): { status: AppStatus; siteUrl?: string } {
+): { name: string; type?: string; siteUrl?: string } {
   let name = project.name;
   let type: string | undefined;
   let domain: string | undefined;
@@ -261,15 +267,25 @@ function appStatusOf(
     type = config.type;
     domain = config.domain;
   } catch {
-    /* plantar.json недоступен — используем имя на момент добавления */
+    // plantar.json is unreadable — fall back to the name at add time
   }
-  // Тот же адрес, что проверяет смоук-тест после деплоя
   const siteUrl =
     type && type !== "bot"
       ? domain
         ? `https://${domain}/`
         : `http://${host}/`
       : undefined;
+  return { name, type, siteUrl };
+}
+
+/** Статус приложения проекта по карте pm2-процессов сервера (имя → статус)
+ *  и адрес сайта для живой HTTP-проверки (у ботов и без конфига адреса нет) */
+function appStatusOf(
+  project: ProjectRecord,
+  pm2: Map<string, string>,
+  host: string,
+): { status: AppStatus; siteUrl?: string } {
+  const { name, type, siteUrl } = projectSite(project, host);
   // Статичный сайт живёт без pm2-процесса
   if (type === "static") return { status: "static", siteUrl };
   // Внешнее приложение работает под прежним именем pm2
@@ -356,6 +372,46 @@ const withServer = <T>(
   password: string | undefined,
   fn: (conn: SshConnection) => Promise<T>,
 ): Promise<T> => withPooledConnection(server.id, () => connect(server, password), fn);
+
+/** What the MCP tools need from a project's config; plantar.json stays here */
+function mcpProjectRuntime(project: ProjectRecord): ProjectRuntime {
+  const { name, siteUrl } = projectSite(project, getServer(project.serverId).host);
+  const external = project.external;
+  return {
+    name,
+    pm2Name: external ? external.pm2Name : name,
+    siteUrl,
+    accessLogPath: trafficLogPath(project, name),
+    // An imported app keeps the error log its config names (none — null);
+    // a managed one gets the path Plantar's own nginx template writes
+    errorLogPath: external ? (external.errorLogPath ?? null) : appErrorLogPath(name),
+    outLogPath: external?.outLogPath,
+    errLogPath: external?.errLogPath,
+  };
+}
+
+/**
+ * The bridge the MCP tools run through: storage reads plus the SSH pool.
+ * Password-auth servers store no secret, so their tools work only while a
+ * live pooled connection exists — the same limitation the background
+ * monitor has (see forgetServer/startAppMonitor).
+ */
+const mcpProvider: McpProvider = {
+  listServers: readServers,
+  listProjects: readProjects,
+  // The same record lookup the GUI history uses: renames and ID-less CLI runs
+  // are matched there, so the two histories cannot diverge
+  deployHistory: projectHistory,
+  readDeployLogTail: (file, maxBytes) => readLogTail(file, maxBytes),
+  withConnection: async (serverId, fn) => {
+    const server = getServer(serverId);
+    if (server.auth === "password" && !isConnected(server.id)) {
+      throw new Error(t("mcpConnectInApp"));
+    }
+    return withServer(server, undefined, fn);
+  },
+  projectRuntime: mcpProjectRuntime,
+};
 
 interface AddServerInput {
   name: string;
@@ -1133,12 +1189,23 @@ app.whenReady().then(() => {
   migratePlainKeys();
   createWindow();
 
+  // The MCP endpoint outlives restarts: settings enabled it, so bring it up.
+  // A failure (say, the port is taken) must not break startup — just log it.
+  syncMcpServer(readSettings(), mcpProvider).catch((err) =>
+    console.error("plantar: MCP server failed to start", err),
+  );
+
   ipcMain.handle("settings:get", () => toResult(async () => readSettings()));
   ipcMain.handle("settings:set", (_e, settings: AppSettings) =>
     toResult(async () => {
-      writeSettings(settings);
-      setLanguage(settings.language);
+      // The access token appears on first enable and never changes afterwards
+      const next = ensureMcpToken(settings);
+      writeSettings(next);
+      setLanguage(next.language);
       refreshTrayMenu();
+      // Applies the toggle without an app restart; a start failure surfaces
+      // in the dialog as a save error
+      await syncMcpServer(next, mcpProvider);
     }),
   );
 
@@ -1706,7 +1773,7 @@ app.whenReady().then(() => {
         const stats = await withServer(server, args.password, (conn) =>
           getTrafficStats(conn, logPath),
         );
-        return markSharedLog(project, stats);
+        return markSharedLog(Boolean(project.external), stats);
       }),
   );
 

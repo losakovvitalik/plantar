@@ -69,7 +69,9 @@ export {
   getServerMetrics,
   getTrafficStats,
   installMonitoringTool,
+  markSharedLog,
   parseGoaccessReport,
+  SHARED_LOG_TRAFFIC,
 } from "./monitoring";
 export type {
   AppLogPoint,
@@ -332,6 +334,15 @@ export async function getSiteLogs(
 export type LogStreamSource = "app" | "nginx";
 
 /**
+ * Shell expression of a default pm2 log file — the single place the
+ * "$HOME/.pm2/logs/" template is spelled out. $HOME has to stay expandable,
+ * so only the file name is quoted: the shell glues the two adjacent parts
+ * into one argument.
+ */
+export const pm2LogExpr = (pm2Name: string, suffix: "out" | "error"): string =>
+  `"$HOME/.pm2/logs/"${shellQuote(`${pm2Name}-${suffix}.log`)}`;
+
+/**
  * Команда live-хвоста логов для execStream: stdout канала — обычный вывод
  * (у nginx — access), stderr — ошибки. tail -F переживает ротацию и появление
  * файла позже (например, до первого деплоя).
@@ -343,14 +354,10 @@ export function logStreamCommand(
   /** Явные пути к логам — у импортированных приложений они бывают нестандартными */
   paths?: { out: string; err: string },
 ): string {
-  // $HOME has to stay expandable, so only the file name is quoted: the shell
-  // glues the adjacent "$HOME/.pm2/logs/" and 'site-out.log' into one argument
-  const pm2Log = (suffix: string) =>
-    `"$HOME/.pm2/logs/"${shellQuote(`${siteName}-${suffix}.log`)}`;
   const [out, err] = paths
     ? [shellQuote(paths.out), shellQuote(paths.err)]
     : source === "app"
-      ? [pm2Log("out"), pm2Log("error")]
+      ? [pm2LogExpr(siteName, "out"), pm2LogExpr(siteName, "error")]
       : [shellQuote(appAccessLogPath(siteName)), shellQuote(appErrorLogPath(siteName))];
   // Жалобы самих tail (нет файла и т.п.) глушатся, чтобы не мешаться с логами;
   // >&2 до 2>/dev/null: сначала stdout уходит в канал stderr, потом stderr tail — в null.
