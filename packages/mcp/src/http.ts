@@ -129,6 +129,9 @@ export async function startMcpHttpServer(
     if (!options.fallbackToFreePort || !conflict || boundPort === 0) throw err;
     await listen(0);
   }
+  // A rare post-startup 'error' (e.g. EMFILE on accept) must degrade the
+  // endpoint, not crash the host process via an unhandled 'error' event
+  httpServer.on("error", (err) => console.error("plantar: MCP server error", err));
   boundPort = (httpServer.address() as AddressInfo).port;
 
   return {
