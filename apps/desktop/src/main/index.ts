@@ -1190,22 +1190,39 @@ app.whenReady().then(() => {
   createWindow();
 
   // The MCP endpoint outlives restarts: settings enabled it, so bring it up.
-  // A failure (say, the port is taken) must not break startup — just log it.
-  syncMcpServer(readSettings(), mcpProvider).catch((err) =>
-    console.error("plantar: MCP server failed to start", err),
-  );
+  // A failure (say, the port is taken) must not break startup — but the stored
+  // toggle must not keep claiming the server is up when nothing is listening,
+  // so it is turned off; re-enabling in settings reuses the saved token (#43)
+  syncMcpServer(readSettings(), mcpProvider).catch((err) => {
+    console.error("plantar: MCP server failed to start", err);
+    const current = readSettings();
+    if (current.mcpServerEnabled) writeSettings({ ...current, mcpServerEnabled: false });
+  });
 
   ipcMain.handle("settings:get", () => toResult(async () => readSettings()));
   ipcMain.handle("settings:set", (_e, settings: AppSettings) =>
     toResult(async () => {
       // The access token appears on first enable and never changes afterwards
       const next = ensureMcpToken(settings);
-      writeSettings(next);
-      setLanguage(next.language);
+      // Applies the toggle without an app restart. Sync runs before the write:
+      // if the listener fails to start, the toggle is stored as off so the
+      // settings never claim the server is up (#43). The other changes are
+      // still saved, and the failure surfaces in the dialog as a save error.
+      let applied = next;
+      let syncError: unknown = null;
+      try {
+        await syncMcpServer(next, mcpProvider);
+      } catch (err) {
+        syncError = err;
+        applied = { ...next, mcpServerEnabled: false };
+      }
+      writeSettings(applied);
+      setLanguage(applied.language);
       refreshTrayMenu();
-      // Applies the toggle without an app restart; a start failure surfaces
-      // in the dialog as a save error
-      await syncMcpServer(next, mcpProvider);
+      if (syncError) {
+        console.error("plantar: MCP server failed to start", syncError);
+        throw new Error(t("mcpStartFailed"));
+      }
     }),
   );
 

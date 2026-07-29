@@ -238,6 +238,10 @@ const MESSAGES = {
     ru: "Отдельный журнал посещений тут не завести: при импорте не нашлись настройки веб-сервера или порт этого приложения.",
     en: "A separate visits log cannot be set up here: the import did not find the web server configuration or the port of this app.",
   },
+  mcpStartFailed: {
+    ru: "Доступ для ИИ-агентов включить не удалось, переключатель снова выключен. Возможно, адрес уже занят другой программой — попробуйте позже.",
+    en: "Access for AI agents could not be turned on, so the switch is off again. The address may already be in use by another program — please try again later.",
+  },
   mcpConnectInApp: {
     ru: "Этот сервер входит по паролю, и пароль не хранится. Подключитесь к серверу в приложении Plantar и повторите запрос.",
     en: "This server signs in with a password, and the password is not stored. Connect to the server in the Plantar app, then retry.",
