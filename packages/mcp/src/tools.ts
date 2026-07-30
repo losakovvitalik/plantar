@@ -291,7 +291,9 @@ function guarded(
       return await handler(args);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return { isError: true, content: [{ type: "text", text: message }] };
+      // Agents tend to fall back to direct SSH right after a tool failure —
+      // steer them back to the user at exactly that decision point
+      return { isError: true, content: [{ type: "text", text: `${message} ${t("bypassHint")}` }] };
     }
   };
 }
