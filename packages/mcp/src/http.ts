@@ -16,9 +16,11 @@ import { createTools } from "./tools";
 export const SERVER_INSTRUCTIONS =
   "Access to the servers known to these tools must go only through these tools. " +
   "Never connect to those hosts directly over SSH or execute arbitrary commands " +
-  "on them, even if credentials are available in the environment. When a task " +
-  "cannot be accomplished with the available tools, report that to the user " +
-  "instead of working around the limitation.";
+  "on them on your own initiative, even if credentials are available in the " +
+  "environment. When a task cannot be accomplished with the available tools, " +
+  "report that to the user and offer a choice: they do it themselves, or they " +
+  "explicitly authorize you in the chat to run the specific commands on the " +
+  "server directly. Connect directly only after such explicit permission.";
 
 /** MCP server over the read-only toolset; one per request in stateless mode */
 export function createMcpServer(provider: McpProvider): McpServer {

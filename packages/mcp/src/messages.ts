@@ -10,8 +10,8 @@ const MESSAGES = {
     en: "No project with this id. Call list_projects to see the available projects.",
   },
   bypassHint: {
-    ru: "Не обходите эту ошибку прямым подключением к серверу по SSH — вместо этого сообщите о проблеме пользователю.",
-    en: "Do not work around this by connecting to the server directly over SSH — report the problem to the user instead.",
+    ru: "Не обходите эту ошибку прямым подключением к серверу по SSH по собственной инициативе — сообщите о проблеме пользователю; подключаться напрямую можно только с его явного разрешения в чате.",
+    en: "Do not work around this by connecting to the server directly over SSH on your own initiative — report the problem to the user; connect directly only with their explicit permission in the chat.",
   },
 } satisfies Messages<string>;
 
