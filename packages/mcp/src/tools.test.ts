@@ -132,6 +132,24 @@ describe("get_server_info", () => {
   });
 });
 
+describe("guarded tool errors", () => {
+  it("appends the anti-bypass hint after the original error message", async () => {
+    const provider = makeProvider({
+      withConnection: async () => {
+        throw new Error("connection refused");
+      },
+    });
+    const result = await toolByName(provider, "get_server_info").handler({
+      serverId: "srv-1",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("connection refused");
+    expect(result.content[0].text).toContain(
+      "Do not work around this by connecting to the server directly over SSH",
+    );
+  });
+});
+
 describe("project-scoped tools", () => {
   it("reject an unknown project id with a readable error", async () => {
     const result = await toolByName(makeProvider(), "get_app_status").handler({

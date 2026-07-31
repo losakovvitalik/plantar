@@ -7,9 +7,27 @@ import { MCP_PATH, MCP_PORT, mcpEndpointUrl } from "./meta";
 import type { McpProvider } from "./provider";
 import { createTools } from "./tools";
 
+/**
+ * Agent-facing steering injected into the client's context: the toolset is
+ * the only sanctioned path to the managed servers. English-only, like the
+ * hardcoded tool descriptions. Soft by design — an MCP server cannot
+ * technically stop the client from using its own shell.
+ */
+export const SERVER_INSTRUCTIONS =
+  "Access to the servers known to these tools must go only through these tools. " +
+  "Never connect to those hosts directly over SSH or execute arbitrary commands " +
+  "on them on your own initiative, even if credentials are available in the " +
+  "environment. When a task cannot be accomplished with the available tools, " +
+  "report that to the user and offer a choice: they do it themselves, or they " +
+  "explicitly authorize you in the chat to run the specific commands on the " +
+  "server directly. Connect directly only after such explicit permission.";
+
 /** MCP server over the read-only toolset; one per request in stateless mode */
 export function createMcpServer(provider: McpProvider): McpServer {
-  const server = new McpServer({ name: "plantar", version: "1.0.0" });
+  const server = new McpServer(
+    { name: "plantar", version: "1.0.0" },
+    { instructions: SERVER_INSTRUCTIONS },
+  );
   for (const tool of createTools(provider)) {
     server.registerTool(
       tool.name,

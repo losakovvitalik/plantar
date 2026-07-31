@@ -1,7 +1,7 @@
 import { request } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { McpProvider } from "./provider";
-import { startMcpHttpServer, type McpHttpServerHandle } from "./http";
+import { SERVER_INSTRUCTIONS, startMcpHttpServer, type McpHttpServerHandle } from "./http";
 
 const TOKEN = "test-token-0123456789abcdef";
 
@@ -92,6 +92,12 @@ describe("mcp http endpoint", () => {
     const reply = await post(initialize, { Authorization: `Bearer ${TOKEN}` });
     expect(reply.status).toBe(200);
     expect(reply.body).toContain('"plantar"');
+  });
+
+  it("carries the anti-bypass instructions in the initialize response", async () => {
+    const reply = await post(initialize, { Authorization: `Bearer ${TOKEN}` });
+    expect(reply.status).toBe(200);
+    expect(reply.body).toContain(JSON.stringify(SERVER_INSTRUCTIONS));
   });
 
   it("lists the read-only toolset", async () => {
