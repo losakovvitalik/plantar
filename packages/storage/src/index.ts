@@ -274,6 +274,11 @@ export interface AppSettings {
    *  settings.json — it guards a localhost-only port and sits in the same
    *  trust boundary as servers.json */
   mcpServerToken: string;
+  /** TCP port of the MCP endpoint; 0 — the default port (MCP_PORT from
+   *  `@plantar/mcp/meta`, not importable here without a dependency cycle).
+   *  When that port turns out taken, the listener falls back to a free one
+   *  and the app persists it here, so the address survives restarts */
+  mcpServerPort: number;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -284,6 +289,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   language: systemLanguage(),
   mcpServerEnabled: false,
   mcpServerToken: "",
+  mcpServerPort: 0,
 };
 
 export function readSettings(): AppSettings {

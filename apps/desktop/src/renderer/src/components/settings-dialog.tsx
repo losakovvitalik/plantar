@@ -261,7 +261,11 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                     <p className="text-ink-soft">{t("settings.mcpCredentialsHint")}</p>
                     <p>
                       {t("settings.mcpEndpoint")}:{" "}
-                      <code className="select-all break-all">{mcpEndpointUrl()}</code>
+                      {/* 0 — the port was never persisted, the default applies;
+                          otherwise the port the listener actually bound to (#44) */}
+                      <code className="select-all break-all">
+                        {mcpEndpointUrl(settings.mcpServerPort || undefined)}
+                      </code>
                     </p>
                     <p>
                       {t("settings.mcpToken")}:{" "}

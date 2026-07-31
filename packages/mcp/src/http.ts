@@ -62,6 +62,9 @@ export interface McpHttpServerOptions {
   token: string;
   /** Defaults to MCP_PORT; 0 picks a free port (tests) */
   port?: number;
+  /** Retry on a free port when the requested one is already taken
+   *  (EADDRINUSE); the caller reads the actual port from the handle */
+  fallbackToFreePort?: boolean;
 }
 
 export interface McpHttpServerHandle {
@@ -125,11 +128,28 @@ export async function startMcpHttpServer(
     });
   });
 
-  await new Promise<void>((resolve, reject) => {
-    httpServer.once("error", reject);
-    // Loopback only — the endpoint must never be reachable from the network
-    httpServer.listen(boundPort, "127.0.0.1", resolve);
-  });
+  // Loopback only — the endpoint must never be reachable from the network
+  const listen = (port: number) =>
+    new Promise<void>((resolve, reject) => {
+      const onError = (err: Error) => reject(err);
+      httpServer.once("error", onError);
+      httpServer.listen(port, "127.0.0.1", () => {
+        httpServer.removeListener("error", onError);
+        resolve();
+      });
+    });
+  try {
+    await listen(boundPort);
+  } catch (err) {
+    // Only a bind conflict warrants the fallback — any other failure (or a
+    // conflict on "any free port" itself) stays fatal
+    const conflict = (err as NodeJS.ErrnoException).code === "EADDRINUSE";
+    if (!options.fallbackToFreePort || !conflict || boundPort === 0) throw err;
+    await listen(0);
+  }
+  // A rare post-startup 'error' (e.g. EMFILE on accept) must degrade the
+  // endpoint, not crash the host process via an unhandled 'error' event
+  httpServer.on("error", (err) => console.error("plantar: MCP server error", err));
   boundPort = (httpServer.address() as AddressInfo).port;
 
   return {
