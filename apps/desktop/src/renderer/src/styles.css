@@ -80,6 +80,15 @@
   --color-ring: var(--ring);
 }
 
+/* Tailwind v4 preflight leaves buttons at cursor: default; restore the
+   v3 pointer cursor for all enabled buttons and button-like elements */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
 body {
   background: var(--color-paper);
   color: var(--color-ink);
