@@ -17,12 +17,10 @@ function TooltipProvider({
   );
 }
 
+// No per-tooltip provider here: the app mounts a single AppTooltipProvider at
+// the root, so its delay settings (and Radix skip-delay behavior) apply globally
 function Tooltip({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return (
-    <TooltipProvider>
-      <TooltipPrimitive.Root data-slot="tooltip" {...props} />
-    </TooltipProvider>
-  );
+  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
 }
 
 function TooltipTrigger({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {

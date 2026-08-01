@@ -12,6 +12,7 @@ import { useI18n } from "../i18n";
 import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { FileTree, type TreeNodes, formatFileDate, formatFileSize } from "./file-tree";
 
 const RELATED_LABEL_KEYS = {
@@ -174,16 +175,21 @@ export function FilesTab({ project, server, config, askPassword }: Props) {
               >
                 {rootPath}
               </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={loadRoot}
-                disabled={loading}
-                className="text-ink-soft"
-                title={t("files.refreshTitle")}
-              >
-                <RefreshCw className={cn(loading && "animate-spin")} />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={loadRoot}
+                    disabled={loading}
+                    className="text-ink-soft"
+                    aria-label={t("files.refreshTitle")}
+                  >
+                    <RefreshCw className={cn(loading && "animate-spin")} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("files.refreshTitle")}</TooltipContent>
+              </Tooltip>
             </div>
             <div className="thin-scroll min-h-0 flex-1 overflow-y-auto rounded-xl border border-line bg-card p-2">
               <FileTree

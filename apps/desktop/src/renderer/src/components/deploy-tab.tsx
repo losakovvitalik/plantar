@@ -25,6 +25,7 @@ import { passwordFor } from "../lib/server-auth";
 import { MigrateProjectDialog } from "./migrate-project-dialog";
 import { Button } from "./ui/button";
 import { Switch } from "./ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 interface Props {
   project: ProjectRecord;
@@ -504,23 +505,50 @@ export function DeployTab({
         }`
       : null;
 
+  // External project without a git remote: the deploy button is disabled and the
+  // tooltip explains why. Radix tooltips don't fire on disabled elements, so the
+  // trigger is a span wrapper; when the button is enabled there is no tooltip at all.
+  const deployButton = (
+    <Button
+      onClick={() => void deploy()}
+      disabled={!stateLoaded || running || !config || (isExternal && !externalGit)}
+    >
+      <Rocket />
+      {running && !rollingBack
+        ? t("deploy.running")
+        : isGit || externalGit
+          ? t("deploy.updateAndDeploy")
+          : t("deploy.start")}
+    </Button>
+  );
+
+  // Same span-wrapper trick for the migrate button: the tooltip explains the
+  // disabled state while the project has no linked folder.
+  const migrateButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => setMigrateOpen(true)}
+      disabled={needsFolder || running}
+    >
+      <ArrowRightLeft />
+      {t("deploy.migrate")}
+    </Button>
+  );
+
   return (
     <div className="flex h-full flex-col gap-4">
       <div className="flex items-center gap-3">
-        <Button
-          onClick={() => void deploy()}
-          disabled={!stateLoaded || running || !config || (isExternal && !externalGit)}
-          title={
-            isExternal && !externalGit ? t("deploy.externalNoGitHint") : undefined
-          }
-        >
-          <Rocket />
-          {running && !rollingBack
-            ? t("deploy.running")
-            : isGit || externalGit
-              ? t("deploy.updateAndDeploy")
-              : t("deploy.start")}
-        </Button>
+        {isExternal && !externalGit ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>{deployButton}</span>
+            </TooltipTrigger>
+            <TooltipContent>{t("deploy.externalNoGitHint")}</TooltipContent>
+          </Tooltip>
+        ) : (
+          deployButton
+        )}
 
         {/* У внешних проектов возврат версии живёт на вкладке «Версии» (по git),
             поэтому кнопки здесь честно нет, а не задизейблена */}
@@ -593,16 +621,16 @@ export function DeployTab({
                 {t("deploy.pickFolder")}
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setMigrateOpen(true)}
-              disabled={needsFolder || running}
-              title={needsFolder ? t("deploy.migrateNeedsFolder") : undefined}
-            >
-              <ArrowRightLeft />
-              {t("deploy.migrate")}
-            </Button>
+            {needsFolder ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>{migrateButton}</span>
+                </TooltipTrigger>
+                <TooltipContent>{t("deploy.migrateNeedsFolder")}</TooltipContent>
+              </Tooltip>
+            ) : (
+              migrateButton
+            )}
           </div>
         </div>
       )}
