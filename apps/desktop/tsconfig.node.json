@@ -10,5 +10,13 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src/main", "src/preload", "src/shared", "electron.vite.config.ts"]
+  "include": [
+    "src/main",
+    "src/preload",
+    "src/shared",
+    "electron.vite.config.ts",
+    "vitest.config.ts",
+    "e2e",
+    "../../packages/core/test/integration/global-setup.ts"
+  ]
 }

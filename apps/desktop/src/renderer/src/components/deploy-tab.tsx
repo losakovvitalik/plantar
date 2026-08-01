@@ -510,6 +510,7 @@ export function DeployTab({
   // trigger is a span wrapper; when the button is enabled there is no tooltip at all.
   const deployButton = (
     <Button
+      data-testid="deploy-start"
       onClick={() => void deploy()}
       disabled={!stateLoaded || running || !config || (isExternal && !externalGit)}
     >
@@ -537,7 +538,11 @@ export function DeployTab({
   );
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    <div
+      className="flex h-full flex-col gap-4"
+      data-testid="deploy-tab"
+      data-run-status={run?.status ?? "idle"}
+    >
       <div className="flex items-center gap-3">
         {isExternal && !externalGit ? (
           <Tooltip>
@@ -740,6 +745,7 @@ export function DeployTab({
 
       <div
         ref={terminalRef}
+        data-testid="deploy-log"
         onScroll={() => {
           const el = terminalRef.current;
           if (!el) return;

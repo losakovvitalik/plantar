@@ -153,6 +153,7 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
               <Label htmlFor="srv-host">{t("addServer.host")}</Label>
               <Input
                 id="srv-host"
+                data-testid="server-host"
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
                 placeholder="185.42.10.7"
@@ -162,14 +163,25 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="srv-port">{t("addServer.port")}</Label>
-              <Input id="srv-port" value={port} onChange={(e) => setPort(e.target.value)} />
+              <Input
+                id="srv-port"
+                data-testid="server-port"
+                value={port}
+                onChange={(e) => setPort(e.target.value)}
+              />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="srv-user">{t("addServer.user")}</Label>
-              <Input id="srv-user" value={user} onChange={(e) => setUser(e.target.value)} required />
+              <Input
+                id="srv-user"
+                data-testid="server-user"
+                value={user}
+                onChange={(e) => setUser(e.target.value)}
+                required
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="srv-name">{t("addServer.name")}</Label>
@@ -260,6 +272,7 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
               </Label>
               <Input
                 id="srv-password"
+                data-testid="server-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -280,6 +293,7 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
             </Button>
             <Button
               type="submit"
+              data-testid="server-submit"
               disabled={busy || !host || !user || (auth === "existing-key" ? !keyPath : !password)}
             >
               {busy ? t("common.connecting") : t("addServer.submit")}

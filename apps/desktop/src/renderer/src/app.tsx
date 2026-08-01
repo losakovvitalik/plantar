@@ -333,10 +333,10 @@ export default function App() {
               </div>
               <div className="mt-3 flex items-center">
                 <TabsList>
-                  <TabsTrigger className="px-4" value="status">
+                  <TabsTrigger className="px-4" value="status" data-testid="tab-status">
                     {t("app.tabStatus")}
                   </TabsTrigger>
-                  <TabsTrigger className="px-4" value="deploy">
+                  <TabsTrigger className="px-4" value="deploy" data-testid="tab-deploy">
                     {t("app.tabDeploy")}
                   </TabsTrigger>
                   {selectedProject.source === "git" && (

@@ -89,6 +89,7 @@ export function AddProjectDialog({ open, onOpenChange, onPickLocal, onCloned }: 
           <div className="grid gap-3">
             <button
               type="button"
+              data-testid="add-project-local"
               onClick={() => {
                 onPickLocal();
                 change(false);

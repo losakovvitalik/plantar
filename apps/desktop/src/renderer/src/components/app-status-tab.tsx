@@ -536,6 +536,8 @@ function HealthCard({ health }: { health: Pm2ProcessHealth | null }) {
           {t("appStatus.processTitle")}
         </h3>
         <span
+          data-testid="app-health-state"
+          data-state={state}
           className={cn(
             "rounded-full px-2.5 py-0.5 text-[11.5px] font-bold",
             badge.className,
