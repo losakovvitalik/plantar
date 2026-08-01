@@ -60,6 +60,9 @@ function waitForSsh(port: number, timeoutMs = 60_000): Promise<void> {
       };
       socket.setTimeout(2000, retry);
       socket.once("error", retry);
+      // docker-proxy may accept and close the connection without data while
+      // sshd is not listening yet — neither "error" nor "data" fires then
+      socket.once("close", retry);
       socket.once("data", (chunk: Buffer) => {
         if (settled) return;
         settled = true;
@@ -83,7 +86,11 @@ export default async function setup(project: TestProject): Promise<() => void> {
   }
 
   // Docker's layer cache makes rebuilds after the first one near-instant
-  execFileSync("docker", ["build", "-t", IMAGE, FIXTURE_DIR], { stdio: "inherit" });
+  execFileSync(
+    "docker",
+    ["build", "-t", IMAGE, "--build-arg", `SSH_PASSWORD=${SSH_PASSWORD}`, FIXTURE_DIR],
+    { stdio: "inherit" },
+  );
 
   docker(
     "run",

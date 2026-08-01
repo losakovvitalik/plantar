@@ -16,8 +16,12 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Root password login is fine for a throwaway container bound to 127.0.0.1.
+# The password value has a single source of truth: SSH_PASSWORD in
+# global-setup.ts, passed in via --build-arg.
 # /etc/systemd/system must exist: `pm2 startup systemd` writes its unit there.
-RUN echo 'root:plantar-test' | chpasswd && \
+ARG SSH_PASSWORD
+RUN test -n "$SSH_PASSWORD" && \
+    echo "root:$SSH_PASSWORD" | chpasswd && \
     printf 'PermitRootLogin yes\nPasswordAuthentication yes\n' \
       > /etc/ssh/sshd_config.d/01-plantar-test.conf && \
     mkdir -p /run/sshd /etc/systemd/system

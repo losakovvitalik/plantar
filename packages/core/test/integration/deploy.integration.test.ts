@@ -45,7 +45,10 @@ describe("deploy core over real SSH", () => {
   let projectDir: string;
   let config: ProjectConfig;
   let firstRelease: string;
-  const log = () => {};
+  // Set PLANTAR_IT_DEBUG=1 to see the deploy command trail when a scenario fails
+  const log = process.env.PLANTAR_IT_DEBUG
+    ? (line: string) => console.log(line)
+    : () => {};
 
   const appUrl = () => `http://127.0.0.1:${inject("httpPort")}/`;
 
