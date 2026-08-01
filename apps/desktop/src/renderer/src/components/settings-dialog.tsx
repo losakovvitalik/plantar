@@ -50,10 +50,11 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
   const [account, setAccount] = useState<GithubAccount | null>(null);
   const [accountError, setAccountError] = useState<string | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
-  // The AI agent access toggle was switched on in this dialog session but not
-  // saved yet — the endpoint starts listening only on save, so the credentials
-  // block must not claim it is already available
-  const [mcpEnablePending, setMcpEnablePending] = useState(false);
+  // Snapshot of the stored AI agent access state, refreshed whenever the
+  // dialog reads settings from the main process. The endpoint starts listening
+  // only on save, so the credentials block warns when the edited settings have
+  // the toggle on while the stored ones have it off.
+  const [storedMcpEnabled, setStoredMcpEnabled] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -62,11 +63,14 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
     setLoadError(null);
     setSaveError(null);
     setAccountError(null);
-    setMcpEnablePending(false);
     void (async () => {
       const result = await window.plantar.getSettings();
-      if (result.ok) setSettings(result.data);
-      else setLoadError(result.error);
+      if (result.ok) {
+        setSettings(result.data);
+        setStoredMcpEnabled(result.data.mcpServerEnabled);
+      } else {
+        setLoadError(result.error);
+      }
       const acc = await window.plantar.githubAccount();
       if (acc.ok) setAccount(acc.data);
       else setAccountError(acc.error);
@@ -98,8 +102,8 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
       const fresh = await window.plantar.getSettings();
       if (fresh.ok) {
         setSettings(fresh.data);
-        // The dialog shows the stored state again — no unsaved enable left
-        setMcpEnablePending(false);
+        // The dialog shows the stored state again — refresh the snapshot too
+        setStoredMcpEnabled(fresh.data.mcpServerEnabled);
         // The other changes (language included) are saved even on failure
         setLang(fresh.data.language);
       }
@@ -269,7 +273,6 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                   id="mcp-server"
                   checked={settings.mcpServerEnabled}
                   onCheckedChange={(checked) => {
-                    setMcpEnablePending(checked);
                     setSettings({
                       ...settings,
                       mcpServerEnabled: checked,
@@ -319,7 +322,7 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                   </p>
                   {/* The endpoint starts listening only when the settings are
                       saved — an unsaved enable must not look already available */}
-                  {mcpEnablePending && (
+                  {!storedMcpEnabled && (
                     <p className="text-ink-soft">{t("settings.mcpStartsAfterSave")}</p>
                   )}
                 </div>
