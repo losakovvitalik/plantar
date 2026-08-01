@@ -400,14 +400,17 @@ function mcpRequireConnection(serverId: string): ServerRecord {
   return server;
 }
 
+/** lastSeq only closes a renderer subscription race — agents poll snapshots */
+function mcpStripLastSeq(state: DeployRunState): DeployRunSnapshot {
+  const { lastSeq: _lastSeq, ...snapshot } = state;
+  return snapshot;
+}
+
 /** Run state for MCP; falls back to the on-disk restore after an app restart —
  *  the same view the deploy:state IPC handler serves the GUI */
 function mcpRunSnapshot(project: ProjectRecord): DeployRunSnapshot | null {
   const state = deployRunState(project.id) ?? restoredDeployState(project);
-  if (!state) return null;
-  // lastSeq only closes a renderer subscription race — agents poll snapshots
-  const { lastSeq: _lastSeq, ...snapshot } = state;
-  return snapshot;
+  return state ? mcpStripLastSeq(state) : null;
 }
 
 /**
@@ -434,11 +437,13 @@ async function startMcpRun(
     new Promise<null>((resolve) => setTimeout(() => resolve(null), 0)),
   ]);
   if (failure) throw failure;
-  // The run registered itself in startDeployRun before its first await,
-  // so a state to snapshot must exist here — fail loudly if it ever does not
-  const snapshot = mcpRunSnapshot(project);
-  if (!snapshot) throw new Error(`No run state right after starting a run of ${project.id}`);
-  return snapshot;
+  // The run registered itself in startDeployRun before its first await, so an
+  // in-memory state must exist here — read memory only (no restoredDeployState
+  // fallback, which could mask a broken invariant with a stale restored run)
+  // and fail loudly if it ever does not
+  const state = deployRunState(project.id);
+  if (!state) throw new Error(`No run state right after starting a run of ${project.id}`);
+  return mcpStripLastSeq(state);
 }
 
 /**
