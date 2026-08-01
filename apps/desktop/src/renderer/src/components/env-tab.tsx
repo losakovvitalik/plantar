@@ -14,6 +14,7 @@ import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 /**
  * Построчная модель env-файла: переменные редактируются,
@@ -247,17 +248,21 @@ export function EnvTab({ project, server, askPassword }: Props) {
             )}
             {varCount > 0 && (
               <div className="ml-auto flex gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={load}
-                  disabled={loading}
-                  className="text-ink-soft"
-                  title={t("env.refreshTitle")}
-                >
-                  <RefreshCw className={cn(loading && "animate-spin")} />
-                  {t("env.refresh")}
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={load}
+                      disabled={loading}
+                      className="text-ink-soft"
+                    >
+                      <RefreshCw className={cn(loading && "animate-spin")} />
+                      {t("env.refresh")}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("env.refreshTitle")}</TooltipContent>
+                </Tooltip>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -334,27 +339,39 @@ export function EnvTab({ project, server, askPassword }: Props) {
                             } as React.CSSProperties)
                       }
                     />
-                    <button
-                      onClick={() => toggleReveal(i)}
-                      disabled={showAll}
-                      title={
-                        isRevealed ? t("env.hideValue") : t("env.showValue")
-                      }
-                      className="rounded-md p-1.5 text-ink-soft/50 outline-none hover:bg-moss/10 hover:text-ink disabled:pointer-events-none disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-moss/50"
-                    >
-                      {isRevealed ? (
-                        <EyeOff className="size-4" />
-                      ) : (
-                        <Eye className="size-4" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => removeLine(i)}
-                      title={t("env.removeVar")}
-                      className="rounded-md p-1.5 text-ink-soft/50 opacity-0 outline-none group-hover:opacity-100 hover:bg-clay/10 hover:text-clay focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-moss/50"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => toggleReveal(i)}
+                          disabled={showAll}
+                          aria-label={
+                            isRevealed ? t("env.hideValue") : t("env.showValue")
+                          }
+                          className="rounded-md p-1.5 text-ink-soft/50 outline-none hover:bg-moss/10 hover:text-ink disabled:pointer-events-none disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-moss/50"
+                        >
+                          {isRevealed ? (
+                            <EyeOff className="size-4" />
+                          ) : (
+                            <Eye className="size-4" />
+                          )}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {isRevealed ? t("env.hideValue") : t("env.showValue")}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => removeLine(i)}
+                          aria-label={t("env.removeVar")}
+                          className="rounded-md p-1.5 text-ink-soft/50 opacity-0 outline-none group-hover:opacity-100 hover:bg-clay/10 hover:text-clay focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-moss/50"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t("env.removeVar")}</TooltipContent>
+                    </Tooltip>
                   </div>
                 );
               })}

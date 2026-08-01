@@ -198,22 +198,32 @@ export function Sidebar({
         </span>
         <div className="flex items-center gap-0.5">
           {servers.length > 0 && (
-            <button
-              onClick={onRefreshStatuses}
-              disabled={refreshingStatuses}
-              title={t("sidebar.status.refresh")}
-              className="rounded-md p-1 text-sage/70 outline-none hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-sprout/50"
-            >
-              <RefreshCw className={cn("size-3.5", refreshingStatuses && "animate-spin")} />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={onRefreshStatuses}
+                  disabled={refreshingStatuses}
+                  aria-label={t("sidebar.status.refresh")}
+                  className="rounded-md p-1 text-sage/70 outline-none hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-sprout/50"
+                >
+                  <RefreshCw className={cn("size-3.5", refreshingStatuses && "animate-spin")} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{t("sidebar.status.refresh")}</TooltipContent>
+            </Tooltip>
           )}
-          <button
-            onClick={onAddServer}
-            title={t("sidebar.addServer")}
-            className="rounded-md p-1 text-sage/70 outline-none hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-sprout/50"
-          >
-            <Plus className="size-4" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onAddServer}
+                aria-label={t("sidebar.addServer")}
+                className="rounded-md p-1 text-sage/70 outline-none hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-sprout/50"
+              >
+                <Plus className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{t("sidebar.addServer")}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -312,15 +322,27 @@ export function Sidebar({
                 )}
               >
                 {serverProjects.length > 0 ? (
-                  <button
-                    onClick={() => toggleCollapsed(server.id)}
-                    title={t(isCollapsed ? "sidebar.expandProjects" : "sidebar.collapseProjects")}
-                    className="shrink-0 rounded p-0.5 text-sage/60 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-sprout/50"
-                  >
-                    <ChevronRight
-                      className={cn("size-3.5 transition-transform", !isCollapsed && "rotate-90")}
-                    />
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => toggleCollapsed(server.id)}
+                        aria-label={t(
+                          isCollapsed ? "sidebar.expandProjects" : "sidebar.collapseProjects",
+                        )}
+                        className="shrink-0 rounded p-0.5 text-sage/60 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-sprout/50"
+                      >
+                        <ChevronRight
+                          className={cn(
+                            "size-3.5 transition-transform",
+                            !isCollapsed && "rotate-90",
+                          )}
+                        />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {t(isCollapsed ? "sidebar.expandProjects" : "sidebar.collapseProjects")}
+                    </TooltipContent>
+                  </Tooltip>
                 ) : (
                   <span className="size-4.5 shrink-0" />
                 )}
@@ -331,23 +353,33 @@ export function Sidebar({
                   <Server className="size-4 shrink-0 text-sage/80" />
                   <span className="truncate text-[13px] font-semibold">{server.name}</span>
                 </button>
-                <button
-                  onClick={() => {
-                    expand(server.id);
-                    onAddProject(server.id);
-                  }}
-                  title={t("sidebar.addProject")}
-                  className="hidden rounded p-0.5 text-sage/70 group-hover:block hover:text-white"
-                >
-                  <FolderPlus className="size-3.5" />
-                </button>
-                <button
-                  onClick={() => onRemoveServer(server)}
-                  title={t("sidebar.removeServer")}
-                  className="hidden rounded p-0.5 text-sage/70 group-hover:block hover:text-clay"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => {
+                        expand(server.id);
+                        onAddProject(server.id);
+                      }}
+                      aria-label={t("sidebar.addProject")}
+                      className="hidden rounded p-0.5 text-sage/70 group-hover:block hover:text-white"
+                    >
+                      <FolderPlus className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("sidebar.addProject")}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => onRemoveServer(server)}
+                      aria-label={t("sidebar.removeServer")}
+                      className="hidden rounded p-0.5 text-sage/70 group-hover:block hover:text-clay"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("sidebar.removeServer")}</TooltipContent>
+                </Tooltip>
                 {/* Точка всегда видима (кнопки появляются слева от неё) — иначе
                     подсказку при наведении было бы не прочитать */}
                 <Tooltip>
@@ -463,13 +495,18 @@ export function Sidebar({
                         )}
                         <span className="truncate text-[13px]">{project.name}</span>
                       </button>
-                      <button
-                        onClick={() => onRemoveProject(project)}
-                        title={t("sidebar.removeProject")}
-                        className="hidden rounded p-0.5 text-sage/70 group-hover:block hover:text-clay"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => onRemoveProject(project)}
+                            aria-label={t("sidebar.removeProject")}
+                            className="hidden rounded p-0.5 text-sage/70 group-hover:block hover:text-clay"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>{t("sidebar.removeProject")}</TooltipContent>
+                      </Tooltip>
                       {dot !== "static" && (
                         <Tooltip>
                           <TooltipTrigger asChild>

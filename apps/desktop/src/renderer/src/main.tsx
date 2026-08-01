@@ -5,6 +5,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import type { Language } from "@plantar/storage";
 import App from "./app";
+import { AppTooltipProvider } from "./components/app-tooltip-provider";
 import { I18nProvider } from "./i18n";
 import "./styles.css";
 
@@ -19,7 +20,9 @@ async function bootstrap() {
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <I18nProvider initialLang={lang}>
-        <App />
+        <AppTooltipProvider>
+          <App />
+        </AppTooltipProvider>
       </I18nProvider>
     </React.StrictMode>,
   );
