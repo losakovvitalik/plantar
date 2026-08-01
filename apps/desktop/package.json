@@ -15,6 +15,7 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
+    "test:e2e": "electron-vite build && vitest run --config e2e/vitest.config.ts",
     "dist": "electron-vite build && electron-builder --publish never",
     "release": "electron-vite build && electron-builder --publish always"
   },
@@ -50,6 +51,7 @@
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
     "lucide-react": "^0.475.0",
+    "playwright-core": "^1.62.1",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "recharts": "^2.15.4",

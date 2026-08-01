@@ -216,6 +216,7 @@ export function Sidebar({
             <TooltipTrigger asChild>
               <button
                 onClick={onAddServer}
+                data-testid="sidebar-add-server"
                 aria-label={t("sidebar.addServer")}
                 className="rounded-md p-1 text-sage/70 outline-none hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-sprout/50"
               >
@@ -305,6 +306,7 @@ export function Sidebar({
               }}
             >
               <div
+                data-testid="sidebar-server"
                 draggable={!search}
                 onDragStart={(e) => {
                   e.dataTransfer.effectAllowed = "move";
@@ -360,6 +362,7 @@ export function Sidebar({
                         expand(server.id);
                         onAddProject(server.id);
                       }}
+                      data-testid="sidebar-add-project"
                       aria-label={t("sidebar.addProject")}
                       className="hidden rounded p-0.5 text-sage/70 group-hover:block hover:text-white"
                     >

@@ -294,6 +294,7 @@ export function ProjectSettingsDialog({
                 <button
                   key={value}
                   type="button"
+                  data-testid={`project-type-${value}`}
                   onClick={() => setType(value)}
                   aria-pressed={type === value}
                   className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/30 ${
@@ -318,6 +319,7 @@ export function ProjectSettingsDialog({
             <Label htmlFor="prj-name">{t("projectSettings.name")}</Label>
             <Input
               id="prj-name"
+              data-testid="project-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="my-app"
@@ -435,6 +437,7 @@ export function ProjectSettingsDialog({
               <Label htmlFor="prj-start">{t("projectSettings.startCommand")}</Label>
               <Input
                 id="prj-start"
+                data-testid="project-start-command"
                 value={startCommand}
                 onChange={(e) => setStartCommand(e.target.value)}
                 placeholder={
@@ -483,7 +486,7 @@ export function ProjectSettingsDialog({
             >
               {savedMessage ? t("common.close") : t("common.cancel")}
             </Button>
-            <Button type="submit" disabled={busy || !name}>
+            <Button type="submit" data-testid="project-submit" disabled={busy || !name}>
               {busy ? t("common.saving") : submitLabel}
             </Button>
           </DialogFooter>
