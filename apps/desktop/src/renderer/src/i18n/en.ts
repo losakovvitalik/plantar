@@ -570,7 +570,10 @@ export const en: Record<MessageKey, string> = {
 
   "settings.mcpServer": "Access for AI agents",
   "settings.mcpServerHint":
-    "AI agents on this computer (such as Claude Code or Cursor) will be able to read information about your servers and apps: status, logs, visits, deploy history. They will not be able to change anything.",
+    "AI agents on this computer (such as Claude Code or Cursor) will be able to read information about your servers and apps: status, logs, visits, deploy history. They will not be able to change anything unless that is allowed separately.",
+  "settings.mcpAllowDeploy": "Allow agents to deploy",
+  "settings.mcpAllowDeployHint":
+    "Agents will be able to start a deploy and restore the previous version of an app — this replaces the running version. Reading information does not require this permission.",
   "settings.mcpEndpoint": "Address",
   "settings.mcpToken": "Access key",
   "settings.mcpCredentialsHint":

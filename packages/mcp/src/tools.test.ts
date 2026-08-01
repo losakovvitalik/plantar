@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { setLanguage } from "@plantar/i18n";
 import type { SshConnection } from "@plantar/ssh";
 import type { DeployRecord, ProjectRecord, ServerRecord } from "@plantar/storage";
-import type { McpProvider, ProjectRuntime } from "./provider";
+import type { DeployRunSnapshot, McpProvider, ProjectRuntime } from "./provider";
 import { createTools, type ToolDefinition } from "./tools";
 
 beforeAll(() => setLanguage("en"));
@@ -32,6 +32,14 @@ const runtime: ProjectRuntime = {
   errorLogPath: "/var/log/nginx/shop.error.log",
 };
 
+const runningRun: DeployRunSnapshot = {
+  kind: "deploy",
+  status: "running",
+  lines: ["Updating the repository..."],
+  startedAt: "2026-08-01T10:00:00.000Z",
+  lastLineAt: "2026-08-01T10:00:01.000Z",
+};
+
 function makeProvider(overrides: Partial<McpProvider> = {}): McpProvider {
   return {
     listServers: () => [keyServer],
@@ -42,6 +50,14 @@ function makeProvider(overrides: Partial<McpProvider> = {}): McpProvider {
       throw new Error("withConnection not stubbed for this test");
     },
     projectRuntime: () => runtime,
+    deploysAllowed: () => true,
+    startDeploy: async () => {
+      throw new Error("startDeploy not stubbed for this test");
+    },
+    startRollback: async () => {
+      throw new Error("startRollback not stubbed for this test");
+    },
+    deployRunState: () => null,
     ...overrides,
   };
 }
@@ -221,5 +237,147 @@ describe("get_deploy_history", () => {
     });
     const data = parsed(result) as { lastRunLog?: string };
     expect(data.lastRunLog).toBe("tail of /local/logs/shop/deploy-1.log");
+  });
+});
+
+describe("start_deploy", () => {
+  it("relays the provider's initial run state as-is", async () => {
+    // The actual non-waiting lives in the desktop provider (startMcpRun);
+    // the tool only relays the initial state the provider resolves with
+    const startDeploy = vi.fn(async () => runningRun);
+    const provider = makeProvider({ startDeploy });
+    const result = await toolByName(provider, "start_deploy").handler({ projectId: "prj-1" });
+    expect(result.isError).toBeUndefined();
+    expect(startDeploy).toHaveBeenCalledWith(project);
+    expect(parsed(result)).toMatchObject({ kind: "deploy", status: "running" });
+  });
+
+  it("relays the already-running refusal as a tool error", async () => {
+    const provider = makeProvider({
+      startDeploy: async () => {
+        throw new Error("A deploy of this project is already running.");
+      },
+    });
+    const result = await toolByName(provider, "start_deploy").handler({ projectId: "prj-1" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("already running");
+  });
+
+  it("rejects an unknown project id before reaching the provider", async () => {
+    const startDeploy = vi.fn();
+    const provider = makeProvider({
+      startDeploy: startDeploy as unknown as McpProvider["startDeploy"],
+    });
+    const result = await toolByName(provider, "start_deploy").handler({ projectId: "nope" });
+    expect(result.isError).toBe(true);
+    expect(startDeploy).not.toHaveBeenCalled();
+  });
+});
+
+describe("start_rollback", () => {
+  it("returns the started run's state", async () => {
+    const provider = makeProvider({
+      startRollback: async () => ({ ...runningRun, kind: "rollback" as const }),
+    });
+    const result = await toolByName(provider, "start_rollback").handler({
+      projectId: "prj-1",
+    });
+    expect(result.isError).toBeUndefined();
+    expect(parsed(result)).toMatchObject({ kind: "rollback", status: "running" });
+  });
+
+  it("relays the imported-project refusal as a tool error", async () => {
+    const provider = makeProvider({
+      startRollback: async () => {
+        throw new Error(
+          "An imported app keeps its versions in git — restore a version on the Versions tab.",
+        );
+      },
+    });
+    const result = await toolByName(provider, "start_rollback").handler({
+      projectId: "prj-1",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("imported app");
+  });
+});
+
+describe("get_deploy_status", () => {
+  it("returns a running run's state", async () => {
+    const provider = makeProvider({ deployRunState: () => runningRun });
+    const result = await toolByName(provider, "get_deploy_status").handler({
+      projectId: "prj-1",
+    });
+    expect(result.isError).toBeUndefined();
+    expect(parsed(result)).toMatchObject({
+      kind: "deploy",
+      status: "running",
+      lines: ["Updating the repository..."],
+    });
+  });
+
+  it("returns a finished run with its result fields", async () => {
+    const provider = makeProvider({
+      deployRunState: () => ({
+        ...runningRun,
+        status: "error" as const,
+        error: "npm install failed",
+        errorCode: "npm-peer-conflict",
+      }),
+    });
+    const result = await toolByName(provider, "get_deploy_status").handler({
+      projectId: "prj-1",
+    });
+    expect(parsed(result)).toMatchObject({
+      status: "error",
+      error: "npm install failed",
+      errorCode: "npm-peer-conflict",
+    });
+  });
+
+  it("caps the log tail in the result", async () => {
+    const lines = Array.from({ length: 250 }, (_, i) => `line ${i}`);
+    const provider = makeProvider({ deployRunState: () => ({ ...runningRun, lines }) });
+    const result = await toolByName(provider, "get_deploy_status").handler({
+      projectId: "prj-1",
+    });
+    const data = parsed(result) as { lines: string[] };
+    expect(data.lines).toHaveLength(100);
+    expect(data.lines.at(-1)).toBe("line 249");
+  });
+
+  it("answers with a readable error when the project has no runs", async () => {
+    const provider = makeProvider({ deployRunState: () => null });
+    const result = await toolByName(provider, "get_deploy_status").handler({
+      projectId: "prj-1",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("No deploy runs of this project");
+  });
+});
+
+describe("deploy toolset flag", () => {
+  it("registers the mutating tools only when the provider allows deploys", () => {
+    const names = (provider: McpProvider) => createTools(provider).map((tool) => tool.name);
+    const off = names(makeProvider({ deploysAllowed: () => false }));
+    expect(off).not.toContain("start_deploy");
+    expect(off).not.toContain("start_rollback");
+    // Watching a run is read-only — the status tool stays available
+    expect(off).toContain("get_deploy_status");
+    const on = names(makeProvider({ deploysAllowed: () => true }));
+    expect(on).toContain("start_deploy");
+    expect(on).toContain("start_rollback");
+  });
+});
+
+describe("tool annotations", () => {
+  it("marks the deploy tools destructive and everything else read-only", () => {
+    for (const tool of createTools(makeProvider())) {
+      if (tool.name === "start_deploy" || tool.name === "start_rollback") {
+        expect(tool.annotations).toEqual({ readOnlyHint: false, destructiveHint: true });
+      } else {
+        expect(tool.annotations).toEqual({ readOnlyHint: true });
+      }
+    }
   });
 });

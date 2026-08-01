@@ -255,6 +255,25 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                   }
                 />
               </div>
+              {settings.mcpServerEnabled && (
+                <div className="mt-3 flex items-start justify-between gap-6">
+                  <div>
+                    <Label htmlFor="mcp-allow-deploy" className="text-[13.5px] font-semibold">
+                      {t("settings.mcpAllowDeploy")}
+                    </Label>
+                    <p className="mt-1 text-[12.5px] leading-snug text-ink-soft">
+                      {t("settings.mcpAllowDeployHint")}
+                    </p>
+                  </div>
+                  <Switch
+                    id="mcp-allow-deploy"
+                    checked={settings.mcpAllowDeploy}
+                    onCheckedChange={(checked) =>
+                      setSettings({ ...settings, mcpAllowDeploy: checked })
+                    }
+                  />
+                </div>
+              )}
               {settings.mcpServerEnabled &&
                 (settings.mcpServerToken ? (
                   <div className="mt-2 flex flex-col gap-1 text-[12.5px] leading-snug">
