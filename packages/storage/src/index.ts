@@ -268,7 +268,7 @@ export interface AppSettings {
   notifyOnAppDown: boolean;
   /** Язык интерфейса */
   language: Language;
-  /** Local MCP endpoint with read-only tools for AI agents; off by default */
+  /** Local MCP endpoint for AI agents (read-only unless mcpAllowDeploy); off by default */
   mcpServerEnabled: boolean;
   /** Let MCP agents start deploys and rollbacks; a separate opt-in on top of
    *  mcpServerEnabled — with it off the endpoint stays read-only */

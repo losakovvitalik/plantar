@@ -241,14 +241,10 @@ describe("get_deploy_history", () => {
 });
 
 describe("start_deploy", () => {
-  it("returns the started run's state without waiting for the deploy to finish", async () => {
-    // The provider resolves with the initial state while the run keeps going
-    // in the background — the tool must relay it as-is, with no extra waiting
-    const neverFinishes = new Promise<never>(() => {});
-    const startDeploy = vi.fn(async () => {
-      void neverFinishes;
-      return runningRun;
-    });
+  it("relays the provider's initial run state as-is", async () => {
+    // The actual non-waiting lives in the desktop provider (startMcpRun);
+    // the tool only relays the initial state the provider resolves with
+    const startDeploy = vi.fn(async () => runningRun);
     const provider = makeProvider({ startDeploy });
     const result = await toolByName(provider, "start_deploy").handler({ projectId: "prj-1" });
     expect(result.isError).toBeUndefined();

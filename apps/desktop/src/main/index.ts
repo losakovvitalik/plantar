@@ -435,8 +435,10 @@ async function startMcpRun(
   ]);
   if (failure) throw failure;
   // The run registered itself in startDeployRun before its first await,
-  // so a state to snapshot always exists here
-  return mcpRunSnapshot(project)!;
+  // so a state to snapshot must exist here — fail loudly if it ever does not
+  const snapshot = mcpRunSnapshot(project);
+  if (!snapshot) throw new Error(`No run state right after starting a run of ${project.id}`);
+  return snapshot;
 }
 
 /**
