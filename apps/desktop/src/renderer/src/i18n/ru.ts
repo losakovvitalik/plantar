@@ -578,8 +578,7 @@ export const ru = {
   "settings.mcpToken": "Ключ доступа",
   "settings.mcpCredentialsHint":
     "Укажите адрес и ключ доступа в настройках агента (подключение MCP).",
-  "settings.mcpAfterSave":
-    "Сохраните настройки и откройте их снова — здесь появятся адрес и ключ доступа.",
+  "settings.mcpStartsAfterSave": "Доступ начнёт работать после сохранения настроек.",
 
   "settings.github": "Аккаунт GitHub",
   "settings.githubHint": "Войдите, чтобы деплоить приватные репозитории по ссылке.",
