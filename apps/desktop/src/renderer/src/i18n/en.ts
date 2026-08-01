@@ -578,8 +578,7 @@ export const en: Record<MessageKey, string> = {
   "settings.mcpToken": "Access key",
   "settings.mcpCredentialsHint":
     "Enter the address and the access key in your agent's settings (MCP connection).",
-  "settings.mcpAfterSave":
-    "Save the settings and open them again — the address and the access key will appear here.",
+  "settings.mcpStartsAfterSave": "Access will start working after the settings are saved.",
 
   "settings.github": "GitHub account",
   "settings.githubHint": "Sign in to deploy private repositories from a link.",
