@@ -89,8 +89,17 @@ export async function launchApp(pickDir: string): Promise<LaunchedApp> {
       `--remote-debugging-port=${cdpPort}`,
       "--use-mock-keychain",
     ],
-    { env, stdio: "ignore" },
+    { env, stdio: ["ignore", "pipe", "pipe"] },
   );
+
+  // Keep a bounded tail of the app's output to attach to launch-failure
+  // errors — without it a crash on startup surfaces only as a CDP timeout.
+  let outputTail = "";
+  const collectOutput = (chunk: Buffer): void => {
+    outputTail = (outputTail + chunk.toString()).slice(-4000);
+  };
+  child.stdout?.on("data", collectOutput);
+  child.stderr?.on("data", collectOutput);
 
   const killApp = async (): Promise<void> => {
     if (child.exitCode === null && !child.killed) {
@@ -134,6 +143,9 @@ export async function launchApp(pickDir: string): Promise<LaunchedApp> {
   } catch (err) {
     await browser?.close().catch(() => {});
     await killApp();
+    if (err instanceof Error && outputTail !== "") {
+      err.message += `\nApp output tail:\n${outputTail}`;
+    }
     throw err;
   }
 }
