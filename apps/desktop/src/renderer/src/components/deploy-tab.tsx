@@ -542,7 +542,7 @@ export function DeployTab({
         {isExternal && !externalGit ? (
           <Tooltip>
             <TooltipTrigger asChild>
-              <span>{deployButton}</span>
+              <span tabIndex={0}>{deployButton}</span>
             </TooltipTrigger>
             <TooltipContent>{t("deploy.externalNoGitHint")}</TooltipContent>
           </Tooltip>
@@ -624,7 +624,7 @@ export function DeployTab({
             {needsFolder ? (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span>{migrateButton}</span>
+                  <span tabIndex={0}>{migrateButton}</span>
                 </TooltipTrigger>
                 <TooltipContent>{t("deploy.migrateNeedsFolder")}</TooltipContent>
               </Tooltip>
