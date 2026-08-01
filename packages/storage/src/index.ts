@@ -270,6 +270,9 @@ export interface AppSettings {
   language: Language;
   /** Local MCP endpoint with read-only tools for AI agents; off by default */
   mcpServerEnabled: boolean;
+  /** Let MCP agents start deploys and rollbacks; a separate opt-in on top of
+   *  mcpServerEnabled — with it off the endpoint stays read-only */
+  mcpAllowDeploy: boolean;
   /** Bearer token of the MCP endpoint; generated on first enable. Lives in
    *  settings.json — it guards a localhost-only port and sits in the same
    *  trust boundary as servers.json */
@@ -288,6 +291,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   notifyOnAppDown: true,
   language: systemLanguage(),
   mcpServerEnabled: false,
+  mcpAllowDeploy: false,
   mcpServerToken: "",
   mcpServerPort: 0,
 };

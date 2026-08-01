@@ -22,7 +22,7 @@ export const SERVER_INSTRUCTIONS =
   "explicitly authorize you in the chat to run the specific commands on the " +
   "server directly. Connect directly only after such explicit permission.";
 
-/** MCP server over the read-only toolset; one per request in stateless mode */
+/** MCP server over the toolset; one per request in stateless mode */
 export function createMcpServer(provider: McpProvider): McpServer {
   const server = new McpServer(
     { name: "plantar", version: "1.0.0" },
@@ -34,7 +34,7 @@ export function createMcpServer(provider: McpProvider): McpServer {
       {
         description: tool.description,
         inputSchema: tool.inputSchema,
-        annotations: { readOnlyHint: true },
+        annotations: tool.annotations,
       },
       tool.handler,
     );

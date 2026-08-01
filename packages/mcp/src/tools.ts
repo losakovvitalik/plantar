@@ -24,10 +24,23 @@ export interface ToolResult {
   isError?: boolean;
 }
 
+/** MCP tool annotations — hints clients use to decide about confirmation prompts */
+export interface ToolAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint?: boolean;
+}
+
+const READ_ONLY: ToolAnnotations = { readOnlyHint: true };
+
+/** A deploy or rollback replaces the live version of the app — MCP clients
+ *  should ask the user before calling a tool marked destructive */
+const DESTRUCTIVE: ToolAnnotations = { readOnlyHint: false, destructiveHint: true };
+
 export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, z.ZodTypeAny>;
+  annotations: ToolAnnotations;
   // Loosely typed on purpose: each tool narrows its own args, and the HTTP
   // layer registers the handlers behind zod-validated schemas
   handler: (args: any) => Promise<ToolResult>;
@@ -71,6 +84,7 @@ export function createTools(provider: McpProvider): ToolDefinition[] {
   const tools: ToolDefinition[] = [
     {
       name: "list_servers",
+      annotations: READ_ONLY,
       description:
         "List the servers configured in Plantar: id, name, host, port, user and auth kind. " +
         "Server ids are the input of the server-scoped tools.",
@@ -81,6 +95,7 @@ export function createTools(provider: McpProvider): ToolDefinition[] {
     },
     {
       name: "list_projects",
+      annotations: READ_ONLY,
       description:
         "List the projects (apps) configured in Plantar with the server each one is deployed to. " +
         "Project ids are the input of the project-scoped tools.",
@@ -89,6 +104,7 @@ export function createTools(provider: McpProvider): ToolDefinition[] {
     },
     {
       name: "get_server_info",
+      annotations: READ_ONLY,
       description:
         "OS, CPU, memory, free disk space and installed tool versions of a server.",
       inputSchema: { serverId: z.string().describe("Server id from list_servers") },
@@ -99,6 +115,7 @@ export function createTools(provider: McpProvider): ToolDefinition[] {
     },
     {
       name: "get_app_status",
+      annotations: READ_ONLY,
       description:
         "Live status of an app: pm2 process health (status, uptime, restarts, CPU, memory) " +
         "and whether its site answers over HTTP, checked from the server itself.",
@@ -123,6 +140,7 @@ export function createTools(provider: McpProvider): ToolDefinition[] {
     },
     {
       name: "get_logs",
+      annotations: READ_ONLY,
       description:
         "Tail of an app's logs on the server. source=app reads the pm2 process logs " +
         "(stdout and stderr), source=nginx reads the app's nginx access and error logs.",
@@ -176,6 +194,7 @@ export function createTools(provider: McpProvider): ToolDefinition[] {
     },
     {
       name: "get_traffic_stats",
+      annotations: READ_ONLY,
       description:
         "Visits summary of an app parsed from its nginx access log (about two weeks of data): " +
         "totals, by day, by hour, status code families and top paths. " +
@@ -194,6 +213,7 @@ export function createTools(provider: McpProvider): ToolDefinition[] {
     },
     {
       name: "list_releases",
+      annotations: READ_ONLY,
       description:
         "Deployed release versions of an app kept on the server, newest first, " +
         "and which one is currently live. Imported apps managed in place have none.",
@@ -210,6 +230,7 @@ export function createTools(provider: McpProvider): ToolDefinition[] {
     },
     {
       name: "get_deploy_history",
+      annotations: READ_ONLY,
       description:
         "Deploy history of a project recorded by Plantar, newest first: when, success or error, " +
         "deployed commit and rollbacks. Optionally includes the tail of the newest run's log.",
@@ -253,7 +274,24 @@ export function createTools(provider: McpProvider): ToolDefinition[] {
       },
     },
     {
+      name: "get_deploy_status",
+      annotations: READ_ONLY,
+      description:
+        "Current or last deploy run of a project in this app session: status " +
+        "(running | success | error | interrupted), the tail of the run's log, and the " +
+        "url/urlCheck or error/errorCode once finished. Poll this after start_deploy or " +
+        "start_rollback until the run leaves the running status.",
+      inputSchema: { projectId: z.string().describe("Project id from list_projects") },
+      handler: async ({ projectId }: { projectId: string }) => {
+        const { project } = findProject(provider, projectId);
+        const state = provider.deployRunState(project);
+        if (!state) throw new Error(t("noDeployRun"));
+        return ok({ ...state, lines: state.lines.slice(-DEFAULT_LOG_LINES) });
+      },
+    },
+    {
       name: "discover_apps",
+      annotations: READ_ONLY,
       description:
         "Find the apps running on a server that are not necessarily managed by Plantar: " +
         "pm2 processes with their ports, domains, log paths and git origin. Changes nothing on the server.",
@@ -265,6 +303,7 @@ export function createTools(provider: McpProvider): ToolDefinition[] {
     },
     {
       name: "list_files",
+      annotations: READ_ONLY,
       description: "List the subdirectories of a directory on a server (names only).",
       inputSchema: {
         serverId: z.string().describe("Server id from list_servers"),
@@ -278,6 +317,42 @@ export function createTools(provider: McpProvider): ToolDefinition[] {
       },
     },
   ];
+
+  // Deploys are opt-in separately from the read-only toolset. createTools runs
+  // per request (see http.ts), so flipping the setting changes tools/list
+  // without restarting the listener.
+  if (provider.deploysAllowed()) {
+    tools.push(
+      {
+        name: "start_deploy",
+        annotations: DESTRUCTIVE,
+        description:
+          "Start a deploy of a project: publish the latest code to its server, replacing " +
+          "the live version. Returns at once with the initial run state while the deploy " +
+          "continues for minutes — poll get_deploy_status to follow it. Only one run per " +
+          "project can be active at a time.",
+        inputSchema: { projectId: z.string().describe("Project id from list_projects") },
+        handler: async ({ projectId }: { projectId: string }) => {
+          const { project } = findProject(provider, projectId);
+          return ok(await provider.startDeploy(project));
+        },
+      },
+      {
+        name: "start_rollback",
+        annotations: DESTRUCTIVE,
+        description:
+          "Return a project to the previous deployed version kept on its server, replacing " +
+          "the live version. Returns at once with the initial run state — poll " +
+          "get_deploy_status to follow it. Not available for imported apps: their versions " +
+          "are restored in the Plantar app.",
+        inputSchema: { projectId: z.string().describe("Project id from list_projects") },
+        handler: async ({ projectId }: { projectId: string }) => {
+          const { project } = findProject(provider, projectId);
+          return ok(await provider.startRollback(project));
+        },
+      },
+    );
+  }
 
   return tools.map((tool) => ({ ...tool, handler: guarded(tool.handler) }));
 }

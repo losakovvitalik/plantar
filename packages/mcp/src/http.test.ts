@@ -5,6 +5,9 @@ import { SERVER_INSTRUCTIONS, startMcpHttpServer, type McpHttpServerHandle } fro
 
 const TOKEN = "test-token-0123456789abcdef";
 
+/** Flipped by the deploy-toolset test — the endpoint reads it per request */
+let allowDeploys = false;
+
 const provider: McpProvider = {
   listServers: () => [],
   listProjects: () => [],
@@ -16,6 +19,14 @@ const provider: McpProvider = {
   projectRuntime: () => {
     throw new Error("no projects in this test");
   },
+  deploysAllowed: () => allowDeploys,
+  startDeploy: async () => {
+    throw new Error("no deploys in this test");
+  },
+  startRollback: async () => {
+    throw new Error("no deploys in this test");
+  },
+  deployRunState: () => null,
 };
 
 let server: McpHttpServerHandle;
@@ -115,11 +126,36 @@ describe("mcp http endpoint", () => {
       "get_traffic_stats",
       "list_releases",
       "get_deploy_history",
+      "get_deploy_status",
       "discover_apps",
       "list_files",
     ]) {
       expect(reply.body).toContain(`"${name}"`);
     }
+  });
+
+  it("follows the deploy setting per request, without restarting the listener", async () => {
+    const list = async () => {
+      const reply = await post(
+        { jsonrpc: "2.0", id: 4, method: "tools/list", params: {} },
+        { Authorization: `Bearer ${TOKEN}` },
+      );
+      expect(reply.status).toBe(200);
+      return reply.body;
+    };
+    // The flag is off by default — the suite's other requests saw no deploy tools
+    expect(await list()).not.toContain('"start_deploy"');
+    allowDeploys = true;
+    try {
+      const body = await list();
+      expect(body).toContain('"start_deploy"');
+      expect(body).toContain('"start_rollback"');
+      // The mutating tools announce themselves as destructive to the client
+      expect(body).toContain('"destructiveHint":true');
+    } finally {
+      allowDeploys = false;
+    }
+    expect(await list()).not.toContain('"start_deploy"');
   });
 
   it("falls back to a free port when the preferred one is taken", async () => {
