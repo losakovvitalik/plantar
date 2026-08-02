@@ -4,6 +4,7 @@ import { mcpEndpointUrl } from "@plantar/mcp/meta";
 import type { AppSettings, Language } from "@plantar/storage";
 import type { GithubAccount } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
+import type { MessageKey } from "../i18n/ru";
 import { GithubLoginDialog } from "./github-login-dialog";
 import { Button } from "./ui/button";
 import {
@@ -27,6 +28,13 @@ interface Props {
 
 /** Screens of the settings dialog, listed in the left-hand navigation panel */
 type SettingsScreen = "general" | "integrations" | "mcp";
+
+/** Navigation entries for the left-hand panel, one per settings screen */
+const SETTINGS_SCREENS: readonly { value: SettingsScreen; labelKey: MessageKey }[] = [
+  { value: "general", labelKey: "settings.screenGeneral" },
+  { value: "integrations", labelKey: "settings.screenIntegrations" },
+  { value: "mcp", labelKey: "settings.screenMcp" },
+] as const;
 
 /** Языки называются на самих себе — так переключатель читается на любом языке */
 const LANGUAGE_NAMES: Record<Language, string> = {
@@ -142,24 +150,15 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
             className="h-[26rem] flex-row items-stretch gap-6"
           >
             <TabsList className="h-auto w-36 shrink-0 flex-col items-stretch justify-start">
-              <TabsTrigger
-                value="general"
-                className="h-auto flex-none justify-start px-3 py-1.5"
-              >
-                {t("settings.screenGeneral")}
-              </TabsTrigger>
-              <TabsTrigger
-                value="integrations"
-                className="h-auto flex-none justify-start px-3 py-1.5"
-              >
-                {t("settings.screenIntegrations")}
-              </TabsTrigger>
-              <TabsTrigger
-                value="mcp"
-                className="h-auto flex-none justify-start px-3 py-1.5"
-              >
-                {t("settings.screenMcp")}
-              </TabsTrigger>
+              {SETTINGS_SCREENS.map(({ value, labelKey }) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="h-auto flex-none justify-start px-3 py-1.5"
+                >
+                  {t(labelKey)}
+                </TabsTrigger>
+              ))}
             </TabsList>
 
             <div className="thin-scroll min-w-0 flex-1 overflow-y-auto pr-1">
