@@ -25,6 +25,16 @@ let handle: McpHttpServerHandle | null = null;
 /** Serializes start/stop: a quick toggle off+on must not race the listener */
 let queue: Promise<void> = Promise.resolve();
 
+/** Runs the task through the queue; the next task waits even if this one failed */
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const run = queue.then(task);
+  queue = run.then(
+    () => {},
+    () => {},
+  );
+  return run;
+}
+
 /**
  * Resolves to the port the listener is bound to, or null when it is not
  * running — the caller persists a fallback port so the address survives
@@ -34,13 +44,7 @@ export function syncMcpServer(
   settings: AppSettings,
   provider: McpProvider,
 ): Promise<number | null> {
-  const run = queue.then(() => apply(settings, provider));
-  // The next sync must wait for this one even if it failed
-  queue = run.then(
-    () => {},
-    () => {},
-  );
-  return run;
+  return enqueue(() => apply(settings, provider));
 }
 
 /**
@@ -51,12 +55,7 @@ export function syncMcpServer(
  * Goes through the queue so the probe never races a start/stop (#63).
  */
 export function resolveMcpPort(savedPort: number): Promise<number | null> {
-  const run = queue.then(() => probePort(savedPort || MCP_PORT));
-  queue = run.then(
-    () => {},
-    () => {},
-  );
-  return run;
+  return enqueue(() => probePort(savedPort || MCP_PORT));
 }
 
 async function probePort(port: number): Promise<number | null> {
