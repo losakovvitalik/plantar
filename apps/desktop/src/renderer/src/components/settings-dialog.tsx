@@ -68,6 +68,31 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
   // only on save, so the credentials block warns when the edited settings have
   // the toggle on while the stored ones have it off.
   const [storedMcpEnabled, setStoredMcpEnabled] = useState(false);
+  // The port the endpoint address is rendered with, confirmed by the main
+  // process: the running listener's port, or the saved/default one after a
+  // successful test bind. "loading" while the answer is on its way; null —
+  // the port is taken by another program, so the real one (an OS-assigned
+  // fallback, #44) is known only after saving (#63).
+  const [mcpPort, setMcpPort] = useState<number | null | "loading">("loading");
+
+  const mcpEnabled = settings?.mcpServerEnabled ?? false;
+
+  // Ask on every enable: dialog opened with access already on, or the toggle
+  // switched on (including off-and-back-on while the listener still runs)
+  useEffect(() => {
+    if (!open || !mcpEnabled) return;
+    let cancelled = false;
+    setMcpPort("loading");
+    void (async () => {
+      const result = await window.plantar.resolveMcpPort();
+      if (cancelled) return;
+      // A failed probe cannot promise a port either — same as taken
+      setMcpPort(result.ok ? result.data : null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mcpEnabled]);
 
   useEffect(() => {
     if (!open) return;
@@ -360,11 +385,15 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                   <p className="text-ink-soft">{t("settings.mcpCredentialsHint")}</p>
                   <p>
                     {t("settings.mcpEndpoint")}:{" "}
-                    {/* 0 — the port was never persisted, the default applies;
-                        otherwise the port the listener actually bound to (#44) */}
-                    <code className="select-all break-all">
-                      {mcpEndpointUrl(settings.mcpServerPort || undefined)}
-                    </code>
+                    {/* Only a port confirmed by the main process is rendered —
+                        a guessed one may silently change on save (#63) */}
+                    {typeof mcpPort === "number" ? (
+                      <code className="select-all break-all">{mcpEndpointUrl(mcpPort)}</code>
+                    ) : mcpPort === null ? (
+                      t("settings.mcpPortPending")
+                    ) : (
+                      <code>…</code>
+                    )}
                   </p>
                   <p>
                     {t("settings.mcpToken")}:{" "}
