@@ -41,3 +41,27 @@ jobs:
           pnpm --filter @plantar/core test
           pnpm --filter @plantar/storage test
           pnpm --filter @plantar/desktop test
+
+  # Real-SSH deploy/rollback tests against the Docker fixture
+  # (packages/core/test/integration). Runs in parallel with `check`,
+  # so unit-test feedback speed is unchanged.
+  integration:
+    runs-on: ubuntu-latest
+    # A wedged Docker setup should fail the run, not hang for hours
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Integration tests
+        run: pnpm --filter @plantar/core test:integration
