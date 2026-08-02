@@ -129,39 +129,50 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Wider than the default dialog so the navigation panel and the content
           fit side by side without squeezing the controls */}
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{t("settings.title")}</DialogTitle>
-          <DialogDescription className="sr-only">{t("settings.description")}</DialogDescription>
-        </DialogHeader>
-
-        {loadError ? (
-          <p className="text-[13px] text-clay">
-            {t("settings.loadError", { message: loadError })}
-          </p>
-        ) : !settings ? (
-          <p className="text-[13px] text-ink-soft">{t("settings.loading")}</p>
-        ) : (
-          <Tabs
-            value={screen}
-            onValueChange={(value) => setScreen(value as SettingsScreen)}
-            orientation="vertical"
-            // Fixed height so the dialog does not jump when switching screens
-            className="h-[26rem] flex-row items-stretch gap-6"
-          >
-            <TabsList className="h-auto w-36 shrink-0 flex-col items-stretch justify-start">
+      <DialogContent className="gap-0 p-0 sm:max-w-2xl">
+        <Tabs
+          value={screen}
+          onValueChange={(value) => setScreen(value as SettingsScreen)}
+          orientation="vertical"
+          // Fixed height so the dialog does not jump when switching screens
+          className="h-[30rem] flex-row items-stretch gap-0"
+        >
+          {/* Full-height navigation panel with the dialog title, so the
+              dialog splits into two columns like the main app sidebar */}
+          <div className="flex w-44 shrink-0 flex-col gap-4 rounded-l-lg border-r border-line bg-muted p-4">
+            <DialogHeader>
+              <DialogTitle>{t("settings.title")}</DialogTitle>
+              <DialogDescription className="sr-only">{t("settings.description")}</DialogDescription>
+            </DialogHeader>
+            <TabsList className="h-auto w-full flex-col items-stretch justify-start bg-transparent p-0">
               {SETTINGS_SCREENS.map(({ value, labelKey }) => (
                 <TabsTrigger
                   key={value}
                   value={value}
-                  className="h-auto flex-none justify-start px-3 py-1.5"
+                  // Color-based active state instead of the default shadow pill:
+                  // solid accent fill so the selected screen is obvious at a glance.
+                  // `!` keeps these ahead of the base TabsTrigger active styles
+                  // regardless of stylesheet order (dev HMR reorders sheets).
+                  className="h-auto flex-none justify-start px-3 py-1.5 data-[state=active]:bg-moss! data-[state=active]:text-white! data-[state=active]:shadow-none!"
                 >
                   {t(labelKey)}
                 </TabsTrigger>
               ))}
             </TabsList>
+          </div>
 
-            <div className="thin-scroll min-w-0 flex-1 overflow-y-auto pr-1">
+          {/* Right column: scrollable content on top, footer pinned below */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* Extra top padding keeps the first row clear of the close button */}
+            <div className="thin-scroll flex-1 overflow-y-auto p-6 pt-12">
+              {loadError ? (
+                <p className="text-[13px] text-clay">
+                  {t("settings.loadError", { message: loadError })}
+                </p>
+              ) : !settings ? (
+                <p className="text-[13px] text-ink-soft">{t("settings.loading")}</p>
+              ) : (
+                <>
             <TabsContent value="general" className="flex flex-col gap-6">
             <div className="flex items-start justify-between gap-6">
               <Label htmlFor="app-language" className="text-[13.5px] font-semibold">
@@ -367,24 +378,26 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                 </div>
               )}
             </TabsContent>
+                </>
+              )}
             </div>
-          </Tabs>
-        )}
 
-        {saveError && (
-          <p className="text-[13px] text-clay">
-            {t("settings.saveError", { message: saveError })}
-          </p>
-        )}
+            {saveError && (
+              <p className="px-6 pb-2 text-[13px] text-clay">
+                {t("settings.saveError", { message: saveError })}
+              </p>
+            )}
 
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-            {t("common.cancel")}
-          </Button>
-          <Button onClick={() => void save()} disabled={busy || !settings}>
-            {busy ? t("common.saving") : t("common.save")}
-          </Button>
-        </DialogFooter>
+            <DialogFooter className="border-t border-line p-4">
+              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button onClick={() => void save()} disabled={busy || !settings}>
+                {busy ? t("common.saving") : t("common.save")}
+              </Button>
+            </DialogFooter>
+          </div>
+        </Tabs>
       </DialogContent>
     </Dialog>
 
