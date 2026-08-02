@@ -39,6 +39,10 @@ jobs:
       - name: E2E smoke
         # Electron cannot open a window on a headless runner — wrap in xvfb
         run: xvfb-run -a pnpm --filter @plantar/desktop test:e2e
+        env:
+          # chrome-sandbox in a pnpm-installed Electron is not setuid-root
+          # on GitHub runners; the smoke does not need the Chromium sandbox
+          ELECTRON_DISABLE_SANDBOX: "1"
 
   build:
     needs: e2e
