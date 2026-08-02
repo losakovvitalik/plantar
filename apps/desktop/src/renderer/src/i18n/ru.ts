@@ -554,6 +554,9 @@ export const ru = {
 
   "settings.title": "Настройки",
   "settings.description": "Глобальные настройки Plantar",
+  "settings.screenGeneral": "Общее",
+  "settings.screenIntegrations": "Интеграции",
+  "settings.screenMcp": "MCP",
   "settings.language": "Язык интерфейса",
   "settings.logCopies": "Хранить копии серверных логов",
   "settings.logCopiesHint":

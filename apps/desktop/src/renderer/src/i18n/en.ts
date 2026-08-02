@@ -554,6 +554,9 @@ export const en: Record<MessageKey, string> = {
 
   "settings.title": "Settings",
   "settings.description": "Global Plantar settings",
+  "settings.screenGeneral": "General",
+  "settings.screenIntegrations": "Integrations",
+  "settings.screenMcp": "MCP",
   "settings.language": "Interface language",
   "settings.logCopies": "Keep copies of server logs",
   "settings.logCopiesHint":
