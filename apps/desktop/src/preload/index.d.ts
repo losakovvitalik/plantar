@@ -295,6 +295,10 @@ declare global {
 
       getSettings: () => Promise<IpcResult<AppSettings>>;
       setSettings: (settings: AppSettings) => Promise<IpcResult<void>>;
+      /** The port the MCP endpoint will actually use: the running listener's
+       *  one, or the stored/default port when it is free; null — the port is
+       *  taken and the real one is known only after saving (#63) */
+      resolveMcpPort: () => Promise<IpcResult<number | null>>;
 
       githubAccount: () => Promise<IpcResult<GithubAccount | null>>;
       githubStartLogin: () => Promise<IpcResult<DeviceLogin>>;

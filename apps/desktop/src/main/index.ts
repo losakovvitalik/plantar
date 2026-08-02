@@ -134,7 +134,7 @@ import { createAppTray, destroyTray, refreshTrayMenu } from "./tray";
 import { trafficLogPath } from "./traffic-log";
 import { appAccessLogPath, appErrorLogPath } from "@plantar/core/paths";
 import type { DeployRunSnapshot, McpProvider, ProjectRuntime } from "@plantar/mcp";
-import { ensureMcpToken, syncMcpServer } from "./mcp";
+import { ensureMcpToken, resolveMcpPort, syncMcpServer } from "./mcp";
 
 type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
 
@@ -1307,6 +1307,13 @@ app.whenReady().then(() => {
         throw new Error(t(next.mcpServerEnabled ? "mcpStartFailed" : "mcpStopFailed"));
       }
     }),
+  );
+
+  // The dialog asks which port the endpoint will actually use before showing
+  // the address: the running listener's port, or the stored/default one when
+  // a test bind confirms it is free; null — taken, known only on save (#63)
+  ipcMain.handle("mcp:resolvePort", () =>
+    toResult(() => resolveMcpPort(readSettings().mcpServerPort)),
   );
 
   // GitHub Device Flow: вход без backend, токен шифруется safeStorage

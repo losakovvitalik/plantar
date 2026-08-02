@@ -578,6 +578,8 @@ export const en: Record<MessageKey, string> = {
   "settings.mcpAllowDeployHint":
     "Agents will be able to start a deploy and restore the previous version of an app — this replaces the running version. Reading information does not require this permission.",
   "settings.mcpEndpoint": "Address",
+  "settings.mcpPortPending":
+    "will be determined after the settings are saved — the usual address is taken by another program.",
   "settings.mcpToken": "Access key",
   "settings.mcpCredentialsHint":
     "Enter the address and the access key in your agent's settings (MCP connection).",

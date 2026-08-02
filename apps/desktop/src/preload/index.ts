@@ -39,6 +39,7 @@ const api = {
 
   getSettings: () => invoke("settings:get"),
   setSettings: (settings: unknown) => invoke("settings:set", settings),
+  resolveMcpPort: () => invoke("mcp:resolvePort"),
 
   githubAccount: () => invoke("github:account"),
   githubStartLogin: () => invoke("github:startLogin"),
