@@ -8,8 +8,10 @@ on:
   # engine, the SSH layer, or key screens). Runs only the e2e job.
   workflow_dispatch:
 
+# Least privilege: the e2e job never touches the GitHub API, so the
+# write-capable token lives only on the build job that publishes releases.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # First-run e2e smoke (connect a server -> add an app -> deploy) as the
@@ -49,6 +51,9 @@ jobs:
     # workflow_dispatch runs only the smoke — never build or publish
     # distributables outside a v* tag push
     if: startsWith(github.ref, 'refs/tags/v')
+    # electron-builder publishes the release assets via GH_TOKEN
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
