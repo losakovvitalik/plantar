@@ -38,7 +38,35 @@ export function assertValidBranch(branch: string): void {
   }
 }
 
+/**
+ * GIT_CONFIG_* environment variables (our token transport, see authEnv) are
+ * honored only by git >= 2.31; older git silently ignores them, so auth to a
+ * private repository fails with a cryptic error. Checked once per process,
+ * only when a token is actually used.
+ */
+let envAuthCheck: Promise<void> | undefined;
+
+function assertEnvAuthSupported(): Promise<void> {
+  envAuthCheck ??= (async () => {
+    let output: string;
+    try {
+      output = await git(["--version"]);
+    } catch {
+      // git missing or broken — let the real call surface the proper error
+      return;
+    }
+    const match = output.match(/(\d+)\.(\d+)(?:\.\d+)?/);
+    if (!match) return; // unparseable version — do not block, let git try
+    const major = Number(match[1]);
+    const minor = Number(match[2]);
+    if (major > 2 || (major === 2 && minor >= 31)) return;
+    throw new Error(t("gitTooOldForTokenAuth", { version: match[0] }));
+  })();
+  return envAuthCheck;
+}
+
 async function git(args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
+  if (env) await assertEnvAuthSupported();
   try {
     const { stdout } = await execFileAsync("git", args, {
       ...GIT_OPTS,
