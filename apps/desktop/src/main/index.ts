@@ -61,7 +61,6 @@ import {
   type DeployRecord,
   type ProjectHistoryIdentity,
   type StatusTabCacheEntry,
-  appendHistory,
   dataDir,
   deployLogTimestamp,
   listDeployLogs,
@@ -129,6 +128,7 @@ import {
   deployRunState,
   startDeployRun,
 } from "./deploy-runs";
+import { type RunOutcome, finishRun } from "./run-finish";
 import { forgetServer, startAppMonitor, stopAppMonitor } from "./app-monitor";
 import { createAppTray, destroyTray, refreshTrayMenu } from "./tray";
 import { trafficLogPath } from "./traffic-log";
@@ -823,6 +823,21 @@ async function runDeploy(
   // git-проект: обновляем клон до свежего коммита ветки перед деплоем
   let deployedCommit: { hash: string; message: string } | undefined;
   let logWriter: DeployLogWriter | undefined;
+  // Built at call time: logWriter appears inside try, config may be reloaded
+  const finish = (outcome: RunOutcome): void =>
+    finishRun(
+      {
+        run,
+        logWriter,
+        project: config.name,
+        projectId: project.id,
+        host: server.host,
+        startedAt,
+        kind: migrate ? kind : undefined,
+        notify: (success) => notifyDeployResult(projectId, config.name, success),
+      },
+      outcome,
+    );
   try {
     logWriter = new DeployLogWriter(config.name);
     const writer = logWriter;
@@ -878,19 +893,6 @@ async function runDeploy(
     if (Object.keys(configUpdates).length > 0) {
       writeProjectConfig(dir, { ...config, ...configUpdates });
     }
-    appendHistory({
-      project: config.name,
-      projectId: project.id,
-      host: server.host,
-      startedAt,
-      finishedAt: new Date().toISOString(),
-      status: "success",
-      kind: migrate ? kind : undefined,
-      url: result.url,
-      urlCheck: result.urlCheck,
-      commit: deployedCommit?.hash,
-      logFile: logWriter.file,
-    });
     // git-проект: запоминаем задеплоенный коммит для карточки проекта и вкладки «Коммиты»
     // После переноса под управление Plantar пометка «внешний» снимается —
     // дальше проект живёт как обычный (структура releases, мгновенный возврат)
@@ -904,34 +906,15 @@ async function runDeploy(
         ),
       );
     }
-    if (settings.notifyOnDeploySuccess) {
-      notifyDeployResult(projectId, config.name, true);
-    }
-    run.finish({ status: "success", url: result.url, urlCheck: result.urlCheck });
+    finish({
+      status: "success",
+      url: result.url,
+      urlCheck: result.urlCheck,
+      commit: deployedCommit?.hash,
+    });
     return { url: result.url };
   } catch (err) {
-    const message = (err as Error).message;
-    const code = (err as { code?: string }).code;
-    // Статус прогона обновляется первым: сбой записи на диск не должен
-    // оставить проект навсегда заблокированным «идущим» деплоем
-    run.finish({ status: "error", error: message, code });
-    notifyDeployResult(projectId, config.name, false);
-    if (logWriter) {
-      logWriter.write(`\n${t("deployLogError")}: ${message}`);
-      appendHistory({
-        project: config.name,
-        projectId: project.id,
-        host: server.host,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        status: "error",
-        kind: migrate ? kind : undefined,
-        error: message,
-        code,
-        commit: deployedCommit?.hash,
-        logFile: logWriter.file,
-      });
-    }
+    finish({ status: "error", err, commit: deployedCommit?.hash });
     throw err;
   }
 }
@@ -958,6 +941,21 @@ async function runExternalInPlace(
   const kind = checkoutCommit ? ("rollback" as const) : ("deploy" as const);
 
   let logWriter: DeployLogWriter | undefined;
+  // Built at call time: logWriter appears inside try
+  const finish = (outcome: RunOutcome): void =>
+    finishRun(
+      {
+        run,
+        logWriter,
+        project: config.name,
+        projectId: project.id,
+        host: server.host,
+        startedAt,
+        kind,
+        notify: (success) => notifyDeployResult(projectId, config.name, success),
+      },
+      outcome,
+    );
   try {
     logWriter = new DeployLogWriter(config.name);
     const writer = logWriter;
@@ -985,19 +983,6 @@ async function runExternalInPlace(
         checkoutCommit ? { checkout: checkoutCommit } : {},
       ),
     );
-    appendHistory({
-      project: config.name,
-      projectId: project.id,
-      host: server.host,
-      startedAt,
-      finishedAt: new Date().toISOString(),
-      status: "success",
-      kind,
-      url,
-      urlCheck: result.urlCheck,
-      commit: result.commit?.hash,
-      logFile: logWriter.file,
-    });
     // Развёрнутый коммит — для строки версии на вкладке «Деплой» и кнопки
     // «вернуть предыдущую версию» после неудачного деплоя
     if (result.commit) {
@@ -1008,33 +993,15 @@ async function runExternalInPlace(
         ),
       );
     }
-    if (readSettings().notifyOnDeploySuccess) {
-      notifyDeployResult(projectId, config.name, true);
-    }
-    run.finish({ status: "success", url, urlCheck: result.urlCheck });
+    finish({
+      status: "success",
+      url,
+      urlCheck: result.urlCheck,
+      commit: result.commit?.hash,
+    });
     return { url };
   } catch (err) {
-    const message = (err as Error).message;
-    const code = (err as { code?: string }).code;
-    // Статус прогона обновляется первым: сбой записи на диск не должен
-    // оставить проект навсегда заблокированным «идущим» деплоем
-    run.finish({ status: "error", error: message, code });
-    notifyDeployResult(projectId, config.name, false);
-    if (logWriter) {
-      logWriter.write(`\n${t("deployLogError")}: ${message}`);
-      appendHistory({
-        project: config.name,
-        projectId: project.id,
-        host: server.host,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        status: "error",
-        kind,
-        error: message,
-        code,
-        logFile: logWriter.file,
-      });
-    }
+    finish({ status: "error", err });
     throw err;
   }
 }
@@ -1055,6 +1022,21 @@ async function runRollback(
   const startedAt = new Date().toISOString();
 
   let logWriter: DeployLogWriter | undefined;
+  // Built at call time: logWriter appears inside try
+  const finish = (outcome: RunOutcome): void =>
+    finishRun(
+      {
+        run,
+        logWriter,
+        project: config.name,
+        projectId: project.id,
+        host: server.host,
+        startedAt,
+        kind: "rollback",
+        notify: (success) => notifyDeployResult(projectId, config.name, success),
+      },
+      outcome,
+    );
   try {
     logWriter = new DeployLogWriter(config.name);
     const writer = logWriter;
@@ -1065,36 +1047,10 @@ async function runRollback(
     const result = await withServer(server, password, (conn) =>
       rollbackProject(conn, config, log),
     );
-    appendHistory({
-      project: config.name,
-      projectId: project.id,
-      host: server.host,
-      startedAt,
-      finishedAt: new Date().toISOString(),
-      status: "success",
-      kind: "rollback",
-      url: result.url,
-      logFile: logWriter.file,
-    });
-    run.finish({ status: "success", url: result.url });
+    finish({ status: "success", url: result.url, urlCheck: result.urlCheck });
     return { url: result.url };
   } catch (err) {
-    const message = (err as Error).message;
-    run.finish({ status: "error", error: message });
-    if (logWriter) {
-      logWriter.write(`\n${t("deployLogError")}: ${message}`);
-      appendHistory({
-        project: config.name,
-        projectId: project.id,
-        host: server.host,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        status: "error",
-        kind: "rollback",
-        error: message,
-        logFile: logWriter.file,
-      });
-    }
+    finish({ status: "error", err });
     throw err;
   }
 }

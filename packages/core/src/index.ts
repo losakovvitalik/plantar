@@ -1137,6 +1137,9 @@ export interface RollbackResult {
   release: string;
   /** Адрес сайта; у ботов его нет */
   url?: string;
+  /** How the address answered the availability check after the rollback;
+   *  undefined when there was no address to check */
+  urlCheck?: SiteCheckStatus;
 }
 
 /**
@@ -1187,11 +1190,16 @@ export async function rollbackProject(
   await switchCurrent(conn, config.name, previous, log);
   log(t("rollbackDone", { release: previous }));
 
-  const url =
-    config.type === "bot"
-      ? undefined
-      : config.domain
-        ? `https://${config.domain}/`
-        : `http://${conn.host}/`;
-  return { release: previous, url };
+  // Bots have no address to check — the stable pm2 process above is the result
+  if (config.type === "bot") return { release: previous };
+  const url = config.domain ? `https://${config.domain}/` : `http://${conn.host}/`;
+  // The same non-throwing smoke check deploys run: a restored version that
+  // stayed silent must not be presented as a working link
+  const urlCheck = await verifySiteAvailable(
+    conn,
+    url,
+    config.type === "static" ? "siteAvailable" : "appAvailable",
+    log,
+  );
+  return { release: previous, url, urlCheck };
 }
