@@ -320,13 +320,25 @@ const MESSAGES = {
     ru: "Не удалось записать настройки веб-сервера — прежняя версия файла возвращена на место.\n{stderr}",
     en: "Failed to write the web server configuration — the previous version of the file was put back.\n{stderr}",
   },
+  accessLogWriteFailedNotRestored: {
+    ru: "Не удалось записать настройки веб-сервера, и вернуть прежнюю версию файла тоже не удалось — сейчас в файле {file} могут быть нерабочие настройки. Копия прежней версии сохранена: {backup}.\n{stderr}",
+    en: "Failed to write the web server configuration, and putting the previous version of the file back also failed — the file {file} may now hold a broken configuration. A copy of the previous version is saved at {backup}.\n{stderr}",
+  },
   nginxCheckFailedRestored: {
     ru: "Изменённые настройки веб-сервера не прошли проверку — прежняя версия файла возвращена на место, сайты работают как раньше.\n{stderr}",
     en: "The changed web server configuration failed validation — the previous version of the file was put back, the sites keep working as before.\n{stderr}",
   },
+  nginxCheckFailedNotRestored: {
+    ru: "Изменённые настройки веб-сервера не прошли проверку, и вернуть прежнюю версию файла не удалось — сейчас в файле {file} нерабочие настройки. Копия прежней версии сохранена: {backup}.\n{stderr}",
+    en: "The changed web server configuration failed validation, and putting the previous version of the file back failed — the file {file} now holds a broken configuration. A copy of the previous version is saved at {backup}.\n{stderr}",
+  },
   nginxReloadFailedRestored: {
     ru: "Веб-сервер не принял новые настройки — прежняя версия файла возвращена на место.\n{stderr}",
     en: "The web server did not accept the new configuration — the previous version of the file was put back.\n{stderr}",
+  },
+  nginxReloadFailedNotRestored: {
+    ru: "Веб-сервер не принял новые настройки, и вернуть его к прежним настройкам не удалось — проверьте файл {file}. Копия прежней версии сохранена: {backup}.\n{stderr}",
+    en: "The web server did not accept the new configuration, and returning it to the previous configuration failed — check the file {file}. A copy of the previous version is saved at {backup}.\n{stderr}",
   },
   accessLogEnabled: {
     ru: "✓ Журнал посещений включён: {logPath}",

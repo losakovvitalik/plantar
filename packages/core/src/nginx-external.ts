@@ -76,13 +76,19 @@ export interface AccessLogTarget {
   logPath: string;
 }
 
-/** Copies the backup over the config; best effort — the original error wins */
+/**
+ * Copies the backup over the config; best effort — the original error stays
+ * primary, the outcome only picks which message reports it. Returns false
+ * when the copy itself failed, i.e. the broken config is still on disk and
+ * the caller must not claim a rollback.
+ */
 async function restoreBackup(
   conn: SshConnection,
   backup: string,
   confFile: string,
-): Promise<void> {
-  await conn.exec(`cp ${shellQuote(backup)} ${shellQuote(confFile)}`);
+): Promise<boolean> {
+  const copied = await conn.exec(`cp ${shellQuote(backup)} ${shellQuote(confFile)}`);
+  return copied.code === 0;
 }
 
 /**
@@ -140,22 +146,39 @@ export async function enableExternalAccessLog(
     `echo '${encoded}' | base64 -d > ${shellQuote(target.confFile)}`,
   );
   if (written.code !== 0) {
-    await restoreBackup(conn, backup, target.confFile);
-    throw new Error(t("accessLogWriteFailed", { stderr: written.stderr.slice(-2000) }));
+    const restored = await restoreBackup(conn, backup, target.confFile);
+    const stderr = written.stderr.slice(-2000);
+    throw new Error(
+      restored
+        ? t("accessLogWriteFailed", { stderr })
+        : t("accessLogWriteFailedNotRestored", { file: target.confFile, backup, stderr }),
+    );
   }
 
   const check = await conn.exec("nginx -t");
   if (check.code !== 0) {
     // The broken config was never loaded — restoring the file is enough
-    await restoreBackup(conn, backup, target.confFile);
-    throw new Error(t("nginxCheckFailedRestored", { stderr: check.stderr.slice(-2000) }));
+    const restored = await restoreBackup(conn, backup, target.confFile);
+    const stderr = check.stderr.slice(-2000);
+    throw new Error(
+      restored
+        ? t("nginxCheckFailedRestored", { stderr })
+        : t("nginxCheckFailedNotRestored", { file: target.confFile, backup, stderr }),
+    );
   }
 
   const reload = await conn.exec("systemctl reload nginx");
   if (reload.code !== 0) {
-    await restoreBackup(conn, backup, target.confFile);
-    await conn.exec("systemctl reload nginx");
-    throw new Error(t("nginxReloadFailedRestored", { stderr: reload.stderr.slice(-2000) }));
+    // Reload the restored file only after a successful copy — with the copy
+    // failed it would just retry the config the web server did not accept
+    const restored = await restoreBackup(conn, backup, target.confFile);
+    const reloaded = restored && (await conn.exec("systemctl reload nginx")).code === 0;
+    const stderr = reload.stderr.slice(-2000);
+    throw new Error(
+      reloaded
+        ? t("nginxReloadFailedRestored", { stderr })
+        : t("nginxReloadFailedNotRestored", { file: target.confFile, backup, stderr }),
+    );
   }
 
   log(t("accessLogEnabled", { logPath: target.logPath }));
