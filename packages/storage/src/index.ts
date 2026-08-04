@@ -443,6 +443,9 @@ export function matchesProject(
 /** How many deploy records are kept per project on a host; older ones are evicted */
 const HISTORY_LIMIT_PER_PROJECT = 200;
 
+/** Separator in "<name>\0<host>" map keys — NUL can appear in neither part */
+const KEY_SEP = "\0";
+
 /**
  * "<name>\0<host>" -> id of the project that owns that name on that host,
  * including the names it was renamed from, so records without an id are capped
@@ -458,12 +461,12 @@ function projectIdsByNameHost(): Map<string, string> {
     const host = hostOf.get(project.serverId);
     if (!host) continue;
     for (const name of project.previousNames ?? []) {
-      ids.set(`${name} ${host}`, project.id);
+      ids.set(`${name}${KEY_SEP}${host}`, project.id);
     }
   }
   for (const project of projects) {
     const host = hostOf.get(project.serverId);
-    if (host) ids.set(`${project.name} ${host}`, project.id);
+    if (host) ids.set(`${project.name}${KEY_SEP}${host}`, project.id);
   }
   return ids;
 }
@@ -484,7 +487,7 @@ function capHistory(history: DeployRecord[]): DeployRecord[] {
   const result: DeployRecord[] = [];
   for (let i = history.length - 1; i >= 0; i--) {
     const record = history[i];
-    const nameHost = `${record.project} ${record.host}`;
+    const nameHost = `${record.project}${KEY_SEP}${record.host}`;
     const key = record.projectId ?? ids.get(nameHost) ?? nameHost;
     const count = kept.get(key) ?? 0;
     if (count >= HISTORY_LIMIT_PER_PROJECT) continue;
