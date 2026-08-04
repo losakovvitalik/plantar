@@ -77,6 +77,14 @@ const MESSAGES = {
   optHistoryProject: { ru: "фильтр по имени проекта", en: "filter by project name" },
   historyEmpty: { ru: "История пуста.", en: "The history is empty." },
   historyLogFile: { ru: "  лог: {file}", en: "  log: {file}" },
+  historyNoAnswer: {
+    ru: "  внимание: после деплоя сайт не ответил по своему адресу — подробности в логе",
+    en: "  warning: after the deploy the site did not respond at its address — see the log",
+  },
+  historyPlainHttp: {
+    ru: "  внимание: сайт ответил только по незащищённому адресу — подробности в логе",
+    en: "  warning: the site only responded at its insecure address — see the log",
+  },
   errorPrefix: { ru: "Ошибка:", en: "Error:" },
 } satisfies Messages<string>;
 

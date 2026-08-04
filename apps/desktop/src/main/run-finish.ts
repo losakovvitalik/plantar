@@ -29,8 +29,9 @@ export interface RunFinishContext {
   kind?: DeployRecord["kind"];
   /** Sends the system notification about the result; the helper decides
    *  when to notify (success respects notifyOnDeploySuccess, failure always
-   *  notifies), the caller only knows how */
-  notify: (success: boolean) => void;
+   *  notifies), the caller only knows how. urlCheck lets the caller keep
+   *  the text honest when the site never answered the post-deploy check */
+  notify: (success: boolean, urlCheck?: SiteCheckStatus) => void;
 }
 
 export type RunOutcome =
@@ -57,7 +58,7 @@ export function finishRun(ctx: RunFinishContext, outcome: RunOutcome): void {
         logFile: ctx.logWriter.file,
       });
     }
-    if (readSettings().notifyOnDeploySuccess) ctx.notify(true);
+    if (readSettings().notifyOnDeploySuccess) ctx.notify(true, outcome.urlCheck);
     ctx.run.finish({ status: "success", url: outcome.url, urlCheck: outcome.urlCheck });
   } else {
     const message = (outcome.err as Error).message;

@@ -7,6 +7,7 @@ import {
   type LogStreamSource,
   type MonitoringTool,
   type RelatedFileId,
+  type SiteCheckStatus,
   appBaseDir,
   checkSitesRespond,
   deployExternalInPlace,
@@ -128,6 +129,7 @@ import {
   deployRunState,
   startDeployRun,
 } from "./deploy-runs";
+import { deployNotificationText } from "./deploy-notification";
 import { type RunOutcome, finishRun } from "./run-finish";
 import { forgetServer, startAppMonitor, stopAppMonitor } from "./app-monitor";
 import { createAppTray, destroyTray, refreshTrayMenu } from "./tray";
@@ -775,18 +777,11 @@ function notifyDeployResult(
   projectId: string,
   projectName: string,
   success: boolean,
+  urlCheck?: SiteCheckStatus,
 ): void {
   if (!Notification.isSupported()) return;
   const notification = new Notification(
-    success
-      ? {
-          title: t("notifySuccessTitle"),
-          body: t("notifySuccessBody", { name: projectName }),
-        }
-      : {
-          title: t("notifyErrorTitle"),
-          body: t("notifyErrorBody", { name: projectName }),
-        },
+    deployNotificationText(projectName, success, urlCheck),
   );
   notification.on("click", () => openFromBackground(projectId));
   notification.show();
@@ -834,7 +829,8 @@ async function runDeploy(
         host: server.host,
         startedAt,
         kind: migrate ? kind : undefined,
-        notify: (success) => notifyDeployResult(projectId, config.name, success),
+        notify: (success, urlCheck) =>
+          notifyDeployResult(projectId, config.name, success, urlCheck),
       },
       outcome,
     );
@@ -952,7 +948,8 @@ async function runExternalInPlace(
         host: server.host,
         startedAt,
         kind,
-        notify: (success) => notifyDeployResult(projectId, config.name, success),
+        notify: (success, urlCheck) =>
+          notifyDeployResult(projectId, config.name, success, urlCheck),
       },
       outcome,
     );
@@ -1033,7 +1030,8 @@ async function runRollback(
         host: server.host,
         startedAt,
         kind: "rollback",
-        notify: (success) => notifyDeployResult(projectId, config.name, success),
+        notify: (success, urlCheck) =>
+          notifyDeployResult(projectId, config.name, success, urlCheck),
       },
       outcome,
     );
