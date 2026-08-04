@@ -202,6 +202,49 @@ describe("rollbackProject", () => {
       t("rollbackNoPrevious"),
     );
   });
+
+  it("после возврата адрес проверяется — ответ попадает в urlCheck", async () => {
+    const conn = fakeConn(
+      [
+        [/ls -1 '\/var\/www\/app\/releases'/, { stdout: "2025-06-02\n2025-06-01\n" }],
+        [/readlink '\/var\/www\/app\/current'/, { stdout: "releases/2025-06-02\n" }],
+        [/pm2 jlist/, { stdout: jlist("/var/www/app/releases/2025-06-02") }],
+        [
+          /cat '\/var\/www\/app\/releases\/2025-06-01\/plantar\.pm2\.config\.cjs'/,
+          { stdout: '"PORT": 3005' },
+        ],
+        // The post-rollback smoke check probes the public address
+        [/'http:\/\/203\.0\.113\.1\/'/, { code: 0, stdout: "200\n" }],
+      ],
+      [],
+    );
+
+    const result = await rollbackProject(conn, appConfig(), () => {});
+
+    expect(result.url).toBe("http://203.0.113.1/");
+    expect(result.urlCheck).toBe("answered");
+  });
+
+  it("адрес после возврата молчит — urlCheck «не ответило», сам возврат не падает", async () => {
+    const conn = fakeConn(
+      [
+        [/ls -1 '\/var\/www\/app\/releases'/, { stdout: "2025-06-02\n2025-06-01\n" }],
+        [/readlink '\/var\/www\/app\/current'/, { stdout: "releases/2025-06-02\n" }],
+        [/pm2 jlist/, { stdout: jlist("/var/www/app/releases/2025-06-02") }],
+        [
+          /cat '\/var\/www\/app\/releases\/2025-06-01\/plantar\.pm2\.config\.cjs'/,
+          { stdout: '"PORT": 3005' },
+        ],
+        [/'http:\/\/203\.0\.113\.1\/'/, { code: 1, stdout: "000\n" }],
+      ],
+      [],
+    );
+
+    const result = await rollbackProject(conn, appConfig(), () => {});
+
+    expect(result.release).toBe("2025-06-01");
+    expect(result.urlCheck).toBe("no-answer");
+  });
 });
 
 describe("pickRollbackTarget", () => {
