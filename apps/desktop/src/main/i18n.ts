@@ -142,6 +142,10 @@ const MESSAGES = {
     ru: "Не найден git. Установите его, чтобы работать с репозиториями.",
     en: "git was not found. Install it to work with repositories.",
   },
+  gitTooOldForTokenAuth: {
+    ru: "Установленный git (версия {version}) слишком старый для доступа к приватным репозиториям. Обновите git до версии 2.31 или новее.",
+    en: "The installed git (version {version}) is too old to access private repositories. Update git to version 2.31 or newer.",
+  },
   lsRemoteFailed: {
     ru: "Не удалось получить ветки репозитория:\n{message}",
     en: "Failed to read the repository branches:\n{message}",
