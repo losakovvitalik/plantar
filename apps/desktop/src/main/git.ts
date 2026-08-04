@@ -8,14 +8,20 @@ const execFileAsync = promisify(execFile);
 const GIT_OPTS = { maxBuffer: 32 * 1024 * 1024 } as const;
 
 /**
- * Аргументы аутентификации для git: токен передаётся заголовком Authorization
- * через `-c http.extraHeader`, а не в URL — чтобы он не оседал в .git/config.
- * Заголовок виден только на время вызова git и только процессу git.
+ * Auth for git: the token travels as an Authorization header via the
+ * GIT_CONFIG_* environment variables, not in the URL (it must never end up
+ * in .git/config) and not in argv (argv is visible in `ps` output and gets
+ * quoted into execFile error messages). The header exists only in the
+ * environment of the single git process for the duration of the call.
  */
-function authArgs(token?: string): string[] {
-  if (!token) return [];
+function authEnv(token?: string): NodeJS.ProcessEnv | undefined {
+  if (!token) return undefined;
   const basic = Buffer.from(`x-access-token:${token}`).toString("base64");
-  return ["-c", `http.extraHeader=Authorization: Basic ${basic}`];
+  return {
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "http.extraHeader",
+    GIT_CONFIG_VALUE_0: `Authorization: Basic ${basic}`,
+  };
 }
 
 /** Ссылка должна быть https — сервер к GitHub не ходит, клонируем локально */
@@ -32,14 +38,21 @@ export function assertValidBranch(branch: string): void {
   }
 }
 
-async function git(args: string[]): Promise<string> {
+async function git(args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
   try {
-    const { stdout } = await execFileAsync("git", args, GIT_OPTS);
+    const { stdout } = await execFileAsync("git", args, {
+      ...GIT_OPTS,
+      env: env ? { ...process.env, ...env } : undefined,
+    });
     return stdout;
   } catch (err) {
     const e = err as { code?: string; stderr?: string; message: string };
     if (e.code === "ENOENT") throw new Error(t("gitNotAvailable"));
-    throw new Error((e.stderr || e.message).trim());
+    // Defense in depth: even if a future call site puts the auth header back
+    // on the command line, never let its base64 token reach a thrown message
+    // (execFile quotes the full argv into e.message when stderr is empty).
+    const message = (e.stderr || e.message).trim();
+    throw new Error(message.replace(/Basic\s+[A-Za-z0-9+/=]+/g, "Basic ***"));
   }
 }
 
@@ -58,7 +71,7 @@ export async function listRemoteBranches(
   let stdout: string;
   try {
     // --symref выводит симссылку HEAD (дефолтная ветка) + все refs; --heads её бы скрыл
-    stdout = await git([...authArgs(token), "ls-remote", "--symref", "--", url]);
+    stdout = await git(["ls-remote", "--symref", "--", url], authEnv(token));
   } catch (err) {
     throw new Error(t("lsRemoteFailed", { message: (err as Error).message }));
   }
@@ -96,7 +109,7 @@ export async function cloneRepo(
     branchArgs.push("--branch", branch);
   }
   try {
-    await git([...authArgs(token), "clone", ...branchArgs, "--", url, dir]);
+    await git(["clone", ...branchArgs, "--", url, dir], authEnv(token));
   } catch (err) {
     throw new Error(t("cloneFailed", { message: (err as Error).message }));
   }
@@ -110,7 +123,7 @@ export async function updateRepo(
 ): Promise<void> {
   assertValidBranch(branch);
   try {
-    await git([...authArgs(token), "-C", dir, "fetch", "--prune", "origin"]);
+    await git(["-C", dir, "fetch", "--prune", "origin"], authEnv(token));
     // -B создаёт/сбрасывает локальную ветку на origin/<branch>. -f нужен, когда в ветке
     // появился файл, лежащий в клоне как untracked (plantar.json после настройки
     // деплоя при коммите): без него checkout отказывается его перезаписать.
@@ -152,7 +165,7 @@ export async function listCommits(
 ): Promise<Commit[]> {
   assertValidBranch(branch);
   try {
-    await git([...authArgs(token), "-C", dir, "fetch", "--prune", "origin"]);
+    await git(["-C", dir, "fetch", "--prune", "origin"], authEnv(token));
   } catch {
     /* нет сети/доступа — покажем локальную историю клона */
   }
