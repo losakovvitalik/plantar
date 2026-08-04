@@ -38,7 +38,7 @@ export type RunOutcome =
   | { status: "error"; err: unknown; commit?: string };
 
 export function finishRun(ctx: RunFinishContext, outcome: RunOutcome): void {
-  const identity = {
+  const common = {
     project: ctx.project,
     projectId: ctx.projectId,
     host: ctx.host,
@@ -50,7 +50,7 @@ export function finishRun(ctx: RunFinishContext, outcome: RunOutcome): void {
   if (outcome.status === "success") {
     if (ctx.logWriter) {
       appendHistory({
-        ...identity,
+        ...common,
         status: "success",
         url: outcome.url,
         urlCheck: outcome.urlCheck,
@@ -69,7 +69,7 @@ export function finishRun(ctx: RunFinishContext, outcome: RunOutcome): void {
     if (ctx.logWriter) {
       ctx.logWriter.write(`\n${t("deployLogError")}: ${message}`);
       appendHistory({
-        ...identity,
+        ...common,
         status: "error",
         error: message,
         code,

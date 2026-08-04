@@ -26,17 +26,15 @@ afterEach(() => {
   rmSync(tmpHome, { recursive: true, force: true });
 });
 
-/** Test double of the orchestrator surroundings: records every run.finish and
- *  notify call into a shared sequence, so ordering can be asserted too */
+/** Test double of the orchestrator surroundings: records every run.finish
+ *  result and every notification, so the tests can assert what closed the run */
 function harness(over: Partial<RunFinishContext> = {}) {
-  const calls: string[] = [];
   const finishes: Array<Record<string, unknown>> = [];
   const notified: boolean[] = [];
   const ctx: RunFinishContext = {
     run: {
       log: () => {},
       finish: (result) => {
-        calls.push("run.finish");
         finishes.push(result);
       },
     },
@@ -46,19 +44,18 @@ function harness(over: Partial<RunFinishContext> = {}) {
     startedAt: "2026-08-04T10:00:00.000Z",
     kind: "rollback",
     notify: (success) => {
-      calls.push("notify");
       notified.push(success);
     },
     ...over,
   };
   const finish = (outcome: RunOutcome) => finishRun(ctx, outcome);
-  return { finish, calls, finishes, notified };
+  return { finish, finishes, notified };
 }
 
 describe("finishRun", () => {
-  it("упавший возврат версии: запись истории с кодом ошибки, уведомление уходит всегда", () => {
+  it("failed rollback: history record carries the error code, notification always fires", () => {
     const logWriter = new DeployLogWriter("app");
-    const { finish, calls, finishes, notified } = harness({ logWriter });
+    const { finish, finishes, notified } = harness({ logWriter });
     const err = Object.assign(new Error("rollback failed"), {
       code: "npm-peer-conflict",
     });
@@ -81,12 +78,31 @@ describe("finishRun", () => {
       { status: "error", error: "rollback failed", code: "npm-peer-conflict" },
     ]);
     expect(notified).toEqual([false]);
-    // Run status updates first: a disk-write failure must not leave the
-    // project locked in a running deploy
-    expect(calls[0]).toBe("run.finish");
   });
 
-  it("успешный возврат: urlCheck попадает и в запись истории, и в снимок прогона", () => {
+  it("closes the run before the disk writes: a failing log write cannot leave it open", () => {
+    const logWriter = new DeployLogWriter("app");
+    vi.spyOn(logWriter, "write").mockImplementation(() => {
+      throw new Error("disk full");
+    });
+    const { finish, finishes, notified } = harness({ logWriter });
+
+    // The helper does not swallow the disk failure...
+    expect(() => finish({ status: "error", err: new Error("rollback failed") })).toThrow(
+      "disk full",
+    );
+
+    // ...but by then the run snapshot was already closed and the user
+    // notified, so the project is not locked in a running deploy
+    expect(finishes).toEqual([
+      { status: "error", error: "rollback failed", code: undefined },
+    ]);
+    expect(notified).toEqual([false]);
+    // The history record never made it to disk: run.finish really ran first
+    expect(readHistory()).toEqual([]);
+  });
+
+  it("successful rollback: urlCheck reaches both the history record and the run snapshot", () => {
     const logWriter = new DeployLogWriter("app");
     const { finish, finishes, notified } = harness({ logWriter });
 
@@ -108,7 +124,7 @@ describe("finishRun", () => {
     expect(notified).toEqual([true]);
   });
 
-  it("уведомление об успехе подчиняется настройке, об ошибке — уходит и при выключенной", () => {
+  it("success notification obeys the setting, error notification fires even when it is off", () => {
     writeSettings({ ...readSettings(), notifyOnDeploySuccess: false });
     const logWriter = new DeployLogWriter("app");
     const { finish, notified } = harness({ logWriter });
@@ -120,7 +136,7 @@ describe("finishRun", () => {
     expect(notified).toEqual([false]);
   });
 
-  it("ошибка до создания файла лога: записи истории нет, но прогон закрыт и уведомление ушло", () => {
+  it("failure before the log file exists: no history record, but the run closes and notifies", () => {
     const { finish, finishes, notified } = harness({ logWriter: undefined });
 
     finish({ status: "error", err: new Error("disk full") });
