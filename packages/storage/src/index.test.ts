@@ -6,6 +6,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -226,6 +227,74 @@ describe("атомарная запись", () => {
     appendHistory(deploy("site"));
 
     expect(readHistory().filter((r) => r.host === "5.6.7.8")).toHaveLength(1);
+  });
+});
+
+// POSIX-only: Windows does not map these permission bits
+describe.skipIf(process.platform === "win32")("права доступа settings.json", () => {
+  const settingsFile = () => path.join(dataDir(), "settings.json");
+  const fileMode = () => statSync(settingsFile()).mode & 0o777;
+
+  /** Settings written by an install from before the 0600 policy: world-readable.
+   *  chmod rather than a writeFileSync mode — the test umask must not interfere */
+  function seedLooseSettings(content = "{}"): void {
+    mkdirSync(dataDir(), { recursive: true });
+    writeFileSync(settingsFile(), content);
+    chmodSync(settingsFile(), 0o644);
+  }
+
+  it("writeSettings создаёт файл, читаемый только владельцем", () => {
+    writeSettings({ ...readSettings(), letsEncryptEmail: "a@b.c" });
+    // The rename carries the temp file's permissions onto the target, so this
+    // also proves the temp file never sat on disk world-readable
+    expect(fileMode()).toBe(0o600);
+  });
+
+  it("файл прежней установки ужесточается уже при чтении настроек", () => {
+    seedLooseSettings(JSON.stringify({ letsEncryptEmail: "a@b.c" }));
+
+    const settings = readSettings();
+
+    expect(fileMode()).toBe(0o600);
+    expect(settings.letsEncryptEmail).toBe("a@b.c");
+  });
+
+  it("перезапись файла прежней установки не оставляет широких прав", () => {
+    // Defaults are taken before the loose file exists: the write path must
+    // tighten on its own, without the read-side healing
+    const settings = readSettings();
+    seedLooseSettings();
+
+    writeSettings(settings);
+
+    expect(fileMode()).toBe(0o600);
+  });
+
+  it("залежавшийся tmp-файл прежней установки не ослабляет права", () => {
+    // A stale temp file left by a hard-killed pre-0600 write and reused after
+    // PID wraparound: open()'s mode applies only at creation, so without the
+    // explicit fchmod the rename would carry 0644 onto settings.json
+    mkdirSync(dataDir(), { recursive: true });
+    const tmp = `${settingsFile()}.${process.pid}.tmp`;
+    writeFileSync(tmp, "{");
+    chmodSync(tmp, 0o644);
+
+    writeSettings(readSettings());
+
+    expect(fileMode()).toBe(0o600);
+  });
+
+  it("recovery-копия .broken прежней установки ужесточается при чтении", () => {
+    // A .broken copy made before the 0600 policy holds the same token as the
+    // settings.json of the time and kept its loose permissions
+    mkdirSync(dataDir(), { recursive: true });
+    const backup = `${settingsFile()}.broken`;
+    writeFileSync(backup, "{");
+    chmodSync(backup, 0o644);
+
+    readSettings();
+
+    expect(statSync(backup).mode & 0o777).toBe(0o600);
   });
 });
 
