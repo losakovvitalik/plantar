@@ -208,8 +208,19 @@ program
     }
     for (const r of history) {
       const when = r.startedAt.replace("T", " ").slice(0, 19);
-      const outcome = r.status === "success" ? `✓ ${r.url ?? ""}` : `✗ ${r.error?.split("\n")[0] ?? ""}`;
+      // A success whose post-deploy check did not confirm the site gets "!"
+      // instead of "✓" — the record is honest, the marker must be too
+      const unconfirmed =
+        r.status === "success" &&
+        (r.urlCheck === "no-answer" || r.urlCheck === "plain-http");
+      const outcome =
+        r.status === "success"
+          ? `${unconfirmed ? "!" : "✓"} ${r.url ?? ""}`
+          : `✗ ${r.error?.split("\n")[0] ?? ""}`;
       console.log(`${when}  ${r.project} → ${r.host}  ${outcome}`);
+      if (unconfirmed) {
+        console.log(t(r.urlCheck === "no-answer" ? "historyNoAnswer" : "historyPlainHttp"));
+      }
       console.log(t("historyLogFile", { file: r.logFile }));
     }
   });

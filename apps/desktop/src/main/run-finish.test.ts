@@ -30,7 +30,7 @@ afterEach(() => {
  *  result and every notification, so the tests can assert what closed the run */
 function harness(over: Partial<RunFinishContext> = {}) {
   const finishes: Array<Record<string, unknown>> = [];
-  const notified: boolean[] = [];
+  const notified: Array<[boolean, string | undefined]> = [];
   const ctx: RunFinishContext = {
     run: {
       log: () => {},
@@ -43,8 +43,8 @@ function harness(over: Partial<RunFinishContext> = {}) {
     host: "203.0.113.1",
     startedAt: "2026-08-04T10:00:00.000Z",
     kind: "rollback",
-    notify: (success) => {
-      notified.push(success);
+    notify: (success, urlCheck) => {
+      notified.push([success, urlCheck]);
     },
     ...over,
   };
@@ -77,7 +77,7 @@ describe("finishRun", () => {
     expect(finishes).toEqual([
       { status: "error", error: "rollback failed", code: "npm-peer-conflict" },
     ]);
-    expect(notified).toEqual([false]);
+    expect(notified).toEqual([[false, undefined]]);
   });
 
   it("closes the run before the disk writes: a failing log write cannot leave it open", () => {
@@ -97,7 +97,7 @@ describe("finishRun", () => {
     expect(finishes).toEqual([
       { status: "error", error: "rollback failed", code: undefined },
     ]);
-    expect(notified).toEqual([false]);
+    expect(notified).toEqual([[false, undefined]]);
     // The history record never made it to disk: run.finish really ran first
     expect(readHistory()).toEqual([]);
   });
@@ -120,8 +120,8 @@ describe("finishRun", () => {
     expect(finishes).toEqual([
       { status: "success", url: "https://site.example/", urlCheck: "answered" },
     ]);
-    // notifyOnDeploySuccess is on by default
-    expect(notified).toEqual([true]);
+    // notifyOnDeploySuccess is on by default, and notify gets the check result
+    expect(notified).toEqual([[true, "answered"]]);
   });
 
   it("success notification obeys the setting, error notification fires even when it is off", () => {
@@ -133,7 +133,7 @@ describe("finishRun", () => {
     expect(notified).toEqual([]);
 
     finish({ status: "error", err: new Error("boom") });
-    expect(notified).toEqual([false]);
+    expect(notified).toEqual([[false, undefined]]);
   });
 
   it("thrown deploy: error history record plus run.finish with status error", () => {
@@ -158,7 +158,7 @@ describe("finishRun", () => {
     // History reads the absent kind field as an ordinary deploy
     expect(records[0].kind).toBeUndefined();
     expect(finishes).toEqual([{ status: "error", error: "deploy failed", code: undefined }]);
-    expect(notified).toEqual([false]);
+    expect(notified).toEqual([[false, undefined]]);
   });
 
   it("failure before the log file exists: no history record, but the run closes and notifies", () => {
@@ -168,6 +168,6 @@ describe("finishRun", () => {
 
     expect(readHistory()).toEqual([]);
     expect(finishes).toEqual([{ status: "error", error: "disk full", code: undefined }]);
-    expect(notified).toEqual([false]);
+    expect(notified).toEqual([[false, undefined]]);
   });
 });

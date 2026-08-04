@@ -43,6 +43,22 @@ const MESSAGES = {
     ru: "Проект «{name}» — произошла ошибка.",
     en: "Project “{name}” — an error occurred.",
   },
+  notifyNoAnswerTitle: {
+    ru: "Деплой завершён, но сайт не ответил",
+    en: "Deploy finished, but the site did not respond",
+  },
+  notifyNoAnswerBody: {
+    ru: "Проект «{name}» обновлён, но по своему адресу не ответил. Подробности — в приложении.",
+    en: "Project “{name}” was updated but did not respond at its address. See the app for details.",
+  },
+  notifyPlainHttpTitle: {
+    ru: "Деплой завершён, но сайт нужно проверить",
+    en: "Deploy finished, but check the site",
+  },
+  notifyPlainHttpBody: {
+    ru: "Проект «{name}» обновлён, но ответил только по незащищённому адресу. Подробности — в приложении.",
+    en: "Project “{name}” was updated but only responded at its insecure address. See the app for details.",
+  },
   deployLogError: { ru: "ОШИБКА", en: "ERROR" },
   notifyAppDownTitle: {
     ru: "Приложение перестало работать",
