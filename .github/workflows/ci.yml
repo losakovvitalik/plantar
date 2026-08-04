@@ -39,6 +39,7 @@ jobs:
       - name: Test
         run: |
           pnpm --filter @plantar/core test
+          pnpm --filter @plantar/ssh test
           pnpm --filter @plantar/storage test
           pnpm --filter @plantar/desktop test
 
