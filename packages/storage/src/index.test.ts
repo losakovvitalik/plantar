@@ -269,6 +269,33 @@ describe.skipIf(process.platform === "win32")("права доступа setting
 
     expect(fileMode()).toBe(0o600);
   });
+
+  it("залежавшийся tmp-файл прежней установки не ослабляет права", () => {
+    // A stale temp file left by a hard-killed pre-0600 write and reused after
+    // PID wraparound: open()'s mode applies only at creation, so without the
+    // explicit fchmod the rename would carry 0644 onto settings.json
+    mkdirSync(dataDir(), { recursive: true });
+    const tmp = `${settingsFile()}.${process.pid}.tmp`;
+    writeFileSync(tmp, "{");
+    chmodSync(tmp, 0o644);
+
+    writeSettings(readSettings());
+
+    expect(fileMode()).toBe(0o600);
+  });
+
+  it("recovery-копия .broken прежней установки ужесточается при чтении", () => {
+    // A .broken copy made before the 0600 policy holds the same token as the
+    // settings.json of the time and kept its loose permissions
+    mkdirSync(dataDir(), { recursive: true });
+    const backup = `${settingsFile()}.broken`;
+    writeFileSync(backup, "{");
+    chmodSync(backup, 0o644);
+
+    readSettings();
+
+    expect(statSync(backup).mode & 0o777).toBe(0o600);
+  });
 });
 
 describe("история переименованного проекта", () => {

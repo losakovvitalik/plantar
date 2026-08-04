@@ -4,6 +4,7 @@ import {
   closeSync,
   copyFileSync,
   existsSync,
+  fchmodSync,
   fsyncSync,
   mkdirSync,
   openSync,
@@ -238,6 +239,10 @@ function writeJsonAtomic(file: string, data: unknown, mode?: number): void {
   try {
     const fd = openSync(tmp, "w", mode);
     try {
+      // open()'s mode applies only at creation: a stale temp file left by a
+      // hard-killed pre-0600 write and reused after PID wraparound would keep
+      // its loose permissions, and the rename would carry them onto the target
+      if (mode !== undefined) fchmodSync(fd, mode);
       writeSync(fd, JSON.stringify(data, null, 2));
       fsyncSync(fd);
     } finally {
@@ -310,12 +315,17 @@ export function readSettings(): AppSettings {
   const file = path.join(dataDir(), "settings.json");
   // Upgrade path: installs from before the 0600 policy wrote the file
   // world-readable. Tightening on read covers them without any extra wiring —
-  // both the app and the CLI read settings on startup.
+  // both the app and the CLI read settings on startup. The .broken recovery
+  // copy holds the same token, so a pre-policy copy is tightened too; a copy
+  // made after the policy is already tight — copyFileSync preserves the mode
+  // of the source, which is healed here before the copy could be taken.
   if (process.platform !== "win32") {
-    try {
-      if (statSync(file).mode & 0o077) chmodSync(file, SETTINGS_FILE_MODE);
-    } catch {
-      // no file yet, or the file is not ours to fix — reading decides below
+    for (const f of [file, `${file}.broken`]) {
+      try {
+        if (statSync(f).mode & 0o077) chmodSync(f, SETTINGS_FILE_MODE);
+      } catch {
+        // no file yet, or the file is not ours to fix — reading decides below
+      }
     }
   }
   return { ...DEFAULT_SETTINGS, ...readJsonSafe<Partial<AppSettings>>(file, {}) };
