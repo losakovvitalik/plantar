@@ -377,8 +377,15 @@ export async function removeDeployedProject(
 ): Promise<void> {
   // У статических сайтов pm2-процесса нет — отсутствие не ошибка
   log(t("stoppingPm2", { name }));
-  const deleted = await conn.exec(`pm2 delete '${name}'`);
-  if (deleted.code === 0) {
+  // Probe pm2 before deleting anything: an unavailable daemon must not be
+  // mistaken for a missing process, or the files get removed while the
+  // process stays in the pm2 dump and resurrects after a server reboot.
+  const jlist = await conn.exec("pm2 jlist");
+  if (jlist.code !== 0) {
+    throw new Error(t("pm2Unavailable", { stderr: jlist.stderr.trim() }));
+  }
+  if (parsePm2Jlist(jlist.stdout).some((proc) => proc.name === name)) {
+    await run(conn, `pm2 delete '${name}'`, log);
     await run(conn, "pm2 save --force", log);
     log(t("pm2Stopped"));
   } else {

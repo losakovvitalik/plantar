@@ -40,6 +40,10 @@ const MESSAGES = {
     ru: "  pm2-процесс не найден — пропускаю",
     en: "  pm2 process not found — skipping",
   },
+  pm2Unavailable: {
+    ru: "Не удалось связаться со службой запуска приложений (pm2) на сервере, поэтому удаление остановлено — файлы проекта не тронуты. Попробуйте ещё раз чуть позже.\n{stderr}",
+    en: "Could not reach the application manager (pm2) on the server, so the removal was stopped — the project files were left untouched. Please try again a little later.\n{stderr}",
+  },
   removingFiles: { ru: "→ Удаляю файлы проекта…", en: "→ Deleting project files…" },
   removingNginxConf: { ru: "→ Удаляю конфиг nginx…", en: "→ Deleting the nginx config…" },
   projectRemoved: {

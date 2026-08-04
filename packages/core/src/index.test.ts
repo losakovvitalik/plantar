@@ -8,6 +8,7 @@ import {
   logStreamCommand,
   pickFreePort,
   pickRollbackTarget,
+  removeDeployedProject,
   rollbackProject,
 } from "./index";
 import { t } from "./messages";
@@ -431,6 +432,51 @@ describe("pickRollbackTarget", () => {
 
   it("возвращаться некуда — null", () => {
     expect(pickRollbackTarget(["1"], "1", "1")).toBe(null);
+  });
+});
+
+describe("removeDeployedProject: проба pm2 перед удалением файлов", () => {
+  it("pm2 недоступен — удаление прерывается, rm -rf не выполняется", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn([[/^pm2 jlist$/, { code: 1, stderr: "connect EAGAIN\n" }]], commands);
+
+    await expect(removeDeployedProject(conn, "app")).rejects.toThrow(
+      t("pm2Unavailable", { stderr: "connect EAGAIN" }),
+    );
+    expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
+    expect(commands.some((c) => c.includes("pm2 delete"))).toBe(false);
+  });
+
+  it("процесса нет в pm2 (статический сайт) — файлы удаляются без pm2 delete", async () => {
+    const commands: string[] = [];
+    const logs: string[] = [];
+    const conn = fakeConn([[/^pm2 jlist$/, { stdout: "[]" }]], commands);
+
+    await removeDeployedProject(conn, "app", (line) => logs.push(line));
+
+    expect(logs).toContain(t("pm2NotFound"));
+    expect(commands.some((c) => c.includes("pm2 delete"))).toBe(false);
+    expect(commands.some((c) => c.includes("rm -rf '/var/www/app'"))).toBe(true);
+    expect(logs).toContain(t("projectRemoved", { name: "app" }));
+  });
+
+  it("процесс есть — pm2 delete и pm2 save перед удалением файлов", async () => {
+    const commands: string[] = [];
+    const logs: string[] = [];
+    const conn = fakeConn(
+      [[/^pm2 jlist$/, { stdout: jlist("/var/www/app/current") }]],
+      commands,
+    );
+
+    await removeDeployedProject(conn, "app", (line) => logs.push(line));
+
+    expect(commands).toContain("pm2 delete 'app'");
+    expect(commands).toContain("pm2 save --force");
+    expect(logs).toContain(t("pm2Stopped"));
+    const deleteIndex = commands.findIndex((c) => c.includes("pm2 delete"));
+    const rmIndex = commands.findIndex((c) => c.includes("rm -rf"));
+    expect(deleteIndex).toBeGreaterThanOrEqual(0);
+    expect(rmIndex).toBeGreaterThan(deleteIndex);
   });
 });
 
