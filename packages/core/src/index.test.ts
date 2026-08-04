@@ -6,6 +6,7 @@ import {
   certbotAccountArgs,
   deployProject,
   logStreamCommand,
+  pickFreePort,
   pickRollbackTarget,
   rollbackProject,
 } from "./index";
@@ -17,19 +18,22 @@ interface ExecResult {
   stderr: string;
 }
 
-/** SSH-заглушка: результат команды задаёт первое подошедшее правило, остальные команды успешны */
+/** SSH-заглушка: результат команды задаёт первое подошедшее правило, остальные команды успешны.
+ *  A rule mapping to an Error rejects the exec call — a dropped SSH connection. */
 function fakeConn(
-  rules: Array<[RegExp, Partial<ExecResult>]>,
+  rules: Array<[RegExp, Partial<ExecResult> | Error]>,
   commands: string[],
+  uploadDirectory: () => Promise<number> = () => Promise.resolve(1),
 ): SshConnection {
   return {
     host: "203.0.113.1",
     exec: (command: string) => {
       commands.push(command);
       const rule = rules.find(([re]) => re.test(command));
+      if (rule?.[1] instanceof Error) return Promise.reject(rule[1]);
       return Promise.resolve({ code: 0, stdout: "", stderr: "", ...rule?.[1] });
     },
-    uploadDirectory: () => Promise.resolve(1),
+    uploadDirectory,
   } as unknown as SshConnection;
 }
 
@@ -117,6 +121,170 @@ describe("deployProject: восстановление после неудачн�
 
     // Единственный pm2 start — запуск новой версии; попыток восстановления не было
     expect(commands.filter((c) => c.includes("pm2 start '")).length).toBe(1);
+  });
+});
+
+// A dropped SSH connection surfaces as a rejected exec call; each test drops it
+// at one deploy phase and checks the error escapes without a recorded success
+// (current is never switched, the final success message never appears)
+describe("deployProject: обрыв SSH-соединения посреди деплоя", () => {
+  const drop = () => new Error("Connection lost");
+
+  it("node: обрыв на загрузке файлов — ошибка наружу, установка и переключение версии не начинались", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn([], commands, () => Promise.reject(drop()));
+
+    await expect(deployProject(conn, "/nonexistent", appConfig(), () => {})).rejects.toThrow(
+      "Connection lost",
+    );
+
+    expect(commands.some((c) => c.includes("npm install"))).toBe(false);
+    expect(commands.some((c) => c.startsWith("ln -sfn"))).toBe(false);
+  });
+
+  it("node: обрыв на установке зависимостей — ошибка наружу, pm2 не запускался", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn([[/npm install/, drop()]], commands);
+
+    await expect(deployProject(conn, "/nonexistent", appConfig(), () => {})).rejects.toThrow(
+      "Connection lost",
+    );
+
+    expect(commands.some((c) => c.includes("pm2 start"))).toBe(false);
+    expect(commands.some((c) => c.startsWith("ln -sfn"))).toBe(false);
+  });
+
+  it("node: обрыв на запуске pm2 — ошибка наружу, current не переключается", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn(
+      [
+        [/ls -1 '\/var\/www\/app\/releases'/, { stdout: "" }],
+        [/readlink '\/var\/www\/app\/current'/, { code: 1 }],
+        [/pm2 start/, drop()],
+      ],
+      commands,
+    );
+
+    await expect(deployProject(conn, "/nonexistent", appConfig(), () => {})).rejects.toThrow(
+      "Connection lost",
+    );
+
+    expect(commands.some((c) => c.startsWith("ln -sfn"))).toBe(false);
+  });
+
+  it("bot: обрыв на запуске pm2 — ошибка наружу, деплой не объявляется успешным", async () => {
+    const commands: string[] = [];
+    const logs: string[] = [];
+    const conn = fakeConn(
+      [
+        [/ls -1 '\/var\/www\/app\/releases'/, { stdout: "" }],
+        [/readlink '\/var\/www\/app\/current'/, { code: 1 }],
+        [/pm2 start/, drop()],
+      ],
+      commands,
+    );
+
+    await expect(
+      deployProject(conn, "/nonexistent", appConfig({ type: "bot" }), (line) => logs.push(line)),
+    ).rejects.toThrow("Connection lost");
+
+    expect(commands.some((c) => c.startsWith("ln -sfn"))).toBe(false);
+    expect(logs).not.toContain(t("botDeployed"));
+  });
+
+  it("bot: обрыв на проверке стабильности процесса — ошибка наружу, current не переключается", async () => {
+    const commands: string[] = [];
+    const logs: string[] = [];
+    const conn = fakeConn(
+      [
+        [/ls -1 '\/var\/www\/app\/releases'/, { stdout: "" }],
+        [/readlink '\/var\/www\/app\/current'/, { code: 1 }],
+        [/pm2 jlist/, drop()],
+      ],
+      commands,
+    );
+
+    await expect(
+      deployProject(conn, "/nonexistent", appConfig({ type: "bot" }), (line) => logs.push(line)),
+    ).rejects.toThrow("Connection lost");
+
+    expect(commands.some((c) => c.startsWith("ln -sfn"))).toBe(false);
+    expect(logs).not.toContain(t("botDeployed"));
+  });
+
+  it("rollback: обрыв на чтении списка версий — ошибка наружу, возврат не объявляется успешным", async () => {
+    const commands: string[] = [];
+    const logs: string[] = [];
+    const conn = fakeConn(
+      [[/ls -1 '\/var\/www\/app\/releases'/, drop()]],
+      commands,
+    );
+
+    await expect(
+      rollbackProject(conn, appConfig(), (line) => logs.push(line)),
+    ).rejects.toThrow("Connection lost");
+
+    expect(commands.some((c) => c.startsWith("ln -sfn"))).toBe(false);
+    expect(logs.some((line) => line === t("rollbackDone", { release: "2025-06-01" }))).toBe(false);
+  });
+
+  it("rollback: обрыв на перезапуске прежней версии — ошибка наружу, current не переключается", async () => {
+    const commands: string[] = [];
+    const logs: string[] = [];
+    const conn = fakeConn(
+      [
+        [/ls -1 '\/var\/www\/app\/releases'/, { stdout: "2025-06-02\n2025-06-01\n" }],
+        [/readlink '\/var\/www\/app\/current'/, { stdout: "releases/2025-06-02\n" }],
+        [/pm2 jlist/, { stdout: jlist("/var/www/app/releases/2025-06-02") }],
+        [PREV_ECOSYSTEM, drop()],
+      ],
+      commands,
+    );
+
+    await expect(
+      rollbackProject(conn, appConfig(), (line) => logs.push(line)),
+    ).rejects.toThrow("Connection lost");
+
+    expect(commands.some((c) => c.startsWith("ln -sfn"))).toBe(false);
+    expect(logs).not.toContain(t("rollbackDone", { release: "2025-06-01" }));
+  });
+});
+
+describe("pickFreePort", () => {
+  const ssLine = (port: number) => `LISTEN 0 511 0.0.0.0:${port} 0.0.0.0:*`;
+
+  it("возвращает первый порт диапазона, не занятый процессом и не закреплённый в nginx", async () => {
+    const conn = fakeConn(
+      [
+        [/^ss -tlnH$/, { stdout: [ssLine(80), ssLine(3001), ssLine(3003)].join("\n") }],
+        [/^grep -rhoE/, { stdout: "proxy_pass http://127.0.0.1:3002\n" }],
+      ],
+      [],
+    );
+
+    await expect(pickFreePort(conn)).resolves.toBe(3004);
+  });
+
+  it("все порты диапазона заняты — понятная ошибка вместо повторной выдачи занятого порта", async () => {
+    const lines: string[] = [];
+    for (let port = 3001; port <= 3999; port++) lines.push(ssLine(port));
+    const conn = fakeConn([[/^ss -tlnH$/, { stdout: lines.join("\n") }]], []);
+
+    await expect(pickFreePort(conn)).rejects.toThrow(
+      t("noFreePort", { from: 3001, to: 3999 }),
+    );
+  });
+
+  it("непарсимый вывод команд не роняет подбор — берётся первый порт диапазона", async () => {
+    const conn = fakeConn(
+      [
+        [/^ss -tlnH$/, { stdout: "bash: ss: command not found" }],
+        [/^grep -rhoE/, { code: 1, stdout: "" }],
+      ],
+      [],
+    );
+
+    await expect(pickFreePort(conn)).resolves.toBe(3001);
   });
 });
 

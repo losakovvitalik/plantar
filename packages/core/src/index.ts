@@ -796,7 +796,8 @@ async function deployStatic(
 const APP_PORT_RANGE = { from: 3001, to: 3999 };
 
 /** Свободный порт: не занят слушающим процессом и не выдан другому сайту в nginx */
-async function pickFreePort(conn: SshConnection): Promise<number> {
+// Exported for unit tests only — deploys go through deployProject
+export async function pickFreePort(conn: SshConnection): Promise<number> {
   const used = new Set<number>();
 
   const listening = await conn.exec("ss -tlnH");

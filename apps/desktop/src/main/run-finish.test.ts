@@ -136,6 +136,31 @@ describe("finishRun", () => {
     expect(notified).toEqual([false]);
   });
 
+  it("thrown deploy: error history record plus run.finish with status error", () => {
+    const logWriter = new DeployLogWriter("app");
+    // A plain managed deploy passes no kind and keeps the attempted commit
+    const { finish, finishes, notified } = harness({ logWriter, kind: undefined });
+
+    finish({ status: "error", err: new Error("deploy failed"), commit: "abc1234" });
+
+    const records = readHistory();
+    expect(records).toMatchObject([
+      {
+        project: "app",
+        projectId: "p1",
+        host: "203.0.113.1",
+        status: "error",
+        error: "deploy failed",
+        commit: "abc1234",
+        logFile: logWriter.file,
+      },
+    ]);
+    // History reads the absent kind field as an ordinary deploy
+    expect(records[0].kind).toBeUndefined();
+    expect(finishes).toEqual([{ status: "error", error: "deploy failed", code: undefined }]);
+    expect(notified).toEqual([false]);
+  });
+
   it("failure before the log file exists: no history record, but the run closes and notifies", () => {
     const { finish, finishes, notified } = harness({ logWriter: undefined });
 
