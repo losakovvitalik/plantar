@@ -7,6 +7,7 @@ import {
   getExternalSyncState,
   getExternalVersions,
   parseServerCommits,
+  readExternalEnv,
   writeExternalEnv,
 } from "./external";
 import { t } from "./messages";
@@ -332,22 +333,56 @@ describe("deployExternalInPlace: неудачи не трогают работа
 });
 
 describe("writeExternalEnv", () => {
-  it("выбирает файл и пишет одной командой: без гонки и лишнего запроса", async () => {
+  // `ls -a` output of the app dir — the same listing the read path filters
+  const lsRule = (names: string[]): [RegExp, Partial<ExecResult>] => [
+    /^ls -a/,
+    { stdout: names.join("\n") + "\n" },
+  ];
+
+  it("папка только с .env.Example: пишет в .env, шаблон не перезаписывается", async () => {
     const commands: string[] = [];
-    const conn = fakeConn([], commands);
+    const conn = fakeConn([lsRule([".", "..", ".env.Example"])], commands);
     await writeExternalEnv(conn, "/opt/apps/site", "KEY=value\n");
-    expect(commands).toHaveLength(1);
-    const command = commands[0];
-    // Selection happens server-side in the same command as the write
-    expect(command).toContain("for f in .env*");
-    expect(command).toContain("base64 -d");
-    expect(command).toContain('chmod 600 "$target"');
+    const write = commands.at(-1) ?? "";
+    expect(write).toContain("base64 -d > '/opt/apps/site/.env'");
+    expect(write).toContain("chmod 600 '/opt/apps/site/.env'");
+    expect(write).not.toContain(".env.Example");
+  });
+
+  it("папка с .env и .env.local: целью остаётся базовый .env", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn([lsRule([".env", ".env.local"])], commands);
+    await writeExternalEnv(conn, "/opt/apps/site", "KEY=value\n");
+    expect(commands.at(-1)).toContain("base64 -d > '/opt/apps/site/.env'");
+  });
+
+  it("без базового .env побеждает не-local файл, как при чтении", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn([lsRule([".env.local", ".env.production"])], commands);
+    await writeExternalEnv(conn, "/opt/apps/site", "KEY=value\n");
+    expect(commands.at(-1)).toContain("base64 -d > '/opt/apps/site/.env.production'");
   });
 
   it("ошибка записи отдаётся читаемым сообщением", async () => {
     const conn = fakeConn([[/base64 -d/, { code: 1, stderr: "disk full" }]], []);
     await expect(writeExternalEnv(conn, "/opt/apps/site", "A=1")).rejects.toThrow(
       /disk full/,
+    );
+  });
+
+  it("листинг папки не удался — ошибка вместо тихой записи в .env", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn([[/^ls -a/, { code: 2 }]], commands);
+    await expect(writeExternalEnv(conn, "/opt/apps/site", "A=1")).rejects.toThrow(
+      t("envListFailed", { dir: "/opt/apps/site" }),
+    );
+    expect(commands.some((c) => c.includes("base64 -d"))).toBe(false);
+  });
+
+  it("чтение при неудавшемся листинге падает так же, как запись", async () => {
+    const conn = fakeConn([[/^ls -a/, { code: 2 }]], []);
+    await expect(readExternalEnv(conn, "/opt/apps/site")).rejects.toThrow(
+      t("envListFailed", { dir: "/opt/apps/site" }),
     );
   });
 });

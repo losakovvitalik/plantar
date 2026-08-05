@@ -341,6 +341,9 @@ export async function deployExternalInPlace(
  */
 async function externalEnvFile(conn: SshConnection, appDir: string): Promise<string> {
   const files = await listAppEnvFiles(conn, appDir);
+  // A failed listing must not be mistaken for "no env files": silently
+  // defaulting to .env could read the wrong file or overwrite one on save.
+  if (files === null) throw new Error(t("envListFailed", { dir: appDir }));
   return files[0] ?? ".env";
 }
 
@@ -360,22 +363,18 @@ export async function writeExternalEnv(
   appDir: string,
   content: string,
 ): Promise<void> {
+  // The target is picked by the same TypeScript rule the read path uses
+  // (externalEnvFile → listAppEnvFiles): template files like .env.Example can
+  // never be chosen, so saving cannot overwrite a sample with real secrets.
+  // A previous version selected the file in a server-side shell loop, but its
+  // case-sensitive filter diverged from the case-insensitive read filter; the
+  // tiny listing-to-write window is accepted in exchange for a single rule.
+  const file = await externalEnvFile(conn, appDir);
+  const path = shellQuote(`${appDir}/${file}`);
   // base64 избавляет от экранирования произвольных значений; 600 — файл с секретами.
-  // The target file is picked and written in one server-side command: no extra
-  // round-trip and no race between choosing the file and writing it. The
-  // selection mirrors envFileRank: .env first, then other env files, *.local
-  // last; ties resolve to the alphabetically first name (glob order).
   const encoded = Buffer.from(content, "utf8").toString("base64");
   const result = await conn.exec(
-    `cd ${shellQuote(appDir)} || exit 1; target=''; best=9; ` +
-      `for f in .env*; do ` +
-      `[ -f "$f" ] || continue; ` +
-      `case "$f" in *.example|*.sample|*.template|.envrc) continue;; esac; ` +
-      `case "$f" in .env) r=0;; *.local*) r=2;; *) r=1;; esac; ` +
-      `if [ "$r" -lt "$best" ]; then best=$r; target=$f; fi; ` +
-      `done; ` +
-      `target="\${target:-.env}"; ` +
-      `echo '${encoded}' | base64 -d > "$target" && chmod 600 "$target"`,
+    `echo '${encoded}' | base64 -d > ${path} && chmod 600 ${path}`,
   );
   if (result.code !== 0) {
     throw new Error(t("envSaveFailed", { stderr: result.stderr.slice(-2000) }));
