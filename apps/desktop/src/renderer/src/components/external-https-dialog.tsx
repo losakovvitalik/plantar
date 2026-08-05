@@ -20,7 +20,7 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   askPassword: (server: ServerRecord) => Promise<string | null>;
-  /** Called after the certificate is issued — reload the HTTPS card */
+  /** Called after the certificate is issued — reload the status snapshot */
   onEnabled: () => Promise<void> | void;
 }
 
