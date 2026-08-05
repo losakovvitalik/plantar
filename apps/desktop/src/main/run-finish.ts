@@ -69,7 +69,14 @@ export function finishRun(ctx: RunFinishContext, outcome: RunOutcome): void {
       ctx.run.finish({ status: "error", error: message, code });
       ctx.notify(false);
       if (ctx.logWriter) {
-        ctx.logWriter.write(`\n${t("deployLogError")}: ${message}`);
+        // Re-entry guard: when a success pass threw past finishRun, its
+        // finally below already closed the writer before the orchestrator's
+        // catch called finishRun again — skip only the log line, so the
+        // error history record still lands and the original failure stays
+        // the one the caller sees
+        if (!ctx.logWriter.closed) {
+          ctx.logWriter.write(`\n${t("deployLogError")}: ${message}`);
+        }
         appendHistory({
           ...common,
           status: "error",

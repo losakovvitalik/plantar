@@ -70,6 +70,13 @@ export class DeployLogWriter {
     writeSync(this.fd, line + "\n");
   }
 
+  /** True once close() released the descriptor: a caller re-entered after a
+   *  failure can skip its log line instead of tripping the write-after-close
+   *  assertion above */
+  get closed(): boolean {
+    return this.fd === null;
+  }
+
   /** Releases the descriptor when the run ends; safe to call twice */
   close(): void {
     if (this.fd === null) return;

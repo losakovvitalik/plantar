@@ -152,9 +152,12 @@ describe("чтение битых JSON-хранилищ", () => {
 describe("DeployLogWriter", () => {
   it("пишет строки после создания, close() сбрасывает и освобождает дескриптор", () => {
     const writer = new DeployLogWriter("app");
+    // closed mirrors the descriptor state, so re-entered callers can check it
+    expect(writer.closed).toBe(false);
     writer.write("первая строка");
     writer.write("вторая строка");
     writer.close();
+    expect(writer.closed).toBe(true);
     // The content is fully on disk after close()
     expect(readFileSync(writer.file, "utf8")).toBe("первая строка\nвторая строка\n");
     // The descriptor is released: a write after close fails loudly instead
