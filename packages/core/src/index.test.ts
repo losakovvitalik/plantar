@@ -8,6 +8,7 @@ import {
   logStreamCommand,
   pickFreePort,
   pickRollbackTarget,
+  removeDeployedProject,
   rollbackProject,
 } from "./index";
 import { t } from "./messages";
@@ -431,6 +432,96 @@ describe("pickRollbackTarget", () => {
 
   it("возвращаться некуда — null", () => {
     expect(pickRollbackTarget(["1"], "1", "1")).toBe(null);
+  });
+});
+
+describe("removeDeployedProject: проба pm2 перед удалением файлов", () => {
+  it("pm2 недоступен — удаление прерывается, rm -rf не выполняется", async () => {
+    const commands: string[] = [];
+    // pm2 reports the failure on stdout ([PM2][ERROR] ...), not only stderr
+    const conn = fakeConn(
+      [
+        [
+          /^pm2 jlist$/,
+          { code: 1, stdout: "[PM2][ERROR] Daemon not running\n", stderr: "connect EAGAIN\n" },
+        ],
+      ],
+      commands,
+    );
+
+    await expect(removeDeployedProject(conn, "app")).rejects.toThrow(
+      t("pm2Unavailable", { stderr: "[PM2][ERROR] Daemon not running\nconnect EAGAIN" }),
+    );
+    expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
+    expect(commands.some((c) => c.includes("pm2 delete"))).toBe(false);
+    // No daemon was spawned by the probe, so nothing gets killed
+    expect(commands).not.toContain("pm2 kill");
+  });
+
+  it("pm2 jlist поднял свежий демон (баннер, код 0) — удаление прерывается, rm -rf не выполняется", async () => {
+    const commands: string[] = [];
+    // A dead daemon respawns on the probe: banner + empty table, exit 0
+    const banner = "[PM2] Spawning PM2 daemon with pm2_home=/root/.pm2\n[]";
+    const conn = fakeConn([[/^pm2 jlist$/, { stdout: banner }]], commands);
+
+    await expect(removeDeployedProject(conn, "app")).rejects.toThrow(
+      t("pm2Unavailable", { stderr: banner }),
+    );
+    expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
+    expect(commands.some((c) => c.includes("pm2 delete"))).toBe(false);
+    // The empty daemon spawned by the probe is killed, so a retry hits the
+    // banner again instead of mistaking the clean table for "process absent"
+    expect(commands).toContain("pm2 kill");
+  });
+
+  it("демон поднят пробой, а pm2 kill упал — всё равно летит ошибка «pm2 недоступен»", async () => {
+    const commands: string[] = [];
+    const banner = "[PM2] Spawning PM2 daemon with pm2_home=/root/.pm2\n[]";
+    // The kill is best-effort: a dropped connection must not mask the error
+    const conn = fakeConn(
+      [
+        [/^pm2 jlist$/, { stdout: banner }],
+        [/^pm2 kill$/, new Error("connection lost")],
+      ],
+      commands,
+    );
+
+    await expect(removeDeployedProject(conn, "app")).rejects.toThrow(
+      t("pm2Unavailable", { stderr: banner }),
+    );
+    expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
+  });
+
+  it("процесса нет в pm2 (статический сайт) — файлы удаляются без pm2 delete", async () => {
+    const commands: string[] = [];
+    const logs: string[] = [];
+    const conn = fakeConn([[/^pm2 jlist$/, { stdout: "[]" }]], commands);
+
+    await removeDeployedProject(conn, "app", (line) => logs.push(line));
+
+    expect(logs).toContain(t("pm2NotFound"));
+    expect(commands.some((c) => c.includes("pm2 delete"))).toBe(false);
+    expect(commands.some((c) => c.includes("rm -rf '/var/www/app'"))).toBe(true);
+    expect(logs).toContain(t("projectRemoved", { name: "app" }));
+  });
+
+  it("процесс есть — pm2 delete и pm2 save перед удалением файлов", async () => {
+    const commands: string[] = [];
+    const logs: string[] = [];
+    const conn = fakeConn(
+      [[/^pm2 jlist$/, { stdout: jlist("/var/www/app/current") }]],
+      commands,
+    );
+
+    await removeDeployedProject(conn, "app", (line) => logs.push(line));
+
+    expect(commands).toContain("pm2 delete 'app'");
+    expect(commands).toContain("pm2 save --force");
+    expect(logs).toContain(t("pm2Stopped"));
+    const deleteIndex = commands.findIndex((c) => c.includes("pm2 delete"));
+    const rmIndex = commands.findIndex((c) => c.includes("rm -rf"));
+    expect(deleteIndex).toBeGreaterThanOrEqual(0);
+    expect(rmIndex).toBeGreaterThan(deleteIndex);
   });
 });
 
