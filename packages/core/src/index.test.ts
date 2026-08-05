@@ -456,6 +456,19 @@ describe("removeDeployedProject: проба pm2 перед удалением ф
     expect(commands.some((c) => c.includes("pm2 delete"))).toBe(false);
   });
 
+  it("pm2 jlist поднял свежий демон (баннер, код 0) — удаление прерывается, rm -rf не выполняется", async () => {
+    const commands: string[] = [];
+    // A dead daemon respawns on the probe: banner + empty table, exit 0
+    const banner = "[PM2] Spawning PM2 daemon with pm2_home=/root/.pm2\n[]";
+    const conn = fakeConn([[/^pm2 jlist$/, { stdout: banner }]], commands);
+
+    await expect(removeDeployedProject(conn, "app")).rejects.toThrow(
+      t("pm2Unavailable", { stderr: banner }),
+    );
+    expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
+    expect(commands.some((c) => c.includes("pm2 delete"))).toBe(false);
+  });
+
   it("процесса нет в pm2 (статический сайт) — файлы удаляются без pm2 delete", async () => {
     const commands: string[] = [];
     const logs: string[] = [];

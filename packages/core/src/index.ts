@@ -381,7 +381,11 @@ export async function removeDeployedProject(
   // mistaken for a missing process, or the files get removed while the
   // process stays in the pm2 dump and resurrects after a server reboot.
   const jlist = await conn.exec("pm2 jlist");
-  if (jlist.code !== 0) {
+  // A dead daemon does not always fail the probe: pm2 jlist spawns a fresh
+  // daemon, prints its startup banner and exits 0 with an empty process table,
+  // while the stale pm2 dump still holds the process. Treat the banner as
+  // "pm2 was unavailable" too.
+  if (jlist.code !== 0 || /^\[PM2\] Spawning PM2 daemon/m.test(jlist.stdout)) {
     // pm2 often reports failures on stdout ([PM2][ERROR] ...), so include both channels
     const output = [jlist.stdout.trim(), jlist.stderr.trim()].filter(Boolean).join("\n");
     throw new Error(t("pm2Unavailable", { stderr: output }));
