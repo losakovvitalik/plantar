@@ -341,6 +341,9 @@ export async function deployExternalInPlace(
  */
 async function externalEnvFile(conn: SshConnection, appDir: string): Promise<string> {
   const files = await listAppEnvFiles(conn, appDir);
+  // A failed listing must not be mistaken for "no env files": silently
+  // defaulting to .env could read the wrong file or overwrite one on save.
+  if (files === null) throw new Error(t("envListFailed", { dir: appDir }));
   return files[0] ?? ".env";
 }
 

@@ -7,6 +7,7 @@ import {
   getExternalSyncState,
   getExternalVersions,
   parseServerCommits,
+  readExternalEnv,
   writeExternalEnv,
 } from "./external";
 import { t } from "./messages";
@@ -366,6 +367,22 @@ describe("writeExternalEnv", () => {
     const conn = fakeConn([[/base64 -d/, { code: 1, stderr: "disk full" }]], []);
     await expect(writeExternalEnv(conn, "/opt/apps/site", "A=1")).rejects.toThrow(
       /disk full/,
+    );
+  });
+
+  it("листинг папки не удался — ошибка вместо тихой записи в .env", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn([[/^ls -a/, { code: 2 }]], commands);
+    await expect(writeExternalEnv(conn, "/opt/apps/site", "A=1")).rejects.toThrow(
+      t("envListFailed", { dir: "/opt/apps/site" }),
+    );
+    expect(commands.some((c) => c.includes("base64 -d"))).toBe(false);
+  });
+
+  it("чтение при неудавшемся листинге падает так же, как запись", async () => {
+    const conn = fakeConn([[/^ls -a/, { code: 2 }]], []);
+    await expect(readExternalEnv(conn, "/opt/apps/site")).rejects.toThrow(
+      t("envListFailed", { dir: "/opt/apps/site" }),
     );
   });
 });

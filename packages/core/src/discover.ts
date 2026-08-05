@@ -18,14 +18,18 @@ function envFileRank(name: string): number {
   return name.includes(".local") ? 2 : 1;
 }
 
-/** Env-файлы в папке приложения, отсортированные от базового к переопределяющему */
+/**
+ * Env-файлы в папке приложения, отсортированные от базового к переопределяющему.
+ * `null` means the listing itself failed — distinct from a directory that
+ * simply has no env files, so callers can decide instead of assuming ".env".
+ */
 export async function listAppEnvFiles(
   conn: SshConnection,
   appDir: string,
-): Promise<string[]> {
+): Promise<string[] | null> {
   if (!appDir) return [];
   const result = await conn.exec(`ls -a ${shellQuote(appDir)} 2>/dev/null`);
-  if (result.code !== 0) return [];
+  if (result.code !== 0) return null;
   return result.stdout
     .split("\n")
     .map((line) => line.trim())
@@ -39,7 +43,8 @@ export async function listAppEnvFiles(
  * и помечаются комментарием с именем исходного файла.
  */
 export async function readAppEnv(conn: SshConnection, appDir: string): Promise<string> {
-  const files = await listAppEnvFiles(conn, appDir);
+  // During import a failed listing is tolerated the same way as no files
+  const files = (await listAppEnvFiles(conn, appDir)) ?? [];
   const parts: string[] = [];
   for (const file of files) {
     const result = await conn.exec(`cat ${shellQuote(`${appDir}/${file}`)} 2>/dev/null`);
@@ -405,7 +410,8 @@ export async function discoverApps(conn: SshConnection): Promise<DiscoveredApp[]
       errLogPath: proc.errLogPath,
       accessLogPath: site?.accessLog,
       errorLogPath: site?.errorLog,
-      envFiles: await listAppEnvFiles(conn, proc.cwd),
+      // A failed listing is tolerated during discovery — the app is still shown
+      envFiles: (await listAppEnvFiles(conn, proc.cwd)) ?? [],
       repoUrl: repo?.repoUrl,
       branch: repo?.branch,
       repoSubdir: repo?.repoSubdir,

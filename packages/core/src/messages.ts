@@ -24,6 +24,10 @@ const MESSAGES = {
     ru: "✓ {tool} установлен ({version})",
     en: "✓ {tool} installed ({version})",
   },
+  envListFailed: {
+    ru: "Не удалось прочитать содержимое папки приложения {dir} на сервере, поэтому переменные не тронуты. Попробуйте ещё раз.",
+    en: "Could not read the contents of the app folder {dir} on the server, so the variables were left untouched. Please try again.",
+  },
   envSaveFailed: {
     ru: "Не удалось сохранить переменные на сервере:\n{stderr}",
     en: "Failed to save the variables on the server:\n{stderr}",
