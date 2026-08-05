@@ -438,10 +438,19 @@ describe("pickRollbackTarget", () => {
 describe("removeDeployedProject: проба pm2 перед удалением файлов", () => {
   it("pm2 недоступен — удаление прерывается, rm -rf не выполняется", async () => {
     const commands: string[] = [];
-    const conn = fakeConn([[/^pm2 jlist$/, { code: 1, stderr: "connect EAGAIN\n" }]], commands);
+    // pm2 reports the failure on stdout ([PM2][ERROR] ...), not only stderr
+    const conn = fakeConn(
+      [
+        [
+          /^pm2 jlist$/,
+          { code: 1, stdout: "[PM2][ERROR] Daemon not running\n", stderr: "connect EAGAIN\n" },
+        ],
+      ],
+      commands,
+    );
 
     await expect(removeDeployedProject(conn, "app")).rejects.toThrow(
-      t("pm2Unavailable", { stderr: "connect EAGAIN" }),
+      t("pm2Unavailable", { stderr: "[PM2][ERROR] Daemon not running\nconnect EAGAIN" }),
     );
     expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
     expect(commands.some((c) => c.includes("pm2 delete"))).toBe(false);

@@ -382,7 +382,9 @@ export async function removeDeployedProject(
   // process stays in the pm2 dump and resurrects after a server reboot.
   const jlist = await conn.exec("pm2 jlist");
   if (jlist.code !== 0) {
-    throw new Error(t("pm2Unavailable", { stderr: jlist.stderr.trim() }));
+    // pm2 often reports failures on stdout ([PM2][ERROR] ...), so include both channels
+    const output = [jlist.stdout.trim(), jlist.stderr.trim()].filter(Boolean).join("\n");
+    throw new Error(t("pm2Unavailable", { stderr: output }));
   }
   if (parsePm2Jlist(jlist.stdout).some((proc) => proc.name === name)) {
     await run(conn, `pm2 delete '${name}'`, log);
