@@ -452,6 +452,9 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
       onOpenChange={setLoginOpen}
       onLoggedIn={(acc) => {
         setAccount(acc);
+        // Clear a stale status-check error, otherwise the render would show
+        // it as a failed sign-out next to the fresh account (#83)
+        setAccountError(null);
         setLoginOpen(false);
       }}
     />
