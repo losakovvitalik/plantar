@@ -63,7 +63,14 @@ export function RemoveProjectDialog({
       setError(result.error);
       return;
     }
-    await window.plantar.removeProject(project.id);
+    // The app is already stopped and wiped from the server; if dropping the
+    // record from the list fails, keep the dialog open with the error instead
+    // of leaving a sidebar entry that points at nothing (#83)
+    const removed = await window.plantar.removeProject(project.id);
+    if (!removed.ok) {
+      setError(removed.error);
+      return;
+    }
     close();
     await onRemoved();
   }

@@ -117,7 +117,14 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
   }, [open]);
 
   async function signOutGithub() {
-    await window.plantar.githubSignOut();
+    // A failed sign-out leaves the token on disk — keep showing the account
+    // as connected and surface the error instead of "not connected" (#83)
+    const result = await window.plantar.githubSignOut();
+    if (!result.ok) {
+      setAccountError(result.error);
+      return;
+    }
+    setAccountError(null);
     setAccount(null);
   }
 
@@ -282,13 +289,17 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                 </Label>
                 <p
                   className={`mt-1 text-[12.5px] leading-snug ${
-                    !account && accountError ? "text-clay" : "text-ink-soft"
+                    accountError ? "text-clay" : "text-ink-soft"
                   }`}
                 >
-                  {account
-                    ? t("settings.githubConnected", { login: account.login })
-                    : accountError
-                      ? t("settings.githubStatusError", { message: accountError })
+                  {/* Both set at once only when a sign-out failed with the
+                      account still connected on disk (#83) */}
+                  {accountError
+                    ? account
+                      ? t("settings.githubSignOutError", { message: accountError })
+                      : t("settings.githubStatusError", { message: accountError })
+                    : account
+                      ? t("settings.githubConnected", { login: account.login })
                       : t("settings.githubHint")}
                 </p>
               </div>
