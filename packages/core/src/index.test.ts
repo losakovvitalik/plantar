@@ -454,6 +454,8 @@ describe("removeDeployedProject: проба pm2 перед удалением ф
     );
     expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
     expect(commands.some((c) => c.includes("pm2 delete"))).toBe(false);
+    // No daemon was spawned by the probe, so nothing gets killed
+    expect(commands).not.toContain("pm2 kill");
   });
 
   it("pm2 jlist поднял свежий демон (баннер, код 0) — удаление прерывается, rm -rf не выполняется", async () => {
@@ -467,6 +469,27 @@ describe("removeDeployedProject: проба pm2 перед удалением ф
     );
     expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
     expect(commands.some((c) => c.includes("pm2 delete"))).toBe(false);
+    // The empty daemon spawned by the probe is killed, so a retry hits the
+    // banner again instead of mistaking the clean table for "process absent"
+    expect(commands).toContain("pm2 kill");
+  });
+
+  it("демон поднят пробой, а pm2 kill упал — всё равно летит ошибка «pm2 недоступен»", async () => {
+    const commands: string[] = [];
+    const banner = "[PM2] Spawning PM2 daemon with pm2_home=/root/.pm2\n[]";
+    // The kill is best-effort: a dropped connection must not mask the error
+    const conn = fakeConn(
+      [
+        [/^pm2 jlist$/, { stdout: banner }],
+        [/^pm2 kill$/, new Error("connection lost")],
+      ],
+      commands,
+    );
+
+    await expect(removeDeployedProject(conn, "app")).rejects.toThrow(
+      t("pm2Unavailable", { stderr: banner }),
+    );
+    expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
   });
 
   it("процесса нет в pm2 (статический сайт) — файлы удаляются без pm2 delete", async () => {

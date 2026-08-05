@@ -385,7 +385,14 @@ export async function removeDeployedProject(
   // daemon, prints its startup banner and exits 0 with an empty process table,
   // while the stale pm2 dump still holds the process. Treat the banner as
   // "pm2 was unavailable" too.
-  if (jlist.code !== 0 || /^\[PM2\] Spawning PM2 daemon/m.test(jlist.stdout)) {
+  const spawnedByProbe = /^\[PM2\] Spawning PM2 daemon/m.test(jlist.stdout);
+  if (jlist.code !== 0 || spawnedByProbe) {
+    if (spawnedByProbe) {
+      // The probe itself spawned an empty daemon; kill it best-effort so a
+      // retry hits the banner again instead of a clean empty table that looks
+      // like "process absent" while the stale pm2 dump still holds the process.
+      await conn.exec("pm2 kill").catch(() => {});
+    }
     // pm2 often reports failures on stdout ([PM2][ERROR] ...), so include both channels
     const output = [jlist.stdout.trim(), jlist.stderr.trim()].filter(Boolean).join("\n");
     throw new Error(t("pm2Unavailable", { stderr: output }));
