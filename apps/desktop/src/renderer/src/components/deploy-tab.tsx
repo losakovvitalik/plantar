@@ -203,7 +203,7 @@ function StepTimer({
     const id = window.setInterval(update, 1000);
     return () => window.clearInterval(id);
   }, [startRef, resetSignal]);
-  // Счётчик — только на затянувшемся шаге; на быстрых был бы мельтешением
+  // Show the counter only on a lingering step; on quick ones it would flicker
   if (seconds < 5) return null;
   return (
     <span className="tabular-nums">
@@ -354,6 +354,11 @@ export function DeployTab({
       lastSeqRef.current = seq;
       stepStartRef.current = Date.now();
       lineBatchRef.current.push(line);
+      // Cap at push time: backgroundThrottling pauses rAF while the window is
+      // hidden, and only the last MAX_TERMINAL_LINES survive the flush anyway
+      if (lineBatchRef.current.length > MAX_TERMINAL_LINES) {
+        lineBatchRef.current = lineBatchRef.current.slice(-MAX_TERMINAL_LINES);
+      }
       if (flushHandleRef.current === null) {
         flushHandleRef.current = window.requestAnimationFrame(flushLineBatch);
       }
