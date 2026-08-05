@@ -11,7 +11,7 @@ import {
   Rocket,
   Undo2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { Language } from "@plantar/storage";
 import type {
   ProjectConfig,
@@ -182,6 +182,92 @@ function DeployError({
   );
 }
 
+/** Running-step timer, isolated so the 1-second tick re-renders only this
+ *  tiny component instead of the whole tab. Reads the shared start ref on
+ *  every tick; `resetSignal` (the lines array) restarts the tick immediately
+ *  when a new batch of lines lands, mirroring the old per-line reset. */
+function StepTimer({
+  startRef,
+  resetSignal,
+}: {
+  startRef: { current: number };
+  resetSignal: unknown;
+}) {
+  const [seconds, setSeconds] = useState(() =>
+    Math.max(0, Math.floor((Date.now() - startRef.current) / 1000)),
+  );
+  useEffect(() => {
+    const update = () =>
+      setSeconds(Math.max(0, Math.floor((Date.now() - startRef.current) / 1000)));
+    update();
+    const id = window.setInterval(update, 1000);
+    return () => window.clearInterval(id);
+  }, [startRef, resetSignal]);
+  // Show the counter only on a lingering step; on quick ones it would flicker
+  if (seconds < 5) return null;
+  return (
+    <span className="tabular-nums">
+      {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
+    </span>
+  );
+}
+
+/** Terminal body behind memo: re-renders only when a batch of lines lands or
+ *  the command filter toggles — never on the 1-second step tick, which lives
+ *  in StepTimer. All refs are stable, so props stay shallow-equal between
+ *  unrelated parent renders. */
+const Terminal = memo(function Terminal({
+  visibleLines,
+  running,
+  idle,
+  terminalRef,
+  stickRef,
+  stepStartRef,
+}: {
+  visibleLines: string[];
+  running: boolean;
+  /** No run to show yet — placeholder text instead of the spinner */
+  idle: boolean;
+  terminalRef: { current: HTMLDivElement | null };
+  stickRef: { current: boolean };
+  stepStartRef: { current: number };
+}) {
+  const { t } = useI18n();
+  return (
+    <div
+      ref={terminalRef}
+      data-testid="deploy-log"
+      onScroll={() => {
+        const el = terminalRef.current;
+        if (!el) return;
+        stickRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
+      }}
+      className="thin-scroll min-h-0 flex-1 overflow-y-auto rounded-xl bg-soil p-4 font-mono text-[12.5px] leading-relaxed text-sprout"
+    >
+      {visibleLines.length === 0 && (running || idle) ? (
+        <span className="inline-flex items-center gap-2 text-sprout/40">
+          {running && <Loader2 className="size-3.5 shrink-0 animate-spin" />}
+          {running ? t("common.connecting") : t("deploy.terminalEmpty")}
+        </span>
+      ) : (
+        <>
+          {visibleLines.map((line, i) => (
+            <div key={i} className="whitespace-pre-wrap">
+              {line}
+            </div>
+          ))}
+          {running && (
+            <div className="mt-1 flex items-center gap-2 text-sprout/60">
+              <Loader2 className="size-3.5 shrink-0 animate-spin" />
+              <StepTimer startRef={stepStartRef} resetSignal={visibleLines} />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+});
+
 export function DeployTab({
   project,
   server,
@@ -224,17 +310,30 @@ export function DeployTab({
   // Длительность текущего шага: долгие команды (npm install, сборка) не пишут в лог
   // до завершения, и без бегущего счётчика деплой выглядит зависшим.
   // Точка отсчёта — время последней строки, она переживает перемонтирование вкладки.
+  // The 1-second tick and the counter itself live in StepTimer inside Terminal.
   const stepStartRef = useRef(Date.now());
-  const [stepSeconds, setStepSeconds] = useState(0);
-  useEffect(() => {
-    if (!running) return;
-    const id = window.setInterval(() => {
-      setStepSeconds(
-        Math.max(0, Math.floor((Date.now() - stepStartRef.current) / 1000)),
-      );
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [running]);
+
+  // Incoming log lines are collected here and flushed as one state update per
+  // animation frame — a chatty step (npm install) must not render per line
+  const lineBatchRef = useRef<string[]>([]);
+  const flushHandleRef = useRef<number | null>(null);
+
+  function flushLineBatch() {
+    flushHandleRef.current = null;
+    const chunk = lineBatchRef.current;
+    if (chunk.length === 0) return;
+    lineBatchRef.current = [];
+    setLines((prev) => [...prev, ...chunk].slice(-MAX_TERMINAL_LINES));
+  }
+
+  /** Drop batched-but-unflushed lines — they belong to the run being discarded */
+  function clearLineBatch() {
+    if (flushHandleRef.current !== null) {
+      window.cancelAnimationFrame(flushHandleRef.current);
+      flushHandleRef.current = null;
+    }
+    lineBatchRef.current = [];
+  }
 
   useEffect(() => {
     setRun(null);
@@ -243,6 +342,7 @@ export function DeployTab({
     setLinkError(null);
     lastSeqRef.current = 0;
     stickRef.current = true;
+    clearLineBatch();
     let disposed = false;
     let loaded = false;
     // Строки, пришедшие между запросом снимка и ответом, — применяются после снимка
@@ -253,8 +353,15 @@ export function DeployTab({
       if (seq <= lastSeqRef.current) return;
       lastSeqRef.current = seq;
       stepStartRef.current = Date.now();
-      setStepSeconds(0);
-      setLines((prev) => [...prev, line].slice(-MAX_TERMINAL_LINES));
+      lineBatchRef.current.push(line);
+      // Cap at push time: backgroundThrottling pauses rAF while the window is
+      // hidden, and only the last MAX_TERMINAL_LINES survive the flush anyway
+      if (lineBatchRef.current.length > MAX_TERMINAL_LINES) {
+        lineBatchRef.current = lineBatchRef.current.slice(-MAX_TERMINAL_LINES);
+      }
+      if (flushHandleRef.current === null) {
+        flushHandleRef.current = window.requestAnimationFrame(flushLineBatch);
+      }
     };
 
     const unsubscribeLog = window.plantar.onDeployLog((event) => {
@@ -304,9 +411,6 @@ export function DeployTab({
         // Счётчик шага продолжается от последней строки, а не с нуля
         stepStartRef.current =
           Date.parse(state.lastLineAt || state.startedAt) || Date.now();
-        setStepSeconds(
-          Math.max(0, Math.floor((Date.now() - stepStartRef.current) / 1000)),
-        );
       }
       for (const event of pending) append(event.seq, event.line);
     });
@@ -315,6 +419,7 @@ export function DeployTab({
       disposed = true;
       unsubscribeLog();
       unsubscribeFinished();
+      clearLineBatch();
     };
   }, [project.id]);
 
@@ -344,7 +449,7 @@ export function DeployTab({
     lastSeqRef.current = 0;
     stickRef.current = true;
     stepStartRef.current = Date.now();
-    setStepSeconds(0);
+    clearLineBatch();
   }
 
   // Повторный запуск во время работы (двойной клик, двойной прогон эффекта
@@ -485,9 +590,11 @@ export function DeployTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoDeploy]);
 
-  const visibleLines = showCommands
-    ? lines
-    : lines.filter((line) => !line.startsWith("$"));
+  // Memoized: filtering up to 2000 lines must not rerun on unrelated renders
+  const visibleLines = useMemo(
+    () => (showCommands ? lines : lines.filter((line) => !line.startsWith("$"))),
+    [lines, showCommands],
+  );
 
   const lastRunLabel =
     run && !running
@@ -743,43 +850,14 @@ export function DeployTab({
         <div className="text-[12px] text-ink-soft">{lastRunLabel}</div>
       )}
 
-      <div
-        ref={terminalRef}
-        data-testid="deploy-log"
-        onScroll={() => {
-          const el = terminalRef.current;
-          if (!el) return;
-          stickRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
-        }}
-        className="thin-scroll min-h-0 flex-1 overflow-y-auto rounded-xl bg-soil p-4 font-mono text-[12.5px] leading-relaxed text-sprout"
-      >
-        {visibleLines.length === 0 && (running || !run) ? (
-          <span className="inline-flex items-center gap-2 text-sprout/40">
-            {running && <Loader2 className="size-3.5 shrink-0 animate-spin" />}
-            {running ? t("common.connecting") : t("deploy.terminalEmpty")}
-          </span>
-        ) : (
-          <>
-            {visibleLines.map((line, i) => (
-              <div key={i} className="whitespace-pre-wrap">
-                {line}
-              </div>
-            ))}
-            {running && (
-              <div className="mt-1 flex items-center gap-2 text-sprout/60">
-                <Loader2 className="size-3.5 shrink-0 animate-spin" />
-                {/* Счётчик — только на затянувшемся шаге; на быстрых был бы мельтешением */}
-                {stepSeconds >= 5 && (
-                  <span className="tabular-nums">
-                    {Math.floor(stepSeconds / 60)}:
-                    {String(stepSeconds % 60).padStart(2, "0")}
-                  </span>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+      <Terminal
+        visibleLines={visibleLines}
+        running={running}
+        idle={!run}
+        terminalRef={terminalRef}
+        stickRef={stickRef}
+        stepStartRef={stepStartRef}
+      />
 
       {isExternal && config && (
         <MigrateProjectDialog
