@@ -126,14 +126,18 @@ describe("finishRun", () => {
 
   it("success notification obeys the setting, error notification fires even when it is off", () => {
     writeSettings({ ...readSettings(), notifyOnDeploySuccess: false });
-    const logWriter = new DeployLogWriter("app");
-    const { finish, notified } = harness({ logWriter });
+    // finishRun closes the writer — every run gets a writer and a context of its own
+    const success = harness({ logWriter: new DeployLogWriter("app") });
+    success.finish({
+      status: "success",
+      url: "https://site.example/",
+      urlCheck: "answered",
+    });
+    expect(success.notified).toEqual([]);
 
-    finish({ status: "success", url: "https://site.example/", urlCheck: "answered" });
-    expect(notified).toEqual([]);
-
-    finish({ status: "error", err: new Error("boom") });
-    expect(notified).toEqual([[false, undefined]]);
+    const failure = harness({ logWriter: new DeployLogWriter("app") });
+    failure.finish({ status: "error", err: new Error("boom") });
+    expect(failure.notified).toEqual([[false, undefined]]);
   });
 
   it("thrown deploy: error history record plus run.finish with status error", () => {

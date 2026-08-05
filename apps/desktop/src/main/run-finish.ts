@@ -48,34 +48,40 @@ export function finishRun(ctx: RunFinishContext, outcome: RunOutcome): void {
     kind: ctx.kind,
     commit: outcome.commit,
   };
-  if (outcome.status === "success") {
-    if (ctx.logWriter) {
-      appendHistory({
-        ...common,
-        status: "success",
-        url: outcome.url,
-        urlCheck: outcome.urlCheck,
-        logFile: ctx.logWriter.file,
-      });
+  try {
+    if (outcome.status === "success") {
+      if (ctx.logWriter) {
+        appendHistory({
+          ...common,
+          status: "success",
+          url: outcome.url,
+          urlCheck: outcome.urlCheck,
+          logFile: ctx.logWriter.file,
+        });
+      }
+      if (readSettings().notifyOnDeploySuccess) ctx.notify(true, outcome.urlCheck);
+      ctx.run.finish({ status: "success", url: outcome.url, urlCheck: outcome.urlCheck });
+    } else {
+      const message = (outcome.err as Error).message;
+      const code = (outcome.err as { code?: string }).code;
+      // Run status updates first: a disk-write failure must not leave the
+      // project locked in a running deploy
+      ctx.run.finish({ status: "error", error: message, code });
+      ctx.notify(false);
+      if (ctx.logWriter) {
+        ctx.logWriter.write(`\n${t("deployLogError")}: ${message}`);
+        appendHistory({
+          ...common,
+          status: "error",
+          error: message,
+          code,
+          logFile: ctx.logWriter.file,
+        });
+      }
     }
-    if (readSettings().notifyOnDeploySuccess) ctx.notify(true, outcome.urlCheck);
-    ctx.run.finish({ status: "success", url: outcome.url, urlCheck: outcome.urlCheck });
-  } else {
-    const message = (outcome.err as Error).message;
-    const code = (outcome.err as { code?: string }).code;
-    // Run status updates first: a disk-write failure must not leave the
-    // project locked in a running deploy
-    ctx.run.finish({ status: "error", error: message, code });
-    ctx.notify(false);
-    if (ctx.logWriter) {
-      ctx.logWriter.write(`\n${t("deployLogError")}: ${message}`);
-      appendHistory({
-        ...common,
-        status: "error",
-        error: message,
-        code,
-        logFile: ctx.logWriter.file,
-      });
-    }
+  } finally {
+    // The run is over either way — release the log file's descriptor even
+    // when a disk write above threw (the failure still reaches the caller)
+    ctx.logWriter?.close();
   }
 }

@@ -166,6 +166,8 @@ withConnectionOptions(program.command("deploy"))
       console.error(`\n${t("deployLogFile", { file: logWriter.file })}`);
       throw err;
     } finally {
+      // The run is over — release the log file's descriptor
+      logWriter.close();
       conn.close();
       console.log(`\n${t("disconnected")}`);
     }

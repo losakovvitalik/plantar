@@ -1,5 +1,4 @@
 import {
-  appendFileSync,
   chmodSync,
   closeSync,
   copyFileSync,
@@ -53,15 +52,30 @@ function logsDir(project: string): string {
 /** Пишет лог деплоя в файл по мере выполнения */
 export class DeployLogWriter {
   readonly file: string;
+  /** One descriptor for the whole run: appending per line must not pay an
+   *  open+close pair of syscalls on every line of a build log. Null after
+   *  close() — the run is over, nothing may write. */
+  private fd: number | null;
 
   constructor(project: string) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     this.file = path.join(logsDir(project), `deploy-${timestamp}.log`);
-    writeFileSync(this.file, "");
+    this.fd = openSync(this.file, "w");
   }
 
   write(line: string): void {
-    appendFileSync(this.file, line + "\n");
+    // A write after close() must fail loudly instead of silently hitting a
+    // recycled descriptor of some unrelated file
+    if (this.fd === null) throw new Error(`deploy log is closed: ${this.file}`);
+    writeSync(this.fd, line + "\n");
+  }
+
+  /** Releases the descriptor when the run ends; safe to call twice */
+  close(): void {
+    if (this.fd === null) return;
+    const fd = this.fd;
+    this.fd = null;
+    closeSync(fd);
   }
 }
 
@@ -575,9 +589,10 @@ function projectLogNames(records: DeployRecord[]): string[] {
  * The name of a file, though, only says when its run started: an overlapping
  * run that started earlier (the same app on a staging and a production server,
  * or the CLI next to the app) is still appending to a file older than the
- * record just written. Deleting it would not even free the space —
- * appendFileSync recreates the file — it would only lose the run's log, so a
- * recently written file is left alone regardless of its name. A quiet stretch
+ * record just written. Deleting it would not even free the space — the
+ * writer holds the file open until the run ends — it would only lose the
+ * run's log, so a recently written file is left alone regardless of its
+ * name. A quiet stretch
  * (a long remote build writes nothing for a while) would still look dead by
  * mtime, so a run started within the last day is kept as well: too conservative
  * costs a few stale files, too eager loses a running deploy's log.
