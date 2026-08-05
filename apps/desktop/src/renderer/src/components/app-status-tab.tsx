@@ -282,6 +282,7 @@ export function AppStatusTab({
           open={httpsOpen}
           onOpenChange={setHttpsOpen}
           askPassword={askPassword}
+          onEnabled={() => load()}
         />
       )}
       {canEnableVisitsLog && external?.nginxConfFile && config && (

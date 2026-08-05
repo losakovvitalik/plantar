@@ -596,6 +596,8 @@ export const ru = {
   "settings.saveError": "Не удалось сохранить настройки: {message}",
   "settings.githubStatusError":
     "Не удалось проверить подключение GitHub: {message}",
+  "settings.githubSignOutError":
+    "Не удалось выйти из аккаунта GitHub: {message}",
 } as const;
 
 export type MessageKey = keyof typeof ru;

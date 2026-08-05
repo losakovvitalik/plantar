@@ -596,4 +596,6 @@ export const en: Record<MessageKey, string> = {
   "settings.saveError": "Failed to save settings: {message}",
   "settings.githubStatusError":
     "Failed to check the GitHub connection: {message}",
+  "settings.githubSignOutError":
+    "Failed to sign out of the GitHub account: {message}",
 };

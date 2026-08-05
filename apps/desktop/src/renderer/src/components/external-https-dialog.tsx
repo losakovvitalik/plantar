@@ -20,6 +20,8 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   askPassword: (server: ServerRecord) => Promise<string | null>;
+  /** Called after the certificate is issued — reload the status snapshot */
+  onEnabled: () => Promise<void> | void;
 }
 
 /**
@@ -34,6 +36,7 @@ export function ExternalHttpsDialog({
   open,
   onOpenChange,
   askPassword,
+  onEnabled,
 }: Props) {
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
@@ -61,6 +64,7 @@ export function ExternalHttpsDialog({
       return;
     }
     setDone(true);
+    await onEnabled();
   }
 
   return (

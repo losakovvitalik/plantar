@@ -111,13 +111,26 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
         setLoadError(result.error);
       }
       const acc = await window.plantar.githubAccount();
-      if (acc.ok) setAccount(acc.data);
-      else setAccountError(acc.error);
+      if (acc.ok) {
+        setAccount(acc.data);
+      } else {
+        // Drop the stale account from a previous open, otherwise the render
+        // treats a failed status check as a failed sign-out (#83)
+        setAccount(null);
+        setAccountError(acc.error);
+      }
     })();
   }, [open]);
 
   async function signOutGithub() {
-    await window.plantar.githubSignOut();
+    // A failed sign-out leaves the token on disk — keep showing the account
+    // as connected and surface the error instead of "not connected" (#83)
+    const result = await window.plantar.githubSignOut();
+    if (!result.ok) {
+      setAccountError(result.error);
+      return;
+    }
+    setAccountError(null);
     setAccount(null);
   }
 
@@ -282,13 +295,17 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
                 </Label>
                 <p
                   className={`mt-1 text-[12.5px] leading-snug ${
-                    !account && accountError ? "text-clay" : "text-ink-soft"
+                    accountError ? "text-clay" : "text-ink-soft"
                   }`}
                 >
-                  {account
-                    ? t("settings.githubConnected", { login: account.login })
-                    : accountError
-                      ? t("settings.githubStatusError", { message: accountError })
+                  {/* Both set at once only when a sign-out failed with the
+                      account still connected on disk (#83) */}
+                  {accountError
+                    ? account
+                      ? t("settings.githubSignOutError", { message: accountError })
+                      : t("settings.githubStatusError", { message: accountError })
+                    : account
+                      ? t("settings.githubConnected", { login: account.login })
                       : t("settings.githubHint")}
                 </p>
               </div>
@@ -435,6 +452,9 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
       onOpenChange={setLoginOpen}
       onLoggedIn={(acc) => {
         setAccount(acc);
+        // Clear a stale status-check error, otherwise the render would show
+        // it as a failed sign-out next to the fresh account (#83)
+        setAccountError(null);
         setLoginOpen(false);
       }}
     />
