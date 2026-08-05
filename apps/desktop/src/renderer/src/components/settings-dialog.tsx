@@ -111,8 +111,14 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
         setLoadError(result.error);
       }
       const acc = await window.plantar.githubAccount();
-      if (acc.ok) setAccount(acc.data);
-      else setAccountError(acc.error);
+      if (acc.ok) {
+        setAccount(acc.data);
+      } else {
+        // Drop the stale account from a previous open, otherwise the render
+        // treats a failed status check as a failed sign-out (#83)
+        setAccount(null);
+        setAccountError(acc.error);
+      }
     })();
   }, [open]);
 
