@@ -2109,8 +2109,14 @@ app.whenReady().then(() => {
                   onClose: () => {
                     logStreams.delete(streamId);
                     if (snapshot) {
-                      saveServerLogSnapshot(name, "access", snapshot.access);
-                      saveServerLogSnapshot(name, "error", snapshot.error);
+                      // Best-effort: a failed write inside an ssh2 event callback
+                      // has no catcher above and would crash the main process
+                      try {
+                        saveServerLogSnapshot(name, "access", snapshot.access);
+                        saveServerLogSnapshot(name, "error", snapshot.error);
+                      } catch (snapshotErr) {
+                        console.error("logs: failed to save server log snapshot", snapshotErr);
+                      }
                     }
                     send("logs:stream-end", { streamId });
                     closed();

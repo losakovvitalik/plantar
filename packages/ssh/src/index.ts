@@ -166,6 +166,14 @@ export class SshConnection {
           closed = true;
           handlers.onClose();
         });
+        // An unhandled "error" event would crash the process; treat a transport
+        // error as end-of-stream. reject() is a no-op once the promise settled.
+        stream.on("error", (streamErr: Error) => {
+          reject(streamErr);
+          if (closed) return;
+          closed = true;
+          handlers.onClose();
+        });
         // end() шлёт EOF — команда вида «tail … & cat; kill …» завершает себя сама
         resolve({ stop: () => stream.end() });
       });
@@ -205,6 +213,12 @@ export class SshConnection {
           // null — канал закрылся без exit-кода (обрыв соединения, kill по сигналу);
           // считаем это ошибкой, иначе оборванная команда выглядит успешной
           resolve({ stdout, stderr, code: code ?? -1 });
+        });
+        // An unhandled "error" event would crash the process. reject() is
+        // a no-op if "close" (or the timeout) already settled the promise.
+        stream.on("error", (streamErr: Error) => {
+          clearTimeout(timer);
+          reject(streamErr);
         });
       });
     });
