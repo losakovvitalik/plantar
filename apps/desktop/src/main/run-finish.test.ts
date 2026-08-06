@@ -126,14 +126,18 @@ describe("finishRun", () => {
 
   it("success notification obeys the setting, error notification fires even when it is off", () => {
     writeSettings({ ...readSettings(), notifyOnDeploySuccess: false });
-    const logWriter = new DeployLogWriter("app");
-    const { finish, notified } = harness({ logWriter });
+    // finishRun closes the writer — every run gets a writer and a context of its own
+    const success = harness({ logWriter: new DeployLogWriter("app") });
+    success.finish({
+      status: "success",
+      url: "https://site.example/",
+      urlCheck: "answered",
+    });
+    expect(success.notified).toEqual([]);
 
-    finish({ status: "success", url: "https://site.example/", urlCheck: "answered" });
-    expect(notified).toEqual([]);
-
-    finish({ status: "error", err: new Error("boom") });
-    expect(notified).toEqual([[false, undefined]]);
+    const failure = harness({ logWriter: new DeployLogWriter("app") });
+    failure.finish({ status: "error", err: new Error("boom") });
+    expect(failure.notified).toEqual([[false, undefined]]);
   });
 
   it("thrown deploy: error history record plus run.finish with status error", () => {
@@ -159,6 +163,40 @@ describe("finishRun", () => {
     expect(records[0].kind).toBeUndefined();
     expect(finishes).toEqual([{ status: "error", error: "deploy failed", code: undefined }]);
     expect(notified).toEqual([[false, undefined]]);
+  });
+
+  it("re-entry after a throwing success pass: the closed writer skips only the log line, the error record still lands", () => {
+    const logWriter = new DeployLogWriter("app");
+    // The success notification throws — the realistic shape of a success
+    // pass failing after the writer's finally already ran
+    const { finish, finishes } = harness({
+      logWriter,
+      notify: (success) => {
+        if (success) throw new Error("notification pipe broke");
+      },
+    });
+
+    // First pass throws past finishRun into the orchestrator's catch...
+    expect(() =>
+      finish({ status: "success", url: "https://site.example/" }),
+    ).toThrow("notification pipe broke");
+    expect(logWriter.closed).toBe(true);
+
+    // ...which re-enters with the original failure. The closed writer must
+    // not mask it with a "deploy log is closed" throw
+    expect(() =>
+      finish({ status: "error", err: new Error("notification pipe broke") }),
+    ).not.toThrow();
+
+    // Both passes reached history; the run itself only closed on the second
+    // pass — the success one threw before its run.finish
+    expect(readHistory()).toMatchObject([
+      { status: "success" },
+      { status: "error", error: "notification pipe broke" },
+    ]);
+    expect(finishes).toEqual([
+      { status: "error", error: "notification pipe broke", code: undefined },
+    ]);
   });
 
   it("failure before the log file exists: no history record, but the run closes and notifies", () => {

@@ -209,18 +209,40 @@ function currentName(project: ProjectRecord): string {
 }
 
 /**
+ * One snapshot of the JSON stores the history lookups read. A sweep over many
+ * projects builds it once and passes it down — otherwise every project would
+ * re-read servers.json, projects.json and the whole history.json from disk.
+ */
+interface HistoryStores {
+  servers: ServerRecord[];
+  projects: ProjectRecord[];
+  history: DeployRecord[];
+}
+
+function readHistoryStores(): HistoryStores {
+  return { servers: readServers(), projects: readProjects(), history: readHistory() };
+}
+
+/**
  * The project to look its history records up by: the id of the project record
  * plus every name it deployed under — runs from before a rename are recorded
  * under the previous name and without an id (from the CLI or before the field
  * existed).
  */
-function historyIdentity(project: ProjectRecord): ProjectHistoryIdentity {
-  const server = getServer(project.serverId);
-  const hostOf = new Map(readServers().map((s) => [s.id, s.host]));
+function historyIdentity(
+  project: ProjectRecord,
+  stores: Pick<HistoryStores, "servers" | "projects"> = {
+    servers: readServers(),
+    projects: readProjects(),
+  },
+): ProjectHistoryIdentity {
+  const server = stores.servers.find((s) => s.id === project.serverId);
+  if (!server) throw new Error(t("serverNotFound"));
+  const hostOf = new Map(stores.servers.map((s) => [s.id, s.host]));
   // A previous name that another project on the same host goes by today belongs
   // to that project: its records and its log directory are no longer ours
   const taken = new Set(
-    readProjects()
+    stores.projects
       .filter((p) => p.id !== project.id && hostOf.get(p.serverId) === server.host)
       .map((p) => currentName(p)),
   );
@@ -232,11 +254,12 @@ function historyIdentity(project: ProjectRecord): ProjectHistoryIdentity {
 }
 
 /** Записи истории деплоев проекта, новыми вперёд (включая прогоны до переименования) */
-function projectHistory(project: ProjectRecord): DeployRecord[] {
-  const identity = historyIdentity(project);
-  return readHistory()
-    .filter((r) => matchesProject(r, identity))
-    .reverse();
+function projectHistory(
+  project: ProjectRecord,
+  stores: HistoryStores = readHistoryStores(),
+): DeployRecord[] {
+  const identity = historyIdentity(project, stores);
+  return stores.history.filter((r) => matchesProject(r, identity)).reverse();
 }
 
 /**
@@ -312,12 +335,15 @@ async function collectServerAppStatuses(
   const sites: { projectId: string; url: string }[] = [];
   await withServer(server, undefined, async (conn) => {
     const pm2 = await pm2ProcessStatuses(conn);
-    for (const project of readProjects().filter((p) => p.serverId === server.id)) {
+    // One read of each store for the whole sweep — projectHistory would
+    // otherwise re-read servers/projects/history per static site
+    const stores = readHistoryStores();
+    for (const project of stores.projects.filter((p) => p.serverId === server.id)) {
       const { status, siteUrl } = appStatusOf(project, pm2, server.host);
       apps[project.id] = status;
       const deployedStatic =
         status === "static" &&
-        projectHistory(project).some((r) => r.status === "success");
+        projectHistory(project, stores).some((r) => r.status === "success");
       if (siteUrl && (status === "running" || deployedStatic)) {
         sites.push({ projectId: project.id, url: siteUrl });
       }

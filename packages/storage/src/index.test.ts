@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  DeployLogWriter,
   appendHistory,
   dataDir,
   listDeployLogs,
@@ -145,6 +146,26 @@ describe("чтение битых JSON-хранилищ", () => {
     writeFileSync(full, "second-corruption");
     readServers();
     expect(readFileSync(`${full}.broken`, "utf8")).toBe("first-corruption");
+  });
+});
+
+describe("DeployLogWriter", () => {
+  it("пишет строки после создания, close() сбрасывает и освобождает дескриптор", () => {
+    const writer = new DeployLogWriter("app");
+    // closed mirrors the descriptor state, so re-entered callers can check it
+    expect(writer.closed).toBe(false);
+    writer.write("первая строка");
+    writer.write("вторая строка");
+    writer.close();
+    expect(writer.closed).toBe(true);
+    // The content is fully on disk after close()
+    expect(readFileSync(writer.file, "utf8")).toBe("первая строка\nвторая строка\n");
+    // The descriptor is released: a write after close fails loudly instead
+    // of hitting a recycled descriptor of some unrelated file
+    expect(() => writer.write("после закрытия")).toThrow();
+    expect(readFileSync(writer.file, "utf8")).toBe("первая строка\nвторая строка\n");
+    // close() is safe to call twice
+    expect(() => writer.close()).not.toThrow();
   });
 });
 
