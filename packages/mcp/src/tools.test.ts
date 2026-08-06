@@ -95,16 +95,24 @@ describe("list_servers", () => {
 
 describe("get_server_info", () => {
   it("returns the server info collected over SSH", async () => {
+    // getServerInfo runs all checks as one combined command; each check's
+    // output is fenced by section/exit markers (see serverInfoCommand in core)
+    const section = (name: string, output: string, code = 0) =>
+      `__PLANTAR_SECTION__${name}\n${output}\n__PLANTAR_EXIT__${code}\n`;
     const conn = fakeConn((cmd) => {
-      if (cmd.includes("/etc/os-release")) {
+      if (cmd.includes("__PLANTAR_SECTION__")) {
         return {
-          stdout: 'ID=ubuntu\nVERSION_ID="24.04"\nPRETTY_NAME="Ubuntu 24.04 LTS"\n',
+          stdout:
+            section(
+              "os-release",
+              'ID=ubuntu\nVERSION_ID="24.04"\nPRETTY_NAME="Ubuntu 24.04 LTS"',
+            ) +
+            section("nproc", "2") +
+            section("meminfo", "MemTotal:  2048000 kB") +
+            section("disk", "10485760") +
+            section("tool:node", "v22.0.0"),
         };
       }
-      if (cmd.includes("nproc")) return { stdout: "2\n" };
-      if (cmd.includes("MemTotal")) return { stdout: "MemTotal:  2048000 kB\n" };
-      if (cmd.includes("df -k")) return { stdout: "10485760\n" };
-      if (cmd.startsWith("node ")) return { stdout: "v22.0.0\n" };
       return { code: 1 };
     });
     const provider = makeProvider({

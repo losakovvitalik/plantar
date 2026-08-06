@@ -134,28 +134,72 @@ function parseOsRelease(text: string, field: string): string {
   return match ? match[1].replace(/^"|"$/g, "") : "";
 }
 
+// Markers separating the checks combined into one shell command. All ~10
+// checks used to be separate execs (sequential round-trips); running them in
+// parallel instead is unsafe — each parallel exec opens its own SSH channel
+// and typical sshd MaxSessions=10 answers the excess with "Channel open
+// failure" — so they are joined into a single exec.
+const SERVER_INFO_SECTION = "__PLANTAR_SECTION__";
+const SERVER_INFO_EXIT = "__PLANTAR_EXIT__";
+
+/** All server checks of getServerInfo as one shell command (one SSH round-trip) */
+export function serverInfoCommand(): string {
+  const sections: Array<[string, string]> = [
+    ["os-release", "cat /etc/os-release"],
+    ["nproc", "nproc"],
+    ["meminfo", "grep MemTotal /proc/meminfo"],
+    ["disk", "df -k / | tail -1 | awk '{print $4}'"],
+    ...Object.entries(TOOL_VERSION_COMMANDS).map(
+      ([tool, command]): [string, string] => [`tool:${tool}`, command],
+    ),
+  ];
+  return sections
+    .map(
+      ([name, command]) =>
+        `echo '${SERVER_INFO_SECTION}${name}'; ${command}; echo "${SERVER_INFO_EXIT}$?"`,
+    )
+    .join("; ");
+}
+
+/** Splits the combined serverInfoCommand output back into per-check results */
+export function parseServerInfoOutput(
+  stdout: string,
+): Map<string, { output: string; code: number }> {
+  const sections = new Map<string, { output: string; code: number }>();
+  for (const part of stdout.split(SERVER_INFO_SECTION).slice(1)) {
+    const newline = part.indexOf("\n");
+    if (newline === -1) continue;
+    const name = part.slice(0, newline).trim();
+    const body = part.slice(newline + 1);
+    // The exit marker may share a line with output that lacks a trailing newline
+    const exit = body.match(new RegExp(`${SERVER_INFO_EXIT}(\\d+)`));
+    sections.set(name, {
+      output: (exit ? body.slice(0, exit.index) : body).trim(),
+      code: exit ? Number(exit[1]) : -1,
+    });
+  }
+  return sections;
+}
+
 export async function getServerInfo(conn: SshConnection): Promise<ServerInfo> {
-  const osRelease = (await conn.exec("cat /etc/os-release")).stdout;
+  const combined = await conn.exec(serverInfoCommand());
+  const sections = parseServerInfoOutput(combined.stdout);
+  const output = (name: string) => sections.get(name)?.output ?? "";
+
+  const osRelease = output("os-release");
   const id = parseOsRelease(osRelease, "ID");
   const version = parseOsRelease(osRelease, "VERSION_ID");
   const pretty = parseOsRelease(osRelease, "PRETTY_NAME");
 
-  const cpuCores = parseInt((await conn.exec("nproc")).stdout.trim(), 10);
-
-  const memKb = parseInt(
-    (await conn.exec("grep MemTotal /proc/meminfo")).stdout.replace(/\D/g, ""),
-    10,
-  );
-
-  const diskFreeKb = parseInt(
-    (await conn.exec("df -k / | tail -1 | awk '{print $4}'")).stdout.trim(),
-    10,
-  );
+  const cpuCores = parseInt(output("nproc"), 10);
+  const memKb = parseInt(output("meminfo").replace(/\D/g, ""), 10);
+  const diskFreeKb = parseInt(output("disk"), 10);
 
   const tools: Record<string, string | null> = {};
-  for (const [tool, versionCommand] of Object.entries(TOOL_VERSION_COMMANDS)) {
-    const result = await conn.exec(versionCommand);
-    tools[tool] = result.code === 0 ? result.stdout.trim() || result.stderr.trim() : null;
+  for (const tool of Object.keys(TOOL_VERSION_COMMANDS)) {
+    const section = sections.get(`tool:${tool}`);
+    // Version commands redirect stderr to stdout, so the output holds both
+    tools[tool] = section && section.code === 0 ? section.output : null;
   }
 
   return {
