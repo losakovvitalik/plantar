@@ -1,5 +1,6 @@
 import { BrowserWindow } from "electron";
 import type { SiteCheckStatus } from "@plantar/core";
+import type { DeployKind, DeployRunState, IpcEventMap } from "../shared/ipc";
 import { t } from "./i18n";
 
 /**
@@ -8,33 +9,6 @@ import { t } from "./i18n";
  * живёт на событиях deploy:log / deploy:finished. Завершённый прогон
  * остаётся в реестре как «последний» — не удаляется.
  */
-
-/** migrate — moving an external project under Plantar management: after it
- *  fails the old pm2 process is already gone, so the GUI must not offer
- *  the "return to previous version" recovery */
-export type DeployKind = "deploy" | "rollback" | "migrate";
-
-/** Снимок прогона для вкладки «Деплой»; interrupted — только у прогонов,
- *  восстановленных с диска (приложение закрыли посреди деплоя) */
-export interface DeployRunState {
-  kind: DeployKind;
-  status: "running" | "success" | "error" | "interrupted";
-  /** Хвост лога; полный лог — в файле */
-  lines: string[];
-  /** Порядковый номер последней строки: события с номером не больше него
-   *  renderer отбрасывает — закрывает гонку между снимком и подпиской */
-  lastSeq: number;
-  startedAt: string;
-  /** Время последней строки — счётчик текущего шага продолжается от неё */
-  lastLineAt: string;
-  url?: string;
-  /** How the address answered the availability check after the run;
-   *  undefined when there was no address to check */
-  urlCheck?: SiteCheckStatus;
-  error?: string;
-  /** Машинный код ошибки (например npm-peer-conflict) для действий в GUI */
-  errorCode?: string;
-}
 
 interface DeployRun {
   kind: DeployKind;
@@ -65,7 +39,7 @@ const runs = new Map<string, DeployRun>();
 const MAX_RUN_LINES = 2000;
 
 /** Рассылка только живым окнам: закрытие окна не должно ронять деплой */
-function broadcast(channel: string, payload: unknown): void {
+function broadcast<C extends keyof IpcEventMap>(channel: C, payload: IpcEventMap[C]): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send(channel, payload);
   }

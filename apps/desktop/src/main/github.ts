@@ -2,6 +2,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { safeStorage } from "electron";
 import { dataDir } from "@plantar/storage";
+import type { DeviceLogin, GithubAccount } from "../shared/ipc";
 import { t } from "./i18n";
 
 /**
@@ -32,16 +33,6 @@ export function getToken(): string | null {
   } catch {
     return null;
   }
-}
-
-export interface GithubAccount {
-  login: string;
-  /**
-   * Токену разрешено менять файлы автодеплоя (.github/workflows) — scope workflow.
-   * У входов, сделанных до появления «деплоя при коммите», такого права нет:
-   * права токена не меняются задним числом, нужен повторный вход.
-   */
-  canWriteWorkflows: boolean;
 }
 
 /** Как аккаунт лежит на диске: список выданных GitHub прав, а не готовый флаг */
@@ -75,16 +66,6 @@ function storeToken(token: string): void {
     throw new Error(t("keychainUnavailable"));
   }
   writeFileSync(tokenFile(), safeStorage.encryptString(token), { mode: 0o600 });
-}
-
-export interface DeviceLogin {
-  userCode: string;
-  verificationUri: string;
-  deviceCode: string;
-  /** Интервал опроса в секундах */
-  interval: number;
-  /** Время жизни кода в секундах */
-  expiresIn: number;
 }
 
 async function postJson(

@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { safeStorage } from "electron";
 import { SshConnection, shellQuote } from "@plantar/ssh";
 import { keysDir, readServers, writeServers } from "@plantar/storage";
+import type { DetectedSshKey, SshConfigHost } from "../shared/ipc";
 import { t } from "./i18n";
 
 const execFileAsync = promisify(execFile);
@@ -118,12 +119,6 @@ export function looksLikePrivateKey(content: string): boolean {
   return content.startsWith("-----BEGIN") && content.includes("PRIVATE KEY");
 }
 
-export interface DetectedSshKey {
-  path: string;
-  /** Имя файла — для показа в списке выбора */
-  label: string;
-}
-
 /**
  * Ищет приватные ключи в ~/.ssh — для сценария «ключ уже настроен через
  * панель хостинга». Нечитаемые и посторонние файлы (конфиги, .pub) пропускаются.
@@ -151,17 +146,6 @@ export function detectUserSshKeys(): DetectedSshKey[] {
     }
   }
   return found;
-}
-
-/** Запись из ~/.ssh/config, пригодная для предзаполнения формы добавления сервера */
-export interface SshConfigHost {
-  /** Алиас из строки Host — идёт в название сервера */
-  name: string;
-  host: string;
-  port?: number;
-  user?: string;
-  /** Путь к ключу (IdentityFile), если файл существует */
-  identityFile?: string;
 }
 
 // Git-хостинги в ~/.ssh/config — не серверы для деплоя, их не предлагаем

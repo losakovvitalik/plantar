@@ -1,190 +1,142 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { IpcEventMap, IpcInvokeMap, IpcResult, PlantarApi } from "../shared/ipc";
 
-const invoke = (channel: string, args?: unknown) => ipcRenderer.invoke(channel, args);
+// The one place the untyped ipcRenderer.invoke meets the shared registry:
+// each channel's args and result come from IpcInvokeMap, the same map the
+// `handle` wrapper in main is checked against
+const invoke = <C extends keyof IpcInvokeMap>(
+  channel: C,
+  ...args: IpcInvokeMap[C]["args"] extends void ? [] : [IpcInvokeMap[C]["args"]]
+): Promise<IpcResult<IpcInvokeMap[C]["result"]>> => ipcRenderer.invoke(channel, ...args);
 
-const api = {
+// Typed push-event subscription; the returned function unsubscribes
+const subscribe = <C extends keyof IpcEventMap>(
+  channel: C,
+  callback: (event: IpcEventMap[C]) => void,
+): (() => void) => {
+  const handler = (_e: unknown, data: IpcEventMap[C]) => callback(data);
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.removeListener(channel, handler);
+};
+
+const api: PlantarApi = {
   listServers: () => invoke("servers:list"),
-  addServer: (input: unknown) => invoke("servers:add", input),
-  removeServer: (id: string) => invoke("servers:remove", id),
-  reorderServers: (ids: string[]) => invoke("servers:reorder", ids),
+  addServer: (input) => invoke("servers:add", input),
+  removeServer: (id) => invoke("servers:remove", id),
+  reorderServers: (ids) => invoke("servers:reorder", ids),
   detectSshKeys: () => invoke("ssh:detectKeys"),
   pickSshKeyFile: () => invoke("ssh:pickKey"),
   listSshConfigHosts: () => invoke("ssh:configHosts"),
 
   listProjects: () => invoke("projects:list"),
-  reorderProjects: (serverId: string, ids: string[]) =>
-    invoke("projects:reorder", { serverId, ids }),
+  reorderProjects: (serverId, ids) => invoke("projects:reorder", { serverId, ids }),
   pickProject: () => invoke("projects:pick"),
-  listRepoBranches: (repoUrl: string) => invoke("repo:branches", repoUrl),
-  cloneRepo: (repoUrl: string, branch: string) =>
-    invoke("projects:cloneRepo", { repoUrl, branch }),
-  cancelClone: (clonePath: string) => invoke("projects:cancelClone", clonePath),
-  addProject: (input: unknown) => invoke("projects:add", input),
-  discoverApps: (serverId: string, password?: string) =>
-    invoke("server:discover", { serverId, password }),
-  importProject: (input: unknown) => invoke("projects:import", input),
-  linkProjectFolder: (projectId: string) => invoke("projects:linkFolder", projectId),
-  linkProjectRepo: (projectId: string) => invoke("projects:linkRepo", projectId),
-  removeProject: (id: string) => invoke("projects:remove", id),
-  removeProjectFromServer: (projectId: string, password?: string) =>
+  listRepoBranches: (repoUrl) => invoke("repo:branches", repoUrl),
+  cloneRepo: (repoUrl, branch) => invoke("projects:cloneRepo", { repoUrl, branch }),
+  cancelClone: (clonePath) => invoke("projects:cancelClone", clonePath),
+  addProject: (input) => invoke("projects:add", input),
+  discoverApps: (serverId, password) => invoke("server:discover", { serverId, password }),
+  importProject: (input) => invoke("projects:import", input),
+  linkProjectFolder: (projectId) => invoke("projects:linkFolder", projectId),
+  linkProjectRepo: (projectId) => invoke("projects:linkRepo", projectId),
+  removeProject: (id) => invoke("projects:remove", id),
+  removeProjectFromServer: (projectId, password) =>
     invoke("projects:removeFromServer", { projectId, password }),
-  readProjectConfig: (projectId: string) => invoke("projects:readConfig", projectId),
-  writeProjectConfig: (projectId: string, config: unknown, subdir?: string) =>
+  readProjectConfig: (projectId) => invoke("projects:readConfig", projectId),
+  writeProjectConfig: (projectId, config, subdir) =>
     invoke("projects:writeConfig", { projectId, config, subdir }),
-  setProjectBranch: (projectId: string, branch: string) =>
+  setProjectBranch: (projectId, branch) =>
     invoke("projects:setBranch", { projectId, branch }),
-  pickSubdir: (root: string) => invoke("projects:pickSubdir", root),
-  getCommitsCache: (projectId: string) => invoke("git:commitsCache", projectId),
-  getCommitsView: (projectId: string) => invoke("git:commitsView", projectId),
+  pickSubdir: (root) => invoke("projects:pickSubdir", root),
+  getCommitsCache: (projectId) => invoke("git:commitsCache", projectId),
+  getCommitsView: (projectId) => invoke("git:commitsView", projectId),
 
   getSettings: () => invoke("settings:get"),
-  setSettings: (settings: unknown) => invoke("settings:set", settings),
+  setSettings: (settings) => invoke("settings:set", settings),
   resolveMcpPort: () => invoke("mcp:resolvePort"),
 
   githubAccount: () => invoke("github:account"),
   githubStartLogin: () => invoke("github:startLogin"),
-  githubPollLogin: (deviceCode: string, interval: number, expiresIn: number) =>
+  githubPollLogin: (deviceCode, interval, expiresIn) =>
     invoke("github:pollLogin", { deviceCode, interval, expiresIn }),
   githubSignOut: () => invoke("github:signOut"),
-  setupGithubActions: (projectId: string, password?: string) =>
+  setupGithubActions: (projectId, password) =>
     invoke("github:setupActions", { projectId, password }),
 
-  listHistory: (projectId: string) => invoke("history:list", projectId),
-  readDeployLog: (logFile: string) => invoke("history:readLog", logFile),
+  listHistory: (projectId) => invoke("history:list", projectId),
+  readDeployLog: (logFile) => invoke("history:readLog", logFile),
 
-  listProjectFiles: (projectId: string, path: string, password?: string) =>
+  listProjectFiles: (projectId, path, password) =>
     invoke("files:list", { projectId, path, password }),
-  readProjectFile: (projectId: string, path: string, password?: string) =>
+  readProjectFile: (projectId, path, password) =>
     invoke("files:read", { projectId, path, password }),
-  readRelatedFile: (projectId: string, related: string, password?: string) =>
+  readRelatedFile: (projectId, related, password) =>
     invoke("files:read", { projectId, related, password }),
-  listRelatedFiles: (projectId: string, password?: string) =>
+  listRelatedFiles: (projectId, password) =>
     invoke("files:related", { projectId, password }),
 
-  readEnv: (projectId: string, password?: string) => invoke("env:read", { projectId, password }),
-  writeEnv: (projectId: string, content: string, password?: string) =>
+  readEnv: (projectId, password) => invoke("env:read", { projectId, password }),
+  writeEnv: (projectId, content, password) =>
     invoke("env:write", { projectId, content, password }),
-  listLocalEnvFiles: (projectId: string) => invoke("env:listLocal", projectId),
-  readLocalEnvFile: (projectId: string, file: string) =>
-    invoke("env:readLocal", { projectId, file }),
+  listLocalEnvFiles: (projectId) => invoke("env:listLocal", projectId),
+  readLocalEnvFile: (projectId, file) => invoke("env:readLocal", { projectId, file }),
 
-  getServerInfo: (serverId: string, password?: string) =>
-    invoke("server:info", { serverId, password }),
-  isServerConnected: (serverId: string) => invoke("server:isConnected", serverId),
-  getAppStatuses: (serverId: string) => invoke("server:appStatuses", { serverId }),
+  getServerInfo: (serverId, password) => invoke("server:info", { serverId, password }),
+  isServerConnected: (serverId) => invoke("server:isConnected", serverId),
+  getAppStatuses: (serverId) => invoke("server:appStatuses", { serverId }),
   getAppStatusCache: () => invoke("server:appStatusesCache"),
-  getMonitoringStatus: (serverId: string, password?: string) =>
+  getMonitoringStatus: (serverId, password) =>
     invoke("monitoring:status", { serverId, password }),
-  installMonitoringTool: (serverId: string, tool: string, password?: string) =>
+  installMonitoringTool: (serverId, tool, password) =>
     invoke("monitoring:install", { serverId, tool, password }),
-  enableAppMetrics: (serverId: string, password?: string) =>
+  enableAppMetrics: (serverId, password) =>
     invoke("monitoring:enableAppMetrics", { serverId, password }),
-  getAppHealth: (projectId: string, password?: string) =>
-    invoke("metrics:app", { projectId, password }),
-  getTrafficStats: (projectId: string, password?: string) =>
+  getAppHealth: (projectId, password) => invoke("metrics:app", { projectId, password }),
+  getTrafficStats: (projectId, password) =>
     invoke("metrics:traffic", { projectId, password }),
-  getStatusTabCache: (projectId: string) => invoke("metrics:statusTabCache", projectId),
-  saveStatusTabCache: (projectId: string, patch: unknown) =>
+  getStatusTabCache: (projectId) => invoke("metrics:statusTabCache", projectId),
+  saveStatusTabCache: (projectId, patch) =>
     invoke("metrics:statusTabCacheSave", { projectId, patch }),
-  getServerMetrics: (serverId: string, seconds: number, password?: string) =>
+  getServerMetrics: (serverId, seconds, password) =>
     invoke("metrics:server", { serverId, seconds, password }),
-  getAppMetricsHistory: (projectId: string, seconds: number, password?: string) =>
+  getAppMetricsHistory: (projectId, seconds, password) =>
     invoke("metrics:appHistory", { projectId, seconds, password }),
-  getAppLogActivity: (projectId: string, password?: string) =>
+  getAppLogActivity: (projectId, password) =>
     invoke("metrics:appLogActivity", { projectId, password }),
-  deploy: (projectId: string, password?: string, legacyPeerDeps?: boolean) =>
+  deploy: (projectId, password, legacyPeerDeps) =>
     invoke("deploy:run", { projectId, password, legacyPeerDeps }),
-  rollback: (projectId: string, password?: string) =>
-    invoke("deploy:rollback", { projectId, password }),
-  externalVersions: (projectId: string, password?: string) =>
+  rollback: (projectId, password) => invoke("deploy:rollback", { projectId, password }),
+  externalVersions: (projectId, password) =>
     invoke("versions:external", { projectId, password }),
-  externalSyncState: (projectId: string, password?: string) =>
+  externalSyncState: (projectId, password) =>
     invoke("versions:externalState", { projectId, password }),
-  rollbackExternalTo: (projectId: string, commit: string, password?: string) =>
+  rollbackExternalTo: (projectId, commit, password) =>
     invoke("deploy:rollbackExternal", { projectId, commit, password }),
-  migrateProject: (projectId: string, password?: string) =>
+  migrateProject: (projectId, password) =>
     invoke("projects:migrate", { projectId, password }),
-  setupExternalHttps: (projectId: string, password?: string) =>
+  setupExternalHttps: (projectId, password) =>
     invoke("external:setupHttps", { projectId, password }),
-  enableExternalAccessLog: (projectId: string, password?: string) =>
+  enableExternalAccessLog: (projectId, password) =>
     invoke("external:enableAccessLog", { projectId, password }),
-  getDeployState: (projectId: string) => invoke("deploy:state", projectId),
+  getDeployState: (projectId) => invoke("deploy:state", projectId),
   getActiveDeploys: () => invoke("deploy:active"),
 
-  startLogStream: (projectId: string, source: string, password?: string) =>
+  startLogStream: (projectId, source, password) =>
     invoke("logs:streamStart", { projectId, source, password }),
-  stopLogStream: (streamId: string) => invoke("logs:streamStop", streamId),
+  stopLogStream: (streamId) => invoke("logs:streamStop", streamId),
 
-  openExternal: (url: string) => invoke("open-external", url),
+  openExternal: (url) => invoke("open-external", url),
 
-  onDeployLog: (
-    callback: (event: { projectId: string; seq: number; line: string }) => void,
-  ) => {
-    const handler = (
-      _e: unknown,
-      data: { projectId: string; seq: number; line: string },
-    ) => callback(data);
-    ipcRenderer.on("deploy:log", handler);
-    return () => ipcRenderer.removeListener("deploy:log", handler);
-  },
-
-  onDeployStarted: (
-    callback: (event: { projectId: string; kind: string }) => void,
-  ) => {
-    const handler = (_e: unknown, data: { projectId: string; kind: string }) =>
-      callback(data);
-    ipcRenderer.on("deploy:started", handler);
-    return () => ipcRenderer.removeListener("deploy:started", handler);
-  },
-
-  onDeployFinished: (
-    callback: (event: {
-      projectId: string;
-      kind: string;
-      status: string;
-      url?: string;
-      urlCheck?: string;
-      error?: string;
-      code?: string;
-    }) => void,
-  ) => {
-    const handler = (
-      _e: unknown,
-      data: {
-        projectId: string;
-        kind: string;
-        status: string;
-        url?: string;
-        urlCheck?: string;
-        error?: string;
-        code?: string;
-      },
-    ) => callback(data);
-    ipcRenderer.on("deploy:finished", handler);
-    return () => ipcRenderer.removeListener("deploy:finished", handler);
-  },
-
-  onLogStreamData: (
-    callback: (event: { streamId: string; channel: string; text: string }) => void,
-  ) => {
-    const handler = (
-      _e: unknown,
-      data: { streamId: string; channel: string; text: string },
-    ) => callback(data);
-    ipcRenderer.on("logs:stream-data", handler);
-    return () => ipcRenderer.removeListener("logs:stream-data", handler);
-  },
-
-  onLogStreamEnd: (callback: (event: { streamId: string }) => void) => {
-    const handler = (_e: unknown, data: { streamId: string }) => callback(data);
-    ipcRenderer.on("logs:stream-end", handler);
-    return () => ipcRenderer.removeListener("logs:stream-end", handler);
-  },
+  onDeployLog: (callback) => subscribe("deploy:log", callback),
+  onDeployStarted: (callback) => subscribe("deploy:started", callback),
+  onDeployFinished: (callback) => subscribe("deploy:finished", callback),
+  onLogStreamData: (callback) => subscribe("logs:stream-data", callback),
+  onLogStreamEnd: (callback) => subscribe("logs:stream-end", callback),
 
   // Unlike the other subscriptions, only one subscriber at a time: a second
   // onOpenProject displaces the first callback. Enough for the single listener
   // in the app shell; more would need a Set of callbacks
-  onOpenProject: (callback: (event: { projectId: string }) => void) => {
+  onOpenProject: (callback) => {
     openProjectCallback = callback;
     if (pendingOpenProject) {
       callback(pendingOpenProject);
@@ -200,7 +152,7 @@ const api = {
 // before the renderer mounts and subscribes — buffer it until it does
 let openProjectCallback: ((event: { projectId: string }) => void) | null = null;
 let pendingOpenProject: { projectId: string } | null = null;
-ipcRenderer.on("deploy:open-project", (_e, data: { projectId: string }) => {
+subscribe("deploy:open-project", (data) => {
   if (openProjectCallback) openProjectCallback(data);
   else pendingOpenProject = data;
 });

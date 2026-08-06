@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import type { GitCommit, RemoteBranches } from "../shared/ipc";
 import { t } from "./i18n";
 
 const execFileAsync = promisify(execFile);
@@ -88,12 +89,6 @@ async function git(args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
   }
 }
 
-export interface RemoteBranches {
-  branches: string[];
-  /** Дефолтная ветка репозитория (HEAD) */
-  default: string;
-}
-
 /** Список веток и дефолтная ветка публичного/приватного репозитория без клонирования */
 export async function listRemoteBranches(
   url: string,
@@ -176,14 +171,6 @@ export async function headCommit(
   return { hash, message };
 }
 
-export interface Commit {
-  hash: string;
-  subject: string;
-  /** ISO-дата коммита */
-  date: string;
-  author: string;
-}
-
 /**
  * Последние коммиты ветки. Сначала best-effort fetch (чтобы показать и ещё не
  * задеплоенные коммиты), затем лог origin/<branch>. Если сети нет — показываем
@@ -194,7 +181,7 @@ export async function listCommits(
   branch: string,
   token?: string,
   limit = 30,
-): Promise<Commit[]> {
+): Promise<GitCommit[]> {
   assertValidBranch(branch);
   try {
     await git(["-C", dir, "fetch", "--prune", "origin"], authEnv(token));
