@@ -141,6 +141,8 @@ function parseOsRelease(text: string, field: string): string {
 // failure" — so they are joined into a single exec.
 const SERVER_INFO_SECTION = "__PLANTAR_SECTION__";
 const SERVER_INFO_EXIT = "__PLANTAR_EXIT__";
+// Parse-side contract of the exit marker: the exit code digits follow it directly
+const SERVER_INFO_EXIT_RE = new RegExp(`${SERVER_INFO_EXIT}(\\d+)`);
 
 /** All server checks of getServerInfo as one shell command (one SSH round-trip) */
 export function serverInfoCommand(): string {
@@ -172,7 +174,7 @@ export function parseServerInfoOutput(
     const name = part.slice(0, newline).trim();
     const body = part.slice(newline + 1);
     // The exit marker may share a line with output that lacks a trailing newline
-    const exit = body.match(new RegExp(`${SERVER_INFO_EXIT}(\\d+)`));
+    const exit = body.match(SERVER_INFO_EXIT_RE);
     sections.set(name, {
       output: (exit ? body.slice(0, exit.index) : body).trim(),
       code: exit ? Number(exit[1]) : -1,
