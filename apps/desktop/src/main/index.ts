@@ -1,11 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
-import { BrowserWindow, Notification, app, dialog, ipcMain, shell } from "electron";
+import {
+  BrowserWindow,
+  type IpcMainInvokeEvent,
+  Notification,
+  app,
+  dialog,
+  ipcMain,
+  shell,
+} from "electron";
 import { SshConnection } from "@plantar/ssh";
 import {
-  type LogStreamSource,
-  type MonitoringTool,
   type RelatedFileId,
   type SiteCheckStatus,
   appBaseDir,
@@ -46,7 +52,6 @@ import {
 } from "@plantar/core";
 import {
   type ProjectConfig,
-  type ProjectConfigInput,
   detectProjectConfig,
   hasProjectConfig,
   loadProjectConfig,
@@ -58,10 +63,8 @@ import {
   type AppStatus,
   type ProjectRecord,
   type ServerRecord,
-  type AppSettings,
   type DeployRecord,
   type ProjectHistoryIdentity,
-  type StatusTabCacheEntry,
   dataDir,
   deployLogTimestamp,
   listDeployLogs,
@@ -123,12 +126,17 @@ import {
   putSecrets,
 } from "./github-actions";
 import { setLanguage, t } from "./i18n";
-import {
-  type DeployRunState,
-  activeDeployRuns,
-  deployRunState,
-  startDeployRun,
-} from "./deploy-runs";
+import { activeDeployRuns, deployRunState, startDeployRun } from "./deploy-runs";
+import type {
+  AddProjectInput,
+  AddServerInput,
+  AppStatusTabCache,
+  DeployRunState,
+  ImportProjectInput,
+  IpcEventMap,
+  IpcInvokeMap,
+  IpcResult,
+} from "../shared/ipc";
 import { deployNotificationText } from "./deploy-notification";
 import { type RunOutcome, finishRun } from "./run-finish";
 import { forgetServer, startAppMonitor, stopAppMonitor } from "./app-monitor";
@@ -138,7 +146,31 @@ import { appAccessLogPath, appErrorLogPath } from "@plantar/core/paths";
 import type { DeployRunSnapshot, McpProvider, ProjectRuntime } from "@plantar/mcp";
 import { ensureMcpToken, resolveMcpPort, syncMcpServer } from "./mcp";
 
-type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string; code?: string };
+/**
+ * Registers an invoke handler pinned to the shared IPC registry: the channel
+ * must exist in IpcInvokeMap, the callback receives that channel's args type
+ * and must resolve to its result wrapped in IpcResult — so a handler drifting
+ * from the contract (which the preload side is checked against too) fails
+ * typecheck.
+ */
+function handle<C extends keyof IpcInvokeMap>(
+  channel: C,
+  fn: (
+    event: IpcMainInvokeEvent,
+    args: IpcInvokeMap[C]["args"],
+  ) => Promise<IpcResult<IpcInvokeMap[C]["result"]>>,
+): void {
+  ipcMain.handle(channel, fn);
+}
+
+/** Typed push event to one window: channel and payload must match IpcEventMap */
+function sendToWindow<C extends keyof IpcEventMap>(
+  win: BrowserWindow,
+  channel: C,
+  payload: IpcEventMap[C],
+): void {
+  win.webContents.send(channel, payload);
+}
 
 async function toResult<T>(fn: () => Promise<T>): Promise<IpcResult<T>> {
   try {
@@ -509,18 +541,6 @@ const mcpProvider: McpProvider = {
   deployRunState: mcpRunSnapshot,
 };
 
-interface AddServerInput {
-  name: string;
-  host: string;
-  port: number;
-  user: string;
-  auth: "key" | "password" | "existing-key";
-  /** Для auth=key используется один раз — чтобы установить ключ; не сохраняется */
-  password: string;
-  /** Для auth=existing-key: путь к готовому приватному ключу пользователя */
-  keyPath?: string;
-}
-
 /** Переводит технические ошибки ssh2 при входе по готовому ключу на язык пользователя */
 function friendlyKeyError(err: unknown): Error {
   const message = err instanceof Error ? err.message : String(err);
@@ -622,19 +642,6 @@ async function pickProjectFolder() {
   };
 }
 
-interface AddProjectInput {
-  serverId: string;
-  path: string;
-  /** Если передан — GUI создаёт plantar.json в папке проекта */
-  config?: ProjectConfigInput;
-  /** Подпапка внутри path, где лежит проект (монорепозитории); пусто — корень */
-  subdir?: string;
-  /** git — path указывает на клон в reposDir(); local — обычная папка */
-  source?: "local" | "git";
-  repoUrl?: string;
-  branch?: string;
-}
-
 /** Два проекта с одним name на одном сервере деплоились бы в один /var/www/<name> */
 function assertNameFreeOnServer(serverId: string, name: string, excludeProjectId?: string): void {
   const clash = readProjects().find((p) => {
@@ -650,24 +657,6 @@ function assertNameFreeOnServer(serverId: string, name: string, excludeProjectId
   if (clash) {
     throw new Error(t("nameTaken", { name, path: clash.path }));
   }
-}
-
-interface ImportProjectInput {
-  serverId: string;
-  /** Пароль сервера, если соединение из пула уже закрылось */
-  password?: string;
-  /** Настройки из формы импорта: имя, тип, рантайм, домен, порт */
-  config: ProjectConfigInput;
-  pm2Name: string;
-  appDir: string;
-  nginxConfFile?: string;
-  outLogPath?: string;
-  errLogPath?: string;
-  accessLogPath?: string;
-  errorLogPath?: string;
-  repoUrl?: string;
-  branch?: string;
-  repoSubdir?: string;
 }
 
 /** Добавляет найденное на сервере приложение как внешний проект (без папки с кодом) */
@@ -786,7 +775,7 @@ function openFromBackground(projectId?: string): void {
   win.focus();
   if (!projectId) return;
   const send = (): void => {
-    win.webContents.send("deploy:open-project", { projectId });
+    sendToWindow(win, "deploy:open-project", { projectId });
   };
   // A window created just now has no renderer frame yet — a send in this tick
   // goes nowhere, there is not even a preload to buffer it. Wait for the load;
@@ -1256,8 +1245,8 @@ app.whenReady().then(() => {
       if (current.mcpServerEnabled) writeSettings({ ...current, mcpServerEnabled: false });
     });
 
-  ipcMain.handle("settings:get", () => toResult(async () => readSettings()));
-  ipcMain.handle("settings:set", (_e, settings: AppSettings) =>
+  handle("settings:get", () => toResult(async () => readSettings()));
+  handle("settings:set", (_e, settings) =>
     toResult(async () => {
       // The access token appears on first enable and never changes afterwards
       const next = ensureMcpToken(settings);
@@ -1292,31 +1281,31 @@ app.whenReady().then(() => {
   // The dialog asks which port the endpoint will actually use before showing
   // the address: the running listener's port, or the stored/default one when
   // a test bind confirms it is free; null — taken, known only on save (#63)
-  ipcMain.handle("mcp:resolvePort", () =>
+  handle("mcp:resolvePort", () =>
     toResult(() => resolveMcpPort(readSettings().mcpServerPort)),
   );
 
   // GitHub Device Flow: вход без backend, токен шифруется safeStorage
-  ipcMain.handle("github:account", () => toResult(async () => getAccount()));
-  ipcMain.handle("github:startLogin", () => toResult(() => startDeviceLogin()));
-  ipcMain.handle(
+  handle("github:account", () => toResult(async () => getAccount()));
+  handle("github:startLogin", () => toResult(() => startDeviceLogin()));
+  handle(
     "github:pollLogin",
-    (_e, args: { deviceCode: string; interval: number; expiresIn: number }) =>
+    (_e, args) =>
       toResult(() => pollDeviceLogin(args.deviceCode, args.interval, args.expiresIn)),
   );
-  ipcMain.handle("github:signOut", () => toResult(async () => signOut()));
+  handle("github:signOut", () => toResult(async () => signOut()));
   // Автонастройка деплоя при коммите: deploy-ключ → Secrets, workflow → в ветку
-  ipcMain.handle("github:setupActions", (_e, args: { projectId: string; password?: string }) =>
+  handle("github:setupActions", (_e, args) =>
     toResult(() => setupGithubActions(args.projectId, args.password)),
   );
 
-  ipcMain.handle("servers:list", () => toResult(async () => readServers()));
-  ipcMain.handle("servers:add", (_e, input: AddServerInput) => toResult(() => addServer(input)));
+  handle("servers:list", () => toResult(async () => readServers()));
+  handle("servers:add", (_e, input) => toResult(() => addServer(input)));
   // Готовые ключи пользователя из ~/.ssh — для способа входа «ключ уже настроен»
-  ipcMain.handle("ssh:detectKeys", () => toResult(async () => detectUserSshKeys()));
+  handle("ssh:detectKeys", () => toResult(async () => detectUserSshKeys()));
   // Серверы из ~/.ssh/config — подсказки для предзаполнения формы
-  ipcMain.handle("ssh:configHosts", () => toResult(async () => detectSshConfigHosts()));
-  ipcMain.handle("ssh:pickKey", () =>
+  handle("ssh:configHosts", () => toResult(async () => detectSshConfigHosts()));
+  handle("ssh:pickKey", () =>
     toResult(async () => {
       const win = activeWindow();
       if (!win) return null;
@@ -1337,7 +1326,7 @@ app.whenReady().then(() => {
       return keyPath;
     }),
   );
-  ipcMain.handle("servers:remove", (_e, id: string) =>
+  handle("servers:remove", (_e, id) =>
     toResult(async () => {
       dropConnection(id);
       forgetServer(id);
@@ -1354,7 +1343,7 @@ app.whenReady().then(() => {
 
   // Порядок серверов в сайдбаре, заданный перетаскиванием; неизвестные
   // ids игнорируются, недостающие серверы остаются в конце в прежнем порядке
-  ipcMain.handle("servers:reorder", (_e, ids: string[]) =>
+  handle("servers:reorder", (_e, ids) =>
     toResult(async () => {
       const servers = readServers();
       const byId = new Map(servers.map((s) => [s.id, s]));
@@ -1364,10 +1353,10 @@ app.whenReady().then(() => {
     }),
   );
 
-  ipcMain.handle("projects:list", () => toResult(async () => readProjects()));
+  handle("projects:list", () => toResult(async () => readProjects()));
   // Порядок проектов одного сервера в сайдбаре; позиции проектов других
   // серверов в общем списке не меняются
-  ipcMain.handle("projects:reorder", (_e, args: { serverId: string; ids: string[] }) =>
+  handle("projects:reorder", (_e, args) =>
     toResult(async () => {
       const projects = readProjects();
       const own = projects.filter((p) => p.serverId === args.serverId);
@@ -1380,24 +1369,24 @@ app.whenReady().then(() => {
       writeProjects(projects.map((p) => (p.serverId === args.serverId ? ordered[next++] : p)));
     }),
   );
-  ipcMain.handle("projects:pick", () => toResult(() => pickProjectFolder()));
+  handle("projects:pick", () => toResult(() => pickProjectFolder()));
   // Список веток репозитория для выпадающего списка в форме добавления
-  ipcMain.handle("repo:branches", (_e, repoUrl: string) =>
+  handle("repo:branches", (_e, repoUrl) =>
     toResult(() => listRemoteBranches(repoUrl, getToken() ?? undefined)),
   );
   // Клонирует репозиторий локально и возвращает предзаполненные настройки
-  ipcMain.handle("projects:cloneRepo", (_e, args: { repoUrl: string; branch: string }) =>
+  handle("projects:cloneRepo", (_e, args) =>
     toResult(() => cloneRepoForProject(args.repoUrl, args.branch)),
   );
   // Пользователь закрыл форму, не добавив проект — убираем осиротевший клон
-  ipcMain.handle("projects:cancelClone", (_e, clonePath: string) =>
+  handle("projects:cancelClone", (_e, clonePath) =>
     toResult(async () => removeCloneDir(clonePath)),
   );
-  ipcMain.handle("projects:add", (_e, input: AddProjectInput) =>
+  handle("projects:add", (_e, input) =>
     toResult(async () => addProject(input)),
   );
   // Обнаружение приложений, запущенных на сервере до подключения Plantar
-  ipcMain.handle("server:discover", (_e, args: { serverId: string; password?: string }) =>
+  handle("server:discover", (_e, args) =>
     toResult(async () => {
       const server = getServer(args.serverId);
       const apps = await withServer(server, args.password, (conn) => discoverApps(conn));
@@ -1415,12 +1404,12 @@ app.whenReady().then(() => {
       return apps.filter((a) => !taken.has(a.pm2Name) && !taken.has(a.suggestedName));
     }),
   );
-  ipcMain.handle("projects:import", (_e, input: ImportProjectInput) =>
+  handle("projects:import", (_e, input) =>
     toResult(async () => importProject(input)),
   );
   // Привязка папки с кодом к импортированному проекту: создаёт plantar.json
   // из настроек, подтверждённых при импорте, поверх автоопределённых по папке
-  ipcMain.handle("projects:linkFolder", (_e, projectId: string) =>
+  handle("projects:linkFolder", (_e, projectId) =>
     toResult(async () => {
       const project = getProject(projectId);
       if (!project.external || project.path) throw new Error(t("linkFolderUnavailable"));
@@ -1445,7 +1434,7 @@ app.whenReady().then(() => {
   );
   // Подключение GitHub-репозитория к импортированному проекту: клонирует репозиторий,
   // из которого приложение было задеплоено на сервер, и переводит проект в git-источник
-  ipcMain.handle("projects:linkRepo", (_e, projectId: string) =>
+  handle("projects:linkRepo", (_e, projectId) =>
     toResult(async () => {
       const project = getProject(projectId);
       const repoUrl = project.external?.repoUrl;
@@ -1487,7 +1476,7 @@ app.whenReady().then(() => {
       }
     }),
   );
-  ipcMain.handle("projects:remove", (_e, id: string) =>
+  handle("projects:remove", (_e, id) =>
     toResult(async () => {
       const project = readProjects().find((p) => p.id === id);
       // Resolve the names before the clone goes away — the current one comes
@@ -1529,11 +1518,11 @@ app.whenReady().then(() => {
     }),
   );
   // Кэш вкладки «Коммиты»: мгновенный показ устаревшего снимка при открытии
-  ipcMain.handle("git:commitsCache", (_e, projectId: string) =>
+  handle("git:commitsCache", (_e, projectId) =>
     toResult(async () => readCommitsCache()[projectId] ?? null),
   );
   // Свежий снимок: коммиты ветки (сетевой git fetch) + статусы деплоев; пишем в кэш
-  ipcMain.handle("git:commitsView", (_e, projectId: string) =>
+  handle("git:commitsView", (_e, projectId) =>
     toResult(async () => {
       const project = getProject(projectId);
       if (project.source !== "git") return { commits: [], history: [] };
@@ -1549,9 +1538,9 @@ app.whenReady().then(() => {
       return { commits, history };
     }),
   );
-  ipcMain.handle(
+  handle(
     "projects:removeFromServer",
-    (_e, args: { projectId: string; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         const server = getServer(project.serverId);
@@ -1565,16 +1554,16 @@ app.whenReady().then(() => {
         await withServer(server, args.password, (conn) => removeDeployedProject(conn, name));
       }),
   );
-  ipcMain.handle("projects:readConfig", (_e, projectId: string) =>
+  handle("projects:readConfig", (_e, projectId) =>
     toResult(async () => projectConfig(getProject(projectId))),
   );
   // Открывает выбор подпапки внутри клона и определяет настройки в ней
-  ipcMain.handle("projects:pickSubdir", (_e, root: string) =>
+  handle("projects:pickSubdir", (_e, root) =>
     toResult(() => pickSubdir(root)),
   );
-  ipcMain.handle(
+  handle(
     "projects:writeConfig",
-    (_e, args: { projectId: string; config: ProjectConfigInput; subdir?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         // Импортированный проект без папки: plantar.json ещё нет,
@@ -1633,9 +1622,9 @@ app.whenReady().then(() => {
   );
   // Смена ветки git-проекта: сразу переключаем локальный клон, чтобы подпапка
   // и настройки читались из выбранной ветки, а не только со следующего деплоя
-  ipcMain.handle(
+  handle(
     "projects:setBranch",
-    (_e, args: { projectId: string; branch: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         if (project.source !== "git" || !project.path) {
@@ -1654,7 +1643,7 @@ app.whenReady().then(() => {
   // Переменные проекта хранятся на сервере (вне папки версии) и применяются
   // при деплое; у внешних проектов читаются и сохраняются прямо в .env
   // папки приложения — хранилище Plantar на сервере не создаётся
-  ipcMain.handle("env:read", (_e, args: { projectId: string; password?: string }) =>
+  handle("env:read", (_e, args) =>
     toResult(async () => {
       const project = getProject(args.projectId);
       if (project.external) {
@@ -1669,9 +1658,9 @@ app.whenReady().then(() => {
       );
     }),
   );
-  ipcMain.handle(
+  handle(
     "env:write",
-    (_e, args: { projectId: string; content: string; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         if (project.external) {
@@ -1690,7 +1679,7 @@ app.whenReady().then(() => {
 
   // Локальные .env-файлы из папки проекта — только на чтение, для импорта на сервер
   const ENV_FILE_RE = /^\.env[\w.-]*$/;
-  ipcMain.handle("env:listLocal", (_e, projectId: string) =>
+  handle("env:listLocal", (_e, projectId) =>
     toResult(async () => {
       const project = getProject(projectId);
       // У импортированного проекта без папки локальных файлов нет
@@ -1700,7 +1689,7 @@ app.whenReady().then(() => {
         .sort();
     }),
   );
-  ipcMain.handle("env:readLocal", (_e, args: { projectId: string; file: string }) =>
+  handle("env:readLocal", (_e, args) =>
     toResult(async () => {
       if (!ENV_FILE_RE.test(args.file)) throw new Error(t("invalidEnvFileName"));
       return readFileSync(path.join(projectDir(getProject(args.projectId)), args.file), "utf8");
@@ -1708,9 +1697,9 @@ app.whenReady().then(() => {
   );
 
   // Таб «Файлы»: просмотр папки проекта на сервере, строго на чтение
-  ipcMain.handle(
+  handle(
     "files:list",
-    (_e, args: { projectId: string; path: string; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         return withServer(getServer(project.serverId), args.password, (conn) =>
@@ -1718,12 +1707,9 @@ app.whenReady().then(() => {
         );
       }),
   );
-  ipcMain.handle(
+  handle(
     "files:read",
-    (
-      _e,
-      args: { projectId: string; path?: string; related?: RelatedFileId; password?: string },
-    ) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         const absPath = args.related
@@ -1734,7 +1720,7 @@ app.whenReady().then(() => {
         );
       }),
   );
-  ipcMain.handle("files:related", (_e, args: { projectId: string; password?: string }) =>
+  handle("files:related", (_e, args) =>
     toResult(async () => {
       const project = getProject(args.projectId);
       if (project.external) return [];
@@ -1752,10 +1738,10 @@ app.whenReady().then(() => {
     }),
   );
 
-  ipcMain.handle("history:list", (_e, projectId: string) =>
+  handle("history:list", (_e, projectId) =>
     toResult(async () => projectHistory(getProject(projectId))),
   );
-  ipcMain.handle("history:readLog", (_e, logFile: string) =>
+  handle("history:readLog", (_e, logFile) =>
     toResult(async () => {
       // Читаем только файлы из хранилища логов Plantar
       const logsRoot = path.join(dataDir(), "logs") + path.sep;
@@ -1768,37 +1754,37 @@ app.whenReady().then(() => {
     }),
   );
 
-  ipcMain.handle("server:info", (_e, args: { serverId: string; password?: string }) =>
+  handle("server:info", (_e, args) =>
     toResult(async () =>
       withServer(getServer(args.serverId), args.password, (conn) => getServerInfo(conn)),
     ),
   );
-  ipcMain.handle("server:isConnected", (_e, serverId: string) =>
+  handle("server:isConnected", (_e, serverId) =>
     toResult(async () => isConnected(serverId)),
   );
   // Статусы приложений сервера: pm2-процессы одним запросом плюс живая
   // HTTP-проверка сайтов с самого сервера; снимок кэшируется
   // для мгновенного показа при следующем открытии приложения
-  ipcMain.handle("server:appStatuses", (_e, args: { serverId: string }) =>
+  handle("server:appStatuses", (_e, args) =>
     toResult(() => collectServerAppStatuses(getServer(args.serverId))),
   );
   // Кэш статусов прошлой проверки — показывается сразу, пока идёт живая
-  ipcMain.handle("server:appStatusesCache", () =>
+  handle("server:appStatusesCache", () =>
     toResult(async () => readAppStatusCache()),
   );
 
-  ipcMain.handle(
+  handle(
     "monitoring:status",
-    (_e, args: { serverId: string; password?: string }) =>
+    (_e, args) =>
       toResult(async () =>
         withServer(getServer(args.serverId), args.password, (conn) =>
           getMonitoringStatus(conn),
         ),
       ),
   );
-  ipcMain.handle(
+  handle(
     "monitoring:install",
-    (_e, args: { serverId: string; tool: MonitoringTool; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         // Имя инструмента попадает в shell-команду установки — только известные
         if (args.tool !== "goaccess" && args.tool !== "netdata") {
@@ -1810,9 +1796,9 @@ app.whenReady().then(() => {
       }),
   );
   // Включает сбор нагрузки приложений: Netdata + скрипт-сборщик с cron
-  ipcMain.handle(
+  handle(
     "monitoring:enableAppMetrics",
-    (_e, args: { serverId: string; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         await withServer(getServer(args.serverId), args.password, (conn) =>
           enableAppMetrics(conn),
@@ -1821,9 +1807,9 @@ app.whenReady().then(() => {
   );
 
   // Здоровье pm2-процесса приложения; null — процесса на сервере нет
-  ipcMain.handle(
+  handle(
     "metrics:app",
-    (_e, args: { projectId: string; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         const server = getServer(project.serverId);
@@ -1842,9 +1828,9 @@ app.whenReady().then(() => {
   );
 
   // Посещаемость приложения по access-логу nginx (нужен GoAccess на сервере)
-  ipcMain.handle(
+  handle(
     "metrics:traffic",
-    (_e, args: { projectId: string; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         const server = getServer(project.serverId);
@@ -1864,14 +1850,19 @@ app.whenReady().then(() => {
       }),
   );
 
-  // Кэш вкладки «Статус»: мгновенный показ устаревшего снимка при открытии
-  ipcMain.handle("metrics:statusTabCache", (_e, projectId: string) =>
-    toResult(async () => readStatusTabCache()[projectId] ?? null),
+  // Кэш вкладки «Статус»: мгновенный показ устаревшего снимка при открытии.
+  // Storage keeps the entry fields opaque (unknown) — the desktop app owns
+  // their shape, so the read is asserted to the shared AppStatusTabCache
+  handle("metrics:statusTabCache", (_e, projectId) =>
+    toResult(
+      async () =>
+        (readStatusTabCache()[projectId] as AppStatusTabCache | undefined) ?? null,
+    ),
   );
   // Каждая карточка вкладки пишет своё поле по мере загрузки — патч, не замена
-  ipcMain.handle(
+  handle(
     "metrics:statusTabCacheSave",
-    (_e, args: { projectId: string; patch: Partial<StatusTabCacheEntry> }) =>
+    (_e, args) =>
       toResult(async () => {
         const cache = readStatusTabCache();
         cache[args.projectId] = {
@@ -1884,9 +1875,9 @@ app.whenReady().then(() => {
   );
 
   // История нагрузки сервера из Netdata; окно — час или сутки
-  ipcMain.handle(
+  handle(
     "metrics:server",
-    (_e, args: { serverId: string; seconds: number; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const seconds = args.seconds === 86400 ? 86400 : 3600;
         // Проекты сервера подписывают ряды разбивки по приложениям
@@ -1909,9 +1900,9 @@ app.whenReady().then(() => {
   );
 
   // История нагрузки приложения из Netdata; окно — час или сутки
-  ipcMain.handle(
+  handle(
     "metrics:appHistory",
-    (_e, args: { projectId: string; seconds: number; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         const server = getServer(project.serverId);
@@ -1930,9 +1921,9 @@ app.whenReady().then(() => {
   );
 
   // Активность логов приложения за сутки (нужен включённый сбор нагрузки)
-  ipcMain.handle(
+  handle(
     "metrics:appLogActivity",
-    (_e, args: { projectId: string; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         const server = getServer(project.serverId);
@@ -1949,19 +1940,19 @@ app.whenReady().then(() => {
       }),
   );
 
-  ipcMain.handle(
+  handle(
     "deploy:run",
-    (_e, args: { projectId: string; password?: string; legacyPeerDeps?: boolean }) =>
+    (_e, args) =>
       toResult(() => runDeploy(args.projectId, args.password, args.legacyPeerDeps)),
   );
-  ipcMain.handle("deploy:rollback", (_e, args: { projectId: string; password?: string }) =>
+  handle("deploy:rollback", (_e, args) =>
     toResult(() => runRollback(args.projectId, args.password)),
   );
   // Git-версии внешнего проекта с сервера — для вкладки «Версии»
   // и индикатора «развёрнута не последняя версия»
-  ipcMain.handle(
+  handle(
     "versions:external",
-    (_e, args: { projectId: string; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         const external = project.external;
@@ -1973,9 +1964,9 @@ app.whenReady().then(() => {
   );
   // Light local-only sync check for the Status tab indicator: no network
   // fetch, so a slow git remote cannot delay the status snapshot
-  ipcMain.handle(
+  handle(
     "versions:externalState",
-    (_e, args: { projectId: string; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         const external = project.external;
@@ -1986,9 +1977,9 @@ app.whenReady().then(() => {
       }),
   );
   // Возврат версии внешнего проекта: повторный деплой выбранного коммита
-  ipcMain.handle(
+  handle(
     "deploy:rollbackExternal",
-    (_e, args: { projectId: string; commit: string; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         // Хеш попадает в shell-команду на сервере — только настоящие хеши
         if (!/^[0-9a-f]{7,40}$/i.test(args.commit)) {
@@ -1999,17 +1990,17 @@ app.whenReady().then(() => {
   );
   // Явный перенос импортированного проекта под управление Plantar:
   // прежний takeover-деплой, запускается только после подтверждения в GUI
-  ipcMain.handle(
+  handle(
     "projects:migrate",
-    (_e, args: { projectId: string; password?: string; legacyPeerDeps?: boolean }) =>
+    (_e, args) =>
       toResult(() => runDeploy(args.projectId, args.password, args.legacyPeerDeps, true)),
   );
   // HTTPS for an imported app in place: certbot edits the app's own nginx
   // config, so no migration is needed. Runs only after an explicit
   // confirmation in the GUI — careful mode never touches the server silently
-  ipcMain.handle(
+  handle(
     "external:setupHttps",
-    (_e, args: { projectId: string; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         if (!project.external) throw new Error(t("externalOnlyAction"));
@@ -2025,9 +2016,9 @@ app.whenReady().then(() => {
   // A per-app access_log for an imported app in place: one additive line in
   // the app's own nginx config (backed up, verified, restored on failure), so
   // the Visits card works without migration. Explicit confirmed action only
-  ipcMain.handle(
+  handle(
     "external:enableAccessLog",
-    (_e, args: { projectId: string; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         const external = project.external;
@@ -2052,18 +2043,18 @@ app.whenReady().then(() => {
       }),
   );
   // Идущие сейчас прогоны — начальное состояние индикаторов деплоя в сайдбаре
-  ipcMain.handle("deploy:active", () => toResult(async () => activeDeployRuns()));
+  handle("deploy:active", () => toResult(async () => activeDeployRuns()));
   // Состояние прогона деплоя для вкладки: из памяти, после перезапуска — с диска
-  ipcMain.handle("deploy:state", (_e, projectId: string) =>
+  handle("deploy:state", (_e, projectId) =>
     toResult(async () => {
       const project = getProject(projectId);
       return deployRunState(projectId) ?? restoredDeployState(project);
     }),
   );
 
-  ipcMain.handle(
+  handle(
     "logs:streamStart",
-    (_e, args: { projectId: string; source: LogStreamSource; password?: string }) =>
+    (_e, args) =>
       toResult(async () => {
         const project = getProject(args.projectId);
         const server = getServer(project.serverId);
@@ -2088,8 +2079,9 @@ app.whenReady().then(() => {
               : undefined;
 
         const streamId = randomUUID();
-        const send = (channel: string, payload: unknown) => {
-          activeWindow()?.webContents.send(channel, payload);
+        const send = <C extends keyof IpcEventMap>(channel: C, payload: IpcEventMap[C]) => {
+          const win = activeWindow();
+          if (win) sendToWindow(win, channel, payload);
         };
         // Просмотренные nginx-логи сохраняются локально при закрытии стрима (настройка)
         const snapshot =
@@ -2139,28 +2131,32 @@ app.whenReady().then(() => {
       }),
   );
 
-  ipcMain.handle("logs:streamStop", (_e, streamId: string) =>
+  handle("logs:streamStop", (_e, streamId) =>
     toResult(async () => {
       logStreams.get(streamId)?.();
     }),
   );
 
   // Defense in depth: only web links leave the app — file:// or a custom
-  // scheme could trigger an arbitrary protocol handler on the user's machine
-  ipcMain.handle("open-external", (_e, url: string) => {
-    let protocol: string;
-    try {
-      protocol = new URL(url).protocol;
-    } catch {
-      console.warn("open-external: blocked url", url);
-      return;
-    }
-    if (protocol !== "http:" && protocol !== "https:") {
-      console.warn("open-external: blocked url", url);
-      return;
-    }
-    return shell.openExternal(url);
-  });
+  // scheme could trigger an arbitrary protocol handler on the user's machine.
+  // A blocked URL stays a silent no-op, but now resolves to a proper
+  // IpcResult<void> instead of the bare undefined the .d.ts never declared
+  handle("open-external", (_e, url) =>
+    toResult(async () => {
+      let protocol: string;
+      try {
+        protocol = new URL(url).protocol;
+      } catch {
+        console.warn("open-external: blocked url", url);
+        return;
+      }
+      if (protocol !== "http:" && protocol !== "https:") {
+        console.warn("open-external: blocked url", url);
+        return;
+      }
+      await shell.openExternal(url);
+    }),
+  );
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
