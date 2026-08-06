@@ -1,4 +1,4 @@
-import { validatePort, validateProjectName } from "@plantar/config/validation";
+import { parsePort, validatePort, validateProjectName } from "@plantar/config/validation";
 import { Rocket } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ProjectConfigInput } from "../../../preload/index.d";
@@ -182,7 +182,7 @@ export function ProjectSettingsDialog({
       setError(t("projectSettings.portError"));
       return;
     }
-    const portValue = port.trim() ? Number(port.trim()) : undefined;
+    const portValue = parsePort(port);
     setBusy(true);
     setError(null);
     const result = await onSubmit({

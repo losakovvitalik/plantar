@@ -22,3 +22,13 @@ export function validatePort(input: string): boolean {
   const port = Number(trimmed);
   return port >= PORT_MIN && port <= PORT_MAX;
 }
+
+/**
+ * Parses a port as typed into a form field.
+ * An empty (trimmed) value returns undefined — it means "assign automatically".
+ * Assumes the input already passed validatePort.
+ */
+export function parsePort(input: string): number | undefined {
+  const trimmed = input.trim();
+  return trimmed ? Number(trimmed) : undefined;
+}
