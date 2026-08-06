@@ -182,7 +182,16 @@ export function parseServerInfoOutput(
 }
 
 export async function getServerInfo(conn: SshConnection): Promise<ServerInfo> {
-  const combined = await conn.exec(serverInfoCommand());
+  const command = serverInfoCommand();
+  const combined = await conn.exec(command);
+  // The combined command always exits 0 on its own (it ends with an echo), so
+  // a non-zero/-1 code means the channel dropped mid-run. Throw instead of
+  // parsing partial output into garbage (NaN cores, all tools null) — the
+  // previous sequential execs surfaced a dropped connection as an error too.
+  if (combined.code !== 0) {
+    const output = [combined.stdout, combined.stderr].filter(Boolean).join("\n").slice(-3000);
+    throw new Error(t("commandFailed", { code: combined.code, command, stderr: output }));
+  }
   const sections = parseServerInfoOutput(combined.stdout);
   const output = (name: string) => sections.get(name)?.output ?? "";
 

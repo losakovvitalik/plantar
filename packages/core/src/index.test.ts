@@ -577,6 +577,15 @@ describe("getServerInfo", () => {
     });
   });
 
+  it("обрыв канала посреди команды — ошибка, а не частичные данные", async () => {
+    // The combined command always exits 0 by itself (it ends with an echo),
+    // so a non-zero/-1 code means the transport dropped mid-run
+    const stdout = section("os-release", "ID=ubuntu") + section("nproc", "4");
+    const conn = fakeConn([[/__PLANTAR_SECTION__/, { stdout, code: -1 }]], []);
+
+    await expect(getServerInfo(conn)).rejects.toThrow(/-1/);
+  });
+
   it("команда проходит синтаксическую проверку bash", () => {
     const file = path.join(mkdtempSync(path.join(tmpdir(), "plantar-")), "server-info.sh");
     writeFileSync(file, serverInfoCommand());
