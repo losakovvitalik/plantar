@@ -1,3 +1,4 @@
+import { parsePort, validatePort, validateProjectName } from "@plantar/config/validation";
 import { Check, PackageSearch, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { DiscoveredApp, ServerRecord } from "../../../preload/index.d";
@@ -163,18 +164,15 @@ function DiscoveredAppCard({
   const online = app.status === "online";
 
   async function add() {
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
+    if (!validateProjectName(name)) {
       setError(t("projectSettings.nameError"));
       return;
     }
-    const portValue = port.trim() ? Number(port.trim()) : undefined;
-    if (
-      port.trim() &&
-      (!/^\d+$/.test(port.trim()) || portValue! < 1 || portValue! > 65535)
-    ) {
+    if (!validatePort(port)) {
       setError(t("projectSettings.portError"));
       return;
     }
+    const portValue = parsePort(port);
     setBusy(true);
     setError(null);
     const result = await window.plantar.importProject({
