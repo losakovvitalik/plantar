@@ -1,4 +1,5 @@
 import { type SshConnection, shellQuote } from "@plantar/ssh";
+import { mapWithConcurrency } from "./concurrency";
 import { blankComments, findBlocks, proxyPassPorts, upstreamPorts } from "./nginx-parse";
 
 /**
@@ -370,8 +371,10 @@ export async function discoverApps(conn: SshConnection): Promise<DiscoveredApp[]
   const nginxDump = await conn.exec("nginx -T 2>/dev/null");
   const sites = nginxDump.code === 0 ? parseNginxSites(nginxDump.stdout) : [];
 
-  const apps: DiscoveredApp[] = [];
-  for (const proc of procs) {
+  // Per-app lookups are independent — run them concurrently. Every parallel
+  // exec opens its own channel on the pooled connection, so the wave is kept
+  // modest: 3 apps x up to 3 lookups each stays under typical sshd MaxSessions=10.
+  return mapWithConcurrency(procs, 3, async (proc): Promise<DiscoveredApp> => {
     const ports = [
       ...new Set([
         proc.envPort,
@@ -385,10 +388,17 @@ export async function discoverApps(conn: SshConnection): Promise<DiscoveredApp[]
 
     const python =
       (proc.interpreter ?? "").includes("python") || proc.script.endsWith(".py");
+    const [nextDir, repo, envFiles] = await Promise.all([
+      !python && proc.cwd
+        ? conn.exec(`test -d ${shellQuote(`${proc.cwd}/.next`)}`)
+        : Promise.resolve(undefined),
+      detectAppRepo(conn, proc.cwd),
+      listAppEnvFiles(conn, proc.cwd),
+    ]);
     let suggestedType: DiscoveredApp["suggestedType"];
     if (python) {
       suggestedType = "bot";
-    } else if (proc.cwd && (await conn.exec(`test -d ${shellQuote(`${proc.cwd}/.next`)}`)).code === 0) {
+    } else if (nextDir?.code === 0) {
       suggestedType = "next";
     } else if (port !== undefined) {
       suggestedType = "node";
@@ -396,9 +406,7 @@ export async function discoverApps(conn: SshConnection): Promise<DiscoveredApp[]
       suggestedType = "bot";
     }
 
-    const repo = await detectAppRepo(conn, proc.cwd);
-
-    apps.push({
+    return {
       pm2Name: proc.name,
       status: proc.status,
       appDir: proc.cwd,
@@ -411,14 +419,13 @@ export async function discoverApps(conn: SshConnection): Promise<DiscoveredApp[]
       accessLogPath: site?.accessLog,
       errorLogPath: site?.errorLog,
       // A failed listing is tolerated during discovery — the app is still shown
-      envFiles: (await listAppEnvFiles(conn, proc.cwd)) ?? [],
+      envFiles: envFiles ?? [],
       repoUrl: repo?.repoUrl,
       branch: repo?.branch,
       repoSubdir: repo?.repoSubdir,
       suggestedName: suggestName(proc.name),
       suggestedType,
       runtime: python ? "python" : "node",
-    });
-  }
-  return apps;
+    };
+  });
 }

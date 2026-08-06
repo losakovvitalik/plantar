@@ -1,4 +1,5 @@
 import { type SshConnection, shellQuote } from "@plantar/ssh";
+import { mapWithConcurrency } from "./concurrency";
 import { t } from "./messages";
 
 /**
@@ -533,7 +534,10 @@ export async function getServerMetrics(
       ),
     );
 
-  const [cpuResult, ramResult] = [await query("system.cpu"), await query("system.ram")];
+  const [cpuResult, ramResult] = await Promise.all([
+    query("system.cpu"),
+    query("system.ram"),
+  ]);
   if (cpuResult.code !== 0 || ramResult.code !== 0) {
     throw new Error(t("netdataNotResponding"));
   }
@@ -634,24 +638,37 @@ async function queryAppsUsage(
   const titles = new Map(apps.map((app) => [appMetricsGroupName(app.pm2Name), app.name]));
   const bucket = seconds / 120;
 
-  const usage: ServerAppUsage[] = [];
-  for (const group of groups) {
-    const cpu = await queryAppMetric(conn, chartIds, group, "cpu", seconds, 120);
-    const memMb = await queryAppMetric(conn, chartIds, group, "mem", seconds, 120);
-    if (cpu.length === 0 && memMb.length === 0) continue;
-    usage.push({
-      name: titles.get(group) ?? group,
-      cpu: downsampleAverage(cpu, bucket).map((point) => ({
-        time: point.time,
-        value: Math.round((point.value / cores) * 10) / 10,
-      })),
-      memMb: downsampleAverage(memMb, bucket).map((point) => ({
-        time: point.time,
-        value: Math.round(point.value),
-      })),
-    });
-  }
-  return usage;
+  // Groups are queried concurrently, cpu and mem of a group in parallel too.
+  // Each query is a separate SSH channel: 4 groups x 2 curls = 8 channels,
+  // under typical sshd MaxSessions=10.
+  const usage = await mapWithConcurrency(
+    groups,
+    4,
+    async (group): Promise<ServerAppUsage | null> => {
+      try {
+        const [cpu, memMb] = await Promise.all([
+          queryAppMetric(conn, chartIds, group, "cpu", seconds, 120),
+          queryAppMetric(conn, chartIds, group, "mem", seconds, 120),
+        ]);
+        if (cpu.length === 0 && memMb.length === 0) return null;
+        return {
+          name: titles.get(group) ?? group,
+          cpu: downsampleAverage(cpu, bucket).map((point) => ({
+            time: point.time,
+            value: Math.round((point.value / cores) * 10) / 10,
+          })),
+          memMb: downsampleAverage(memMb, bucket).map((point) => ({
+            time: point.time,
+            value: Math.round(point.value),
+          })),
+        };
+      } catch {
+        // One app's failed query must not hide the other apps' series
+        return null;
+      }
+    },
+  );
+  return usage.filter((entry): entry is ServerAppUsage => entry !== null);
 }
 
 /**

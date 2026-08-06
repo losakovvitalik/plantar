@@ -248,6 +248,37 @@ describe("getServerMetrics", () => {
     expect(metrics.diskUsedGb).toEqual([]);
     expect(metrics.diskTotalGb).toBe(0);
   });
+
+  it("сбой запроса метрик одного приложения не прячет остальные", async () => {
+    const base = fakeConn({
+      ...system,
+      "/charts": JSON.stringify({
+        charts: {
+          "system.cpu": {},
+          "statsd_plantar_apps.web_app_cpu": {},
+          "statsd_plantar_apps.web_app_mem": {},
+          "statsd_plantar_apps.db_mem": {},
+        },
+      }),
+      nproc: "2\n",
+      "chart=statsd_plantar_apps.db_mem": JSON.stringify({
+        labels: ["time", "gauge"],
+        data: [[990, 512]],
+      }),
+    });
+    // Queries of one group reject — a dropped channel mid-batch
+    const conn = {
+      exec: (command: string) =>
+        command.includes("web_app")
+          ? Promise.reject(new Error("channel open failure"))
+          : base.exec(command),
+    } as unknown as SshConnection;
+
+    const metrics = await getServerMetrics(conn, 3600);
+    expect(metrics.apps).toEqual([
+      { name: "db", cpu: [], memMb: [{ time: 990, value: 512 }] },
+    ]);
+  });
 });
 
 describe("ensureAppMetricsScript", () => {

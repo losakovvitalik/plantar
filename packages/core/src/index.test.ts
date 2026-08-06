@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SshConnection } from "@plantar/ssh";
 import type { ProjectConfig } from "@plantar/config";
@@ -5,11 +9,14 @@ import type { ProjectConfig } from "@plantar/config";
 import {
   certbotAccountArgs,
   deployProject,
+  getServerInfo,
   logStreamCommand,
+  parseServerInfoOutput,
   pickFreePort,
   pickRollbackTarget,
   removeDeployedProject,
   rollbackProject,
+  serverInfoCommand,
 } from "./index";
 import { t } from "./messages";
 
@@ -522,6 +529,92 @@ describe("removeDeployedProject: проба pm2 перед удалением ф
     const rmIndex = commands.findIndex((c) => c.includes("rm -rf"));
     expect(deleteIndex).toBeGreaterThanOrEqual(0);
     expect(rmIndex).toBeGreaterThan(deleteIndex);
+  });
+});
+
+describe("getServerInfo", () => {
+  /** One check's slice of the combined command output */
+  const section = (name: string, output: string, code = 0) =>
+    `__PLANTAR_SECTION__${name}\n${output ? output + "\n" : ""}__PLANTAR_EXIT__${code}\n`;
+
+  it("собирает все проверки одной командой и разбирает совмещённый вывод", async () => {
+    const commands: string[] = [];
+    const stdout =
+      section(
+        "os-release",
+        'ID=ubuntu\nVERSION_ID="24.04"\nPRETTY_NAME="Ubuntu 24.04.1 LTS"',
+      ) +
+      section("nproc", "4") +
+      section("meminfo", "MemTotal:       16384000 kB") +
+      section("disk", "52428800") +
+      // Output without a trailing newline glues the exit marker to the same line
+      "__PLANTAR_SECTION__tool:node\nv22.1.0__PLANTAR_EXIT__0\n" +
+      section("tool:pnpm", "9.1.0") +
+      section("tool:pm2", "5.4.0") +
+      // nginx prints its version to stderr; 2>&1 folds it into the section output
+      section("tool:nginx", "nginx version: nginx/1.24.0") +
+      section("tool:certbot", "bash: certbot: command not found", 127) +
+      section("tool:python", "", 1);
+    const conn = fakeConn([[/__PLANTAR_SECTION__/, { stdout }]], commands);
+
+    const info = await getServerInfo(conn);
+
+    expect(commands).toHaveLength(1);
+    expect(info).toEqual({
+      os: { id: "ubuntu", version: "24.04", pretty: "Ubuntu 24.04.1 LTS" },
+      supported: true,
+      cpuCores: 4,
+      memoryTotalMb: 16000,
+      diskFreeRootGb: 50,
+      tools: {
+        node: "v22.1.0",
+        pnpm: "9.1.0",
+        pm2: "5.4.0",
+        nginx: "nginx version: nginx/1.24.0",
+        certbot: null,
+        python: null,
+      },
+    });
+  });
+
+  it("обрыв канала посреди команды — ошибка, а не частичные данные", async () => {
+    // The combined command always exits 0 by itself (it ends with an echo),
+    // so a non-zero/-1 code means the transport dropped mid-run
+    const stdout = section("os-release", "ID=ubuntu") + section("nproc", "4");
+    const conn = fakeConn([[/__PLANTAR_SECTION__/, { stdout, code: -1 }]], []);
+
+    await expect(getServerInfo(conn)).rejects.toThrow(/-1/);
+  });
+
+  it("команда проходит синтаксическую проверку bash", () => {
+    const file = path.join(mkdtempSync(path.join(tmpdir(), "plantar-")), "server-info.sh");
+    writeFileSync(file, serverInfoCommand());
+    expect(() => execFileSync("bash", ["-n", file])).not.toThrow();
+  });
+
+  it("реальный запуск команды: каждая проверка получает свою секцию и код", () => {
+    // Missing tools and files are fine here — the point is that the real shell
+    // output splits back into one section with a numeric exit code per check
+    const stdout = execFileSync("bash", ["-c", serverInfoCommand()], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const sections = parseServerInfoOutput(stdout);
+    for (const name of [
+      "os-release",
+      "nproc",
+      "meminfo",
+      "disk",
+      "tool:node",
+      "tool:pnpm",
+      "tool:pm2",
+      "tool:nginx",
+      "tool:certbot",
+      "tool:python",
+    ]) {
+      expect(sections.has(name), name).toBe(true);
+      expect(sections.get(name)!.code, name).toBeGreaterThanOrEqual(0);
+    }
   });
 });
 
