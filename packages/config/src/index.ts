@@ -2,6 +2,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { t } from "./messages";
+import { PORT_MAX, PORT_MIN, PROJECT_NAME_REGEX } from "./validation";
+
+export * from "./validation";
 
 export const PACKAGE_MANAGERS = ["npm", "pnpm", "yarn", "bun"] as const;
 export type PackageManager = (typeof PACKAGE_MANAGERS)[number];
@@ -10,7 +13,7 @@ export type PackageManager = (typeof PACKAGE_MANAGERS)[number];
 // парсинга — язык устанавливается приложением после импорта модуля
 const projectConfigSchema = () =>
   z.object({
-    name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, t("nameRegex")),
+    name: z.string().regex(PROJECT_NAME_REGEX, t("nameRegex")),
     /** Тип проекта: статический сайт, Node.js/Next.js-приложение или Telegram-бот */
     type: z.enum(["static", "node", "next", "bot"]).default("static"),
     /** Рантайм бота; python — зависимости из requirements.txt в venv */
@@ -23,7 +26,7 @@ const projectConfigSchema = () =>
     /** Команда запуска Node.js-приложения; статические сайты её не используют */
     startCommand: z.string().optional(),
     /** Порт Node.js-приложения; назначается автоматически при первом деплое */
-    port: z.number().int().min(1).max(65535).optional(),
+    port: z.number().int().min(PORT_MIN).max(PORT_MAX).optional(),
     /** Домен сайта; если не указан — сайт отвечает по IP сервера.
      * Regex также защищает от инъекции в shell-команды деплоя (certbot, nginx) */
     domain: z

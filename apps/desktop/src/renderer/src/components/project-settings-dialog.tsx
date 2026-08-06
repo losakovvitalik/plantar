@@ -1,3 +1,4 @@
+import { validatePort, validateProjectName } from "@plantar/config/validation";
 import { Rocket } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ProjectConfigInput } from "../../../preload/index.d";
@@ -173,15 +174,15 @@ export function ProjectSettingsDialog({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
+    if (!validateProjectName(name)) {
       setError(t("projectSettings.nameError"));
       return;
     }
-    const portValue = port.trim() ? Number(port.trim()) : undefined;
-    if (port.trim() && (!/^\d+$/.test(port.trim()) || portValue! < 1 || portValue! > 65535)) {
+    if (!validatePort(port)) {
       setError(t("projectSettings.portError"));
       return;
     }
+    const portValue = port.trim() ? Number(port.trim()) : undefined;
     setBusy(true);
     setError(null);
     const result = await onSubmit({
