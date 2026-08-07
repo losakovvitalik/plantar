@@ -2116,7 +2116,7 @@ app.whenReady().then(() => {
                         try {
                           saveServerLogSnapshot(name, kind, snapshot[kind]);
                         } catch (snapshotErr) {
-                          console.error("logs: failed to save server log snapshot", snapshotErr);
+                          console.error("plantar: failed to save server log snapshot", snapshotErr);
                         }
                       }
                     }
