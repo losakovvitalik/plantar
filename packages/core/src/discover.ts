@@ -296,10 +296,11 @@ async function detectAppRepo(
   if (!toplevel || !origin) return null;
   const repoUrl = normalizeGitUrl(origin);
   if (!repoUrl) return null;
-  const repoSubdir =
-    appDir === toplevel ? "" : appDir.startsWith(toplevel + "/")
-      ? appDir.slice(toplevel.length + 1)
-      : "";
+  // App dir relative to the repo root; "" when it is the root itself
+  // (or lies outside the toplevel, which git should never report)
+  const repoSubdir = appDir.startsWith(toplevel + "/")
+    ? appDir.slice(toplevel.length + 1)
+    : "";
   return {
     repoUrl,
     // «HEAD» означает отвязанное состояние — ветку выберем при подключении

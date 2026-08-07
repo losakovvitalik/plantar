@@ -26,7 +26,7 @@ import { cn } from "../lib/utils";
 import { EnableAppMetricsDialog } from "./enable-app-metrics-dialog";
 import { EnableVisitsLogDialog } from "./enable-visits-log-dialog";
 import { ExternalHttpsDialog } from "./external-https-dialog";
-import { MetricsCharts, WindowToggle } from "./metrics-charts";
+import { type ChartWindow, HOUR, MetricsCharts, WindowToggle } from "./metrics-charts";
 import { Button } from "./ui/button";
 import {
   type ChartConfig,
@@ -305,7 +305,7 @@ export function AppStatusTab({
 /** Графики нагрузки приложения: процессор и память за час или сутки */
 function AppLoadCard({ project, lang }: { project: ProjectRecord; lang: string }) {
   const { t } = useI18n();
-  const [window_, setWindow] = useState<3600 | 86400>(3600);
+  const [window_, setWindow] = useState<ChartWindow>(HOUR);
   const [history, setHistory] = useState<AppMetricsHistory | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -319,7 +319,7 @@ function AppLoadCard({ project, lang }: { project: ProjectRecord; lang: string }
       if (result.ok) {
         setHistory(result.data);
         // Кэшируем только часовое окно — оно видно при открытии вкладки
-        if (seconds === 3600) {
+        if (seconds === HOUR) {
           void window.plantar.saveStatusTabCache(project.id, {
             metricsHistory: result.data,
           });
@@ -331,14 +331,14 @@ function AppLoadCard({ project, lang }: { project: ProjectRecord; lang: string }
 
   useEffect(() => {
     setHistory(null);
-    setWindow(3600);
+    setWindow(HOUR);
     let cancelled = false;
     void (async () => {
       // Прошлый график вместо «Загрузки», пока едет свежий
       const cached = await window.plantar.getStatusTabCache(project.id);
       if (cancelled) return;
       if (cached.ok && cached.data?.metricsHistory) setHistory(cached.data.metricsHistory);
-      void load(3600);
+      void load(HOUR);
     })();
     return () => {
       cancelled = true;

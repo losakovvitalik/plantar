@@ -391,7 +391,7 @@ export interface IpcInvokeMap {
     result: { url?: string };
   };
   "projects:migrate": {
-    args: { projectId: string; password?: string; legacyPeerDeps?: boolean };
+    args: { projectId: string; password?: string };
     result: { url?: string };
   };
   "external:setupHttps": {

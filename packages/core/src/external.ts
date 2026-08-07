@@ -1,6 +1,7 @@
 import { type SshConnection, shellQuote } from "@plantar/ssh";
 import { listAppEnvFiles } from "./discover";
 import { t } from "./messages";
+import { MAX_ERROR_OUTPUT_CHARS, MAX_ERROR_STDERR_CHARS } from "./output-limits";
 import {
   run,
   verifySiteAvailable,
@@ -237,7 +238,7 @@ async function runGit(
     const output = [result.stdout, result.stderr]
       .filter(Boolean)
       .join("\n")
-      .slice(-3000);
+      .slice(-MAX_ERROR_OUTPUT_CHARS);
     throw new Error(t("externalGitFailed", { output }));
   }
 }
@@ -377,6 +378,6 @@ export async function writeExternalEnv(
     `echo '${encoded}' | base64 -d > ${path} && chmod 600 ${path}`,
   );
   if (result.code !== 0) {
-    throw new Error(t("envSaveFailed", { stderr: result.stderr.slice(-2000) }));
+    throw new Error(t("envSaveFailed", { stderr: result.stderr.slice(-MAX_ERROR_STDERR_CHARS) }));
   }
 }

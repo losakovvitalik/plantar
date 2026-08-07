@@ -2,6 +2,7 @@ import type { SshConnection } from "@plantar/ssh";
 import { shellQuote } from "@plantar/ssh";
 import { extractPm2Json } from "./discover";
 import { t } from "./messages";
+import { MAX_ERROR_OUTPUT_CHARS } from "./output-limits";
 
 /**
  * Общие шаги деплоя, которые нужны и управляемым проектам (index.ts),
@@ -33,7 +34,7 @@ export async function run(
     const output = [result.stdout, result.stderr]
       .filter(Boolean)
       .join("\n")
-      .slice(-3000);
+      .slice(-MAX_ERROR_OUTPUT_CHARS);
     throw new Error(
       t("commandFailed", {
         code: result.code,
@@ -62,7 +63,7 @@ export async function waitForApp(
   if (check.code !== 0) {
     const logs = await conn.exec(`pm2 logs ${shellQuote(name)} --nostream --lines 30 2>&1`);
     throw new AppNotRespondingError(
-      t("appNotResponding", { port, logs: logs.stdout.slice(-3000) }),
+      t("appNotResponding", { port, logs: logs.stdout.slice(-MAX_ERROR_OUTPUT_CHARS) }),
     );
   }
   log(t("appResponding"));
@@ -94,7 +95,7 @@ export async function waitForStableProcess(
   if (!stable) {
     const logs = await conn.exec(`pm2 logs ${shellQuote(name)} --nostream --lines 30 2>&1`);
     throw new ProcessUnstableError(
-      t("processUnstable", { name, logs: logs.stdout.slice(-3000) }),
+      t("processUnstable", { name, logs: logs.stdout.slice(-MAX_ERROR_OUTPUT_CHARS) }),
     );
   }
   log(t("processStable"));

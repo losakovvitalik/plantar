@@ -10,16 +10,18 @@ import { useI18n } from "../i18n";
 import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
 import { EnableAppMetricsDialog } from "./enable-app-metrics-dialog";
-import { MetricsCharts, WindowToggle } from "./metrics-charts";
+import {
+  type ChartWindow,
+  HOUR,
+  MetricsCharts,
+  WindowToggle,
+} from "./metrics-charts";
 import { Button } from "./ui/button";
 
 interface Props {
   server: ServerRecord;
   askPassword: (server: ServerRecord) => Promise<string | null>;
 }
-
-const HOUR = 3600;
-const DAY = 86400;
 
 /**
  * Мониторинг на экране сервера: графики нагрузки (если установлен Netdata)
@@ -33,7 +35,7 @@ export function ServerMonitoring({ server, askPassword }: Props) {
   const [appMetricsDialog, setAppMetricsDialog] = useState(false);
   const [metrics, setMetrics] = useState<ServerMetrics | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
-  const [window_, setWindow] = useState<typeof HOUR | typeof DAY>(HOUR);
+  const [window_, setWindow] = useState<ChartWindow>(HOUR);
   const [error, setError] = useState<string | null>(null);
 
   const loadMetrics = useCallback(
@@ -97,7 +99,7 @@ export function ServerMonitoring({ server, askPassword }: Props) {
     await load();
   }
 
-  async function switchWindow(seconds: typeof HOUR | typeof DAY) {
+  async function switchWindow(seconds: ChartWindow) {
     setWindow(seconds);
     await loadMetrics(seconds);
   }

@@ -14,10 +14,6 @@ export function systemLanguage(): Language {
 
 let currentLanguage: Language = systemLanguage();
 
-export function getLanguage(): Language {
-  return currentLanguage;
-}
-
 /** Приложение вызывает это при старте (из настроек) и при их смене */
 export function setLanguage(language: Language): void {
   currentLanguage = language;

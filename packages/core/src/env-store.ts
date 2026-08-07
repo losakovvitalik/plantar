@@ -1,5 +1,6 @@
 import type { SshConnection } from "@plantar/ssh";
 import { t } from "./messages";
+import { MAX_ERROR_STDERR_CHARS } from "./output-limits";
 
 /** Env-файлы проектов живут на сервере вне папок релизов — деплой их не затирает */
 const ENV_STORE_DIR = "/var/www/.plantar/env";
@@ -24,7 +25,7 @@ export async function writeProjectEnv(
       `echo '${encoded}' | base64 -d > '${file}' && chmod 600 '${file}'`,
   );
   if (result.code !== 0) {
-    throw new Error(t("envSaveFailed", { stderr: result.stderr.slice(-2000) }));
+    throw new Error(t("envSaveFailed", { stderr: result.stderr.slice(-MAX_ERROR_STDERR_CHARS) }));
   }
 }
 

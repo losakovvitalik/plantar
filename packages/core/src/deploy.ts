@@ -10,6 +10,7 @@ import { ENV_FILE_RE } from "./discover";
 import { envStorePath, parseEnv, readProjectEnv } from "./env-store";
 import { t } from "./messages";
 import { configureNginx, disableForeignNginxConf, setupSsl } from "./nginx";
+import { MAX_ERROR_OUTPUT_CHARS } from "./output-limits";
 import { run, verifySiteAvailable, waitForApp, waitForStableProcess } from "./process-checks";
 import type { SiteCheckStatus } from "./process-checks";
 import {
@@ -135,7 +136,7 @@ async function deployStatic(
       await execAsync(installCommand, { cwd: projectDir, maxBuffer: 50 * 1024 * 1024 });
     } catch (err) {
       const e = err as { stdout?: string; stderr?: string };
-      const output = [e.stdout, e.stderr].filter(Boolean).join("\n").slice(-3000);
+      const output = [e.stdout, e.stderr].filter(Boolean).join("\n").slice(-MAX_ERROR_OUTPUT_CHARS);
       if (isPeerConflict(config, output)) {
         throw new NpmPeerConflictError(t("npmPeerConflict", { output }));
       }
@@ -159,7 +160,7 @@ async function deployStatic(
     const output = [e.stdout, e.stderr]
       .filter(Boolean)
       .join("\n")
-      .slice(-3000);
+      .slice(-MAX_ERROR_OUTPUT_CHARS);
     throw new Error(t("buildFailed", { command: config.buildCommand, output }));
   }
 
@@ -274,7 +275,7 @@ async function uploadApp(
       const output = [installed.stdout, installed.stderr]
         .filter(Boolean)
         .join("\n")
-        .slice(-3000);
+        .slice(-MAX_ERROR_OUTPUT_CHARS);
       if (isPeerConflict(config, output)) {
         throw new NpmPeerConflictError(t("npmPeerConflict", { output }));
       }

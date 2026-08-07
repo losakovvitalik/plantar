@@ -260,15 +260,17 @@ export function Sidebar({
           const serverActive = selection?.kind === "server" && selection.id === server.id;
           // Линия промежутка g рисуется над группой g; последний промежуток —
           // под последней группой
-          const serverLine =
-            dropTarget?.kind === "server"
-              ? dropTarget.gap === serverIndex
-                ? "top"
-                : serverIndex === visibleServers.length - 1 &&
-                    dropTarget.gap === visibleServers.length
-                  ? "bottom"
-                  : null
-              : null;
+          let serverLine: "top" | "bottom" | null = null;
+          if (dropTarget?.kind === "server") {
+            if (dropTarget.gap === serverIndex) {
+              serverLine = "top";
+            } else if (
+              serverIndex === visibleServers.length - 1 &&
+              dropTarget.gap === visibleServers.length
+            ) {
+              serverLine = "bottom";
+            }
+          }
           const status = statuses[server.id];
           const checkedSuffix = status?.checkedAt
             ? ` · ${t("sidebar.status.checkedAt", { time: formatChecked(status.checkedAt, lang) })}`

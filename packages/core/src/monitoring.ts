@@ -13,6 +13,7 @@
 import { type SshConnection, shellQuote } from "@plantar/ssh";
 import { mapWithConcurrency } from "./concurrency";
 import { t } from "./messages";
+import { MAX_ERROR_OUTPUT_CHARS } from "./output-limits";
 
 /**
  * Опциональные инструменты мониторинга на сервере. Оба ставятся из
@@ -21,6 +22,9 @@ import { t } from "./messages";
  * - Netdata пишет историю нагрузки сервера и отдаёт её локальным HTTP API.
  */
 export type MonitoringTool = "goaccess" | "netdata";
+
+/** Points per chart window requested from Netdata — the chart resolution */
+const CHART_POINTS = 120;
 
 /** Что из мониторинга установлено на сервере */
 export interface MonitoringStatus {
@@ -240,7 +244,7 @@ async function run(
   log(`$ ${command}`);
   const result = await conn.exec(command);
   if (result.code !== 0) {
-    const output = [result.stdout, result.stderr].filter(Boolean).join("\n").slice(-3000);
+    const output = [result.stdout, result.stderr].filter(Boolean).join("\n").slice(-MAX_ERROR_OUTPUT_CHARS);
     throw new Error(t("commandFailed", { code: result.code, command, stderr: output }));
   }
 }
@@ -549,7 +553,7 @@ export async function getServerMetrics(
     conn.exec(
       netdataDataCommand(
         chart,
-        `after=-${Math.round(seconds)}&points=120&group=average&format=json`,
+        `after=-${Math.round(seconds)}&points=${CHART_POINTS}&group=average&format=json`,
       ),
     );
 
@@ -570,7 +574,7 @@ export async function getServerMetrics(
     throw new Error(t("netdataNotResponding"));
   }
 
-  const bucket = seconds / 120;
+  const bucket = seconds / CHART_POINTS;
 
   // system.cpu — проценты по составляющим; занятость = 100 − idle
   const idleIndex = (cpuRaw.labels ?? []).indexOf("idle");
@@ -627,12 +631,12 @@ async function queryDiskUsage(
   if (!usedChart || !totalChart) return { diskUsedGb: [], diskTotalGb: 0 };
 
   const toGb = (mb: number) => Math.round((mb / 1024) * 10) / 10;
-  const bucket = seconds / 120;
+  const bucket = seconds / CHART_POINTS;
   const used = downsampleAverage(
-    await queryChartSeries(conn, usedChart, seconds, 120),
+    await queryChartSeries(conn, usedChart, seconds, CHART_POINTS),
     bucket,
   );
-  const total = await queryChartSeries(conn, totalChart, seconds, 120);
+  const total = await queryChartSeries(conn, totalChart, seconds, CHART_POINTS);
   return {
     diskUsedGb: used.map((point) => ({ time: point.time, value: toGb(point.value) })),
     diskTotalGb: total.length > 0 ? toGb(total.at(-1)!.value) : 0,
@@ -655,7 +659,7 @@ async function queryAppsUsage(
 
   const cores = Math.max(1, Number((await conn.exec("nproc")).stdout.trim()) || 1);
   const titles = new Map(apps.map((app) => [appMetricsGroupName(app.pm2Name), app.name]));
-  const bucket = seconds / 120;
+  const bucket = seconds / CHART_POINTS;
 
   // Groups are queried concurrently, cpu and mem of a group in parallel too.
   // Each query is a separate SSH channel: 4 groups x 2 curls = 8 channels,
@@ -666,8 +670,8 @@ async function queryAppsUsage(
     async (group): Promise<ServerAppUsage | null> => {
       try {
         const [cpu, memMb] = await Promise.all([
-          queryAppMetric(conn, chartIds, group, "cpu", seconds, 120),
-          queryAppMetric(conn, chartIds, group, "mem", seconds, 120),
+          queryAppMetric(conn, chartIds, group, "cpu", seconds, CHART_POINTS),
+          queryAppMetric(conn, chartIds, group, "mem", seconds, CHART_POINTS),
         ]);
         if (cpu.length === 0 && memMb.length === 0) return null;
         return {
@@ -896,10 +900,10 @@ export async function getAppMetricsHistory(
   const group = appMetricsGroupName(pm2Name);
   const chartIds = await fetchNetdataChartIds(conn);
   // CPU — с десятыми, память — целые МБ
-  const cpu = (await queryAppMetric(conn, chartIds, group, "cpu", seconds, 120)).map(
+  const cpu = (await queryAppMetric(conn, chartIds, group, "cpu", seconds, CHART_POINTS)).map(
     (point) => ({ time: point.time, value: Math.round(point.value * 10) / 10 }),
   );
-  const memMb = (await queryAppMetric(conn, chartIds, group, "mem", seconds, 120)).map(
+  const memMb = (await queryAppMetric(conn, chartIds, group, "mem", seconds, CHART_POINTS)).map(
     (point) => ({ time: point.time, value: Math.round(point.value) }),
   );
   return { cpu, memMb };

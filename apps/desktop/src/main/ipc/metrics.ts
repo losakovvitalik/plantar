@@ -19,6 +19,10 @@ import { getProject, getServer, projectConfig } from "../records";
 import { trafficLogPath } from "../traffic-log";
 import { handle, toResult } from "./util";
 
+// Metrics windows in seconds; the untrusted renderer value is clamped to these
+const HOUR_SECONDS = 3600;
+const DAY_SECONDS = 86400;
+
 export function registerMetricsIpc(): void {
   handle(
     "monitoring:status",
@@ -126,7 +130,7 @@ export function registerMetricsIpc(): void {
     "metrics:server",
     (_e, args) =>
       toResult(async () => {
-        const seconds = args.seconds === 86400 ? 86400 : 3600;
+        const seconds = args.seconds === DAY_SECONDS ? DAY_SECONDS : HOUR_SECONDS;
         // Проекты сервера подписывают ряды разбивки по приложениям
         const apps = readProjects()
           .filter((p) => p.serverId === args.serverId)
@@ -137,7 +141,8 @@ export function registerMetricsIpc(): void {
             } catch {
               /* plantar.json недоступен — используем имя на момент добавления */
             }
-            return { pm2Name: p.external ? p.external.pm2Name : name, name: p.name };
+            // The resolved name, so the usage series match the app cards after a rename
+            return { pm2Name: p.external ? p.external.pm2Name : name, name };
           });
         return withServer(getServer(args.serverId), args.password, async (conn) => {
           await ensureAppMetricsScript(conn);
@@ -160,7 +165,7 @@ export function registerMetricsIpc(): void {
           /* plantar.json недоступен — используем имя на момент добавления */
         }
         const pm2Name = project.external ? project.external.pm2Name : name;
-        const seconds = args.seconds === 86400 ? 86400 : 3600;
+        const seconds = args.seconds === DAY_SECONDS ? DAY_SECONDS : HOUR_SECONDS;
         return withServer(server, args.password, (conn) =>
           getAppMetricsHistory(conn, pm2Name, seconds),
         );
