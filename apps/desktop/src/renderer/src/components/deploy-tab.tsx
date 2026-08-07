@@ -2,7 +2,6 @@ import {
   ArrowRightLeft,
   Check,
   Copy,
-  ExternalLink,
   FolderOpen,
   GitBranch,
   Globe,
@@ -14,14 +13,16 @@ import {
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { Language } from "@plantar/storage";
 import type {
+  IpcResult,
   ProjectConfig,
   ProjectRecord,
   ServerRecord,
-  SiteCheckStatus,
 } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
 import { deployOutcome } from "../lib/deploy-outcome";
 import { passwordFor } from "../lib/server-auth";
+import { type RunView, useDeployRun } from "../lib/use-deploy-run";
+import { DeployOutcomeBanner } from "./deploy-outcome-banner";
 import { MigrateProjectDialog } from "./migrate-project-dialog";
 import { Button } from "./ui/button";
 import { Switch } from "./ui/switch";
@@ -42,10 +43,6 @@ interface Props {
 
 const SHOW_COMMANDS_KEY = "plantar:showCommands";
 
-/** Лимит строк терминала — как у буфера прогона в main; длинный лог
- *  восстановленного npm install не должен раздувать DOM */
-const MAX_TERMINAL_LINES = 2000;
-
 const DATE_LOCALES: Record<Language, string> = { ru: "ru-RU", en: "en-US" };
 
 function formatWhen(iso: string, lang: Language): string {
@@ -55,17 +52,6 @@ function formatWhen(iso: string, lang: Language): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-/** Прогон деплоя глазами вкладки — зеркало состояния main */
-interface RunView {
-  status: "running" | "success" | "error" | "interrupted";
-  kind: "deploy" | "rollback" | "migrate";
-  startedAt: string;
-  url: string | null;
-  /** How the address answered the availability check; null — nothing to check */
-  urlCheck: SiteCheckStatus | null;
-  error: { message: string; code?: string } | null;
 }
 
 function DeployError({
@@ -289,12 +275,10 @@ export function DeployTab({
   const [migrateOpen, setMigrateOpen] = useState(false);
   // Ошибка привязки папки/репозитория — не относится к прогону деплоя
   const [linkError, setLinkError] = useState<string | null>(null);
-  // Состояние прогона живёт в main; вкладка показывает его снимок + события
-  const [run, setRun] = useState<RunView | null>(null);
-  const [lines, setLines] = useState<string[]>([]);
-  // Пока снимок не получен, кнопки неактивны — иначе можно запустить второй деплой
-  const [stateLoaded, setStateLoaded] = useState(false);
-  const lastSeqRef = useRef(0);
+  // The run mirror from main: snapshot, subscriptions and the line buffer
+  // live in the hook
+  const { run, lines, stateLoaded, stepStartRef, startRunView, failRun } =
+    useDeployRun(project.id);
   const [showCommands, setShowCommands] = useState(
     () => localStorage.getItem(SHOW_COMMANDS_KEY) !== "0",
   );
@@ -307,120 +291,10 @@ export function DeployTab({
   const outcome = deployOutcome(run, config?.type === "bot");
   const error = run?.status === "error" ? run.error : null;
 
-  // Длительность текущего шага: долгие команды (npm install, сборка) не пишут в лог
-  // до завершения, и без бегущего счётчика деплой выглядит зависшим.
-  // Точка отсчёта — время последней строки, она переживает перемонтирование вкладки.
-  // The 1-second tick and the counter itself live in StepTimer inside Terminal.
-  const stepStartRef = useRef(Date.now());
-
-  // Incoming log lines are collected here and flushed as one state update per
-  // animation frame — a chatty step (npm install) must not render per line
-  const lineBatchRef = useRef<string[]>([]);
-  const flushHandleRef = useRef<number | null>(null);
-
-  function flushLineBatch() {
-    flushHandleRef.current = null;
-    const chunk = lineBatchRef.current;
-    if (chunk.length === 0) return;
-    lineBatchRef.current = [];
-    setLines((prev) => [...prev, ...chunk].slice(-MAX_TERMINAL_LINES));
-  }
-
-  /** Drop batched-but-unflushed lines — they belong to the run being discarded */
-  function clearLineBatch() {
-    if (flushHandleRef.current !== null) {
-      window.cancelAnimationFrame(flushHandleRef.current);
-      flushHandleRef.current = null;
-    }
-    lineBatchRef.current = [];
-  }
-
+  // View-local state resets alongside the run mirror on project switch
   useEffect(() => {
-    setRun(null);
-    setLines([]);
-    setStateLoaded(false);
     setLinkError(null);
-    lastSeqRef.current = 0;
     stickRef.current = true;
-    clearLineBatch();
-    let disposed = false;
-    let loaded = false;
-    // Строки, пришедшие между запросом снимка и ответом, — применяются после снимка
-    const pending: { seq: number; line: string }[] = [];
-
-    const append = (seq: number, line: string) => {
-      // Номера строк закрывают гонку снимка и подписки: дубли отбрасываются
-      if (seq <= lastSeqRef.current) return;
-      lastSeqRef.current = seq;
-      stepStartRef.current = Date.now();
-      lineBatchRef.current.push(line);
-      // Cap at push time: backgroundThrottling pauses rAF while the window is
-      // hidden, and only the last MAX_TERMINAL_LINES survive the flush anyway
-      if (lineBatchRef.current.length > MAX_TERMINAL_LINES) {
-        lineBatchRef.current = lineBatchRef.current.slice(-MAX_TERMINAL_LINES);
-      }
-      if (flushHandleRef.current === null) {
-        flushHandleRef.current = window.requestAnimationFrame(flushLineBatch);
-      }
-    };
-
-    const unsubscribeLog = window.plantar.onDeployLog((event) => {
-      if (event.projectId !== project.id) return;
-      if (!loaded) {
-        pending.push(event);
-        return;
-      }
-      append(event.seq, event.line);
-    });
-    const unsubscribeFinished = window.plantar.onDeployFinished((event) => {
-      if (event.projectId !== project.id) return;
-      setRun(
-        (prev) =>
-          prev && {
-            ...prev,
-            status: event.status,
-            url: event.url ?? null,
-            urlCheck: event.urlCheck ?? null,
-            error:
-              event.status === "error"
-                ? { message: event.error ?? "", code: event.code }
-                : null,
-          },
-      );
-    });
-
-    void window.plantar.getDeployState(project.id).then((result) => {
-      if (disposed) return;
-      loaded = true;
-      setStateLoaded(true);
-      if (!result.ok || !result.data) return;
-      const state = result.data;
-      lastSeqRef.current = state.lastSeq;
-      setLines(state.lines.slice(-MAX_TERMINAL_LINES));
-      setRun({
-        status: state.status,
-        kind: state.kind,
-        startedAt: state.startedAt,
-        url: state.url ?? null,
-        urlCheck: state.urlCheck ?? null,
-        error: state.error
-          ? { message: state.error, code: state.errorCode }
-          : null,
-      });
-      if (state.status === "running") {
-        // Счётчик шага продолжается от последней строки, а не с нуля
-        stepStartRef.current =
-          Date.parse(state.lastLineAt || state.startedAt) || Date.now();
-      }
-      for (const event of pending) append(event.seq, event.line);
-    });
-
-    return () => {
-      disposed = true;
-      unsubscribeLog();
-      unsubscribeFinished();
-      clearLineBatch();
-    };
   }, [project.id]);
 
   useEffect(() => {
@@ -434,127 +308,82 @@ export function DeployTab({
     localStorage.setItem(SHOW_COMMANDS_KEY, value ? "1" : "0");
   }
 
-  /** Сброс вкладки под новый прогон — до ответа main, чтобы клик отзывался мгновенно */
-  function startRunView(kind: "deploy" | "rollback" | "migrate") {
-    setRun({
-      status: "running",
-      kind,
-      startedAt: new Date().toISOString(),
-      url: null,
-      urlCheck: null,
-      error: null,
-    });
-    setLines([]);
-    setLinkError(null);
-    lastSeqRef.current = 0;
-    stickRef.current = true;
-    stepStartRef.current = Date.now();
-    clearLineBatch();
-  }
-
   // Повторный запуск во время работы (двойной клик, двойной прогон эффекта
   // autoDeploy в StrictMode) ломал бы деплой; ref срабатывает сразу,
   // в отличие от состояния running
   const busyRef = useRef(false);
 
-  async function deploy(legacyPeerDeps = false) {
+  /** Shared skeleton of the four run actions: double-start guard,
+   *  confirmation, password prompt, view reset, kick-off in main. Success
+   *  and run errors arrive via the deploy:finished event; only pre-start
+   *  (validation) failures are handled here */
+  async function runAction(action: {
+    kind: RunView["kind"];
+    confirmText?: string;
+    /** Runs right after the password is obtained, before the view resets */
+    beforeStart?: () => void;
+    /** undefined — the saved key connects silently, no password needed */
+    start: (password: string | undefined) => Promise<IpcResult<unknown>>;
+    onSuccess?: () => void;
+  }) {
     if (busyRef.current || running) return;
     busyRef.current = true;
     try {
+      if (action.confirmText && !window.confirm(action.confirmText)) return;
       const password = await passwordFor(server, askPassword);
       if (password === null) return;
-      startRunView("deploy");
-      const result = await window.plantar.deploy(project.id, password, legacyPeerDeps);
-      // Успех и ошибки прогона приходят событием deploy:finished;
-      // здесь остаются только ошибки до старта прогона (валидация)
+      action.beforeStart?.();
+      setLinkError(null);
+      stickRef.current = true;
+      startRunView(action.kind);
+      const result = await action.start(password);
       if (!result.ok) {
-        setRun((prev) =>
-          prev && prev.status === "running"
-            ? {
-                ...prev,
-                status: "error",
-                error: { message: result.error, code: result.code },
-              }
-            : prev,
-        );
+        failRun(result.error, result.code);
+        return;
       }
+      action.onSuccess?.();
     } finally {
       busyRef.current = false;
     }
   }
 
-  async function rollback() {
-    if (busyRef.current || running) return;
-    busyRef.current = true;
-    try {
-      if (!window.confirm(t("deploy.rollbackConfirm"))) return;
-      const password = await passwordFor(server, askPassword);
-      if (password === null) return;
-      startRunView("rollback");
-      const result = await window.plantar.rollback(project.id, password);
-      if (!result.ok) {
-        setRun((prev) =>
-          prev && prev.status === "running"
-            ? { ...prev, status: "error", error: { message: result.error } }
-            : prev,
-        );
-      }
-    } finally {
-      busyRef.current = false;
-    }
+  function deploy(legacyPeerDeps = false) {
+    return runAction({
+      kind: "deploy",
+      start: (password) => window.plantar.deploy(project.id, password, legacyPeerDeps),
+    });
+  }
+
+  function rollback() {
+    return runAction({
+      kind: "rollback",
+      confirmText: t("deploy.rollbackConfirm"),
+      start: (password) => window.plantar.rollback(project.id, password),
+    });
   }
 
   /** Возврат предыдущей версии внешнего проекта после неудачного деплоя:
    *  повторный деплой последнего успешно развёрнутого коммита */
-  async function returnPrevious() {
+  function returnPrevious() {
     const commit = project.deployedCommit?.hash;
-    if (!commit || busyRef.current || running) return;
-    busyRef.current = true;
-    try {
-      if (!window.confirm(t("deploy.returnPreviousConfirm"))) return;
-      const password = await passwordFor(server, askPassword);
-      if (password === null) return;
-      startRunView("rollback");
-      const result = await window.plantar.rollbackExternalTo(project.id, commit, password);
-      if (!result.ok) {
-        setRun((prev) =>
-          prev && prev.status === "running"
-            ? { ...prev, status: "error", error: { message: result.error } }
-            : prev,
-        );
-      }
-    } finally {
-      busyRef.current = false;
-    }
+    if (!commit) return;
+    return runAction({
+      kind: "rollback",
+      confirmText: t("deploy.returnPreviousConfirm"),
+      start: (password) =>
+        window.plantar.rollbackExternalTo(project.id, commit, password),
+    });
   }
 
   /** Перенос под управление Plantar — прежний takeover-деплой, после подтверждения */
-  async function migrate() {
-    if (busyRef.current || running) return;
-    busyRef.current = true;
-    try {
-      const password = await passwordFor(server, askPassword);
-      if (password === null) return;
-      setMigrateOpen(false);
-      startRunView("migrate");
-      const result = await window.plantar.migrateProject(project.id, password);
-      if (!result.ok) {
-        setRun((prev) =>
-          prev && prev.status === "running"
-            ? {
-                ...prev,
-                status: "error",
-                error: { message: result.error, code: result.code },
-              }
-            : prev,
-        );
-        return;
-      }
+  function migrate() {
+    return runAction({
+      kind: "migrate",
+      beforeStart: () => setMigrateOpen(false),
+      start: (password) => window.plantar.migrateProject(project.id, password),
       // Пометка «внешний» снята — родитель перечитает проект и конфиг
-      onProjectChanged();
-    } finally {
-      busyRef.current = false;
-    }
+      onSuccess: onProjectChanged,
+    });
   }
 
   /** Привязка папки с кодом к импортированному проекту — открывает выбор папки */
@@ -766,60 +595,7 @@ export function DeployTab({
         </div>
       )}
 
-      {outcome.kind === "link" && (
-        <button
-          onClick={() => window.plantar.openExternal(outcome.url)}
-          className="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-moss outline-none hover:underline focus-visible:ring-2 focus-visible:ring-moss/50"
-        >
-          {outcome.rolledBack
-            ? t("deploy.rolledBackAt", { url: outcome.url })
-            : t("deploy.deployedAt", { url: outcome.url })}
-          <ExternalLink className="size-3.5" />
-        </button>
-      )}
-
-      {outcome.kind === "unreachable" && (
-        <p className="self-start text-sm font-semibold text-ink-soft">
-          {outcome.rolledBack
-            ? t("deploy.rolledBackNoResponse", { url: outcome.url })
-            : t("deploy.deployedNoResponse", { url: outcome.url })}
-        </p>
-      )}
-
-      {outcome.kind === "plainHttp" && (
-        <div className="flex flex-col items-start gap-1 self-start">
-          <p className="text-sm font-semibold text-ink-soft">
-            {outcome.rolledBack
-              ? t("deploy.rolledBackPlainHttp", {
-                  url: outcome.url,
-                  plainUrl: outcome.plainUrl,
-                })
-              : t("deploy.deployedPlainHttp", {
-                  url: outcome.url,
-                  plainUrl: outcome.plainUrl,
-                })}
-          </p>
-          {/* The text asks the user to open the plain address, so it has to be
-              openable from here — neutral styling, not the confirmed link */}
-          <button
-            onClick={() => window.plantar.openExternal(outcome.plainUrl)}
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink-soft outline-none hover:underline focus-visible:ring-2 focus-visible:ring-moss/50"
-          >
-            {t("deploy.openPlainUrl", { url: outcome.plainUrl })}
-            <ExternalLink className="size-3.5" />
-          </button>
-        </div>
-      )}
-
-      {outcome.kind === "done" && (
-        <p className="self-start text-sm font-semibold text-moss">
-          {outcome.rolledBack
-            ? t("deploy.rolledBackDone")
-            : outcome.isBot
-              ? t("deploy.botDeployed")
-              : t("deploy.deployedDone")}
-        </p>
-      )}
+      <DeployOutcomeBanner outcome={outcome} />
 
       {linkError ? (
         <DeployError message={linkError} />
