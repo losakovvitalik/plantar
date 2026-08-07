@@ -78,6 +78,7 @@ export const ru = {
   "addServer.description":
     "Понадобятся адрес сервера и данные для входа — их выдаёт хостинг.",
   "addServer.host": "Адрес (IP)",
+  "addServer.hostPlaceholder": "185.42.10.7",
   "addServer.port": "Порт",
   "addServer.user": "Пользователь",
   "addServer.name": "Название (необязательно)",
@@ -260,6 +261,7 @@ export const ru = {
   "addProjectDialog.gitTitle": "Репозиторий GitHub",
   "addProjectDialog.gitHint": "Скачать проект по ссылке на репозиторий.",
   "addProjectDialog.repoUrl": "Ссылка на репозиторий",
+  "addProjectDialog.repoUrlPlaceholder": "https://github.com/user/repo",
   "addProjectDialog.privateHint":
     "Для приватных репозиториев сначала войдите в GitHub в настройках.",
   "addProjectDialog.branch": "Ветка",
@@ -302,7 +304,6 @@ export const ru = {
   "files.loading": "Загружаю список файлов…",
   "files.load": "Показать файлы",
   "files.passwordNeeded": "Понадобится пароль сервера.",
-  "files.refresh": "Обновить",
   "files.refreshTitle": "Перечитать файлы с сервера",
   "files.emptyDir": "Папка пуста",
   "files.linkBadge": "ссылка",
@@ -374,6 +375,7 @@ export const ru = {
   "projectSettings.portError": "Порт: целое число от 1 до 65535.",
   "projectSettings.type": "Тип проекта",
   "projectSettings.name": "Название",
+  "projectSettings.namePlaceholder": "my-app",
   "projectSettings.nameHint":
     "Строчные латинские буквы, цифры и дефис. Так будет называться папка сайта на сервере.",
   "projectSettings.domain": "Домен",
@@ -568,6 +570,7 @@ export const ru = {
   "settings.notifyAppDownHint":
     "Plantar каждые 5 минут проверяет приложения на серверах и присылает уведомление, если какое-то перестало работать — и когда оно снова заработало. Серверы, подключаемые по паролю, в фоне не проверяются.",
   "settings.leEmail": "Email для SSL-сертификатов",
+  "settings.leEmailPlaceholder": "you@example.com",
   "settings.leEmailHint":
     "Let's Encrypt пришлёт письмо, если с автопродлением сертификата что-то пойдёт не так. Применяется при следующем деплое с доменом. Можно оставить пустым.",
 
