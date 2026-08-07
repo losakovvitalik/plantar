@@ -596,10 +596,10 @@ describe("очистка файлов deploy-логов", () => {
     const repos = path.join(dataDir(), "repos");
     mkdirSync(repos, { recursive: true });
 
-    expect(removeProjectLogs("../repos")).toBe(false);
+    expect(removeProjectLogs("../repos")).toBe("invalid-name");
     expect(existsSync(repos)).toBe(true);
 
-    expect(removeProjectLogs("site-a")).toBe(true);
+    expect(removeProjectLogs("site-a")).toBe("removed");
     expect(existsSync(dir)).toBe(false);
   });
 

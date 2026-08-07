@@ -719,20 +719,24 @@ export function removeProjectHistory(project: string): boolean {
   }
 }
 
+/** Outcome of deleting a project's log directory */
+export type RemoveProjectLogsResult = "removed" | "failed" | "invalid-name";
+
 /**
  * Deletes all logs of a project — for when the project itself is removed.
- * Returns false when the directory could not be removed (a locked file, or a
- * name escaping the logs directory) — a failed cleanup must not fail removing
- * the project, so the caller decides.
+ * "failed" means the directory could not be removed (a locked file);
+ * "invalid-name" means the name escapes the logs directory, so nothing was
+ * ever there to delete — a failed cleanup must not fail removing the
+ * project, so the caller decides.
  */
-export function removeProjectLogs(project: string): boolean {
+export function removeProjectLogs(project: string): RemoveProjectLogsResult {
   const dir = safeLogDir(project);
-  if (dir === null) return false;
+  if (dir === null) return "invalid-name";
   try {
     rmSync(dir, { recursive: true, force: true });
-    return true;
+    return "removed";
   } catch {
-    return false;
+    return "failed";
   }
 }
 

@@ -461,9 +461,10 @@ export async function getTrafficStats(
     `{ cat ${base} ${base}.1 2>/dev/null; zcat -- ${base}.*.gz 2>/dev/null; } | ` +
       `goaccess - --log-format=COMBINED -o json 2>/dev/null`,
   );
-  // GoAccess exits non-zero when the piped logs held no parseable lines —
-  // an empty or fresh log — so the empty summary is the honest result here,
-  // not a swallowed failure (GoAccess being absent already threw above)
+  // GoAccess exits non-zero most commonly when the piped logs held no
+  // parseable lines (an empty or fresh log), so the empty summary is treated
+  // as the honest result; rarer failures (an unreadable log fed as empty
+  // input, a killed GoAccess) land here too and show as "no visits"
   if (result.code !== 0) return EMPTY_TRAFFIC;
   return parseGoaccessReport(result.stdout);
 }
