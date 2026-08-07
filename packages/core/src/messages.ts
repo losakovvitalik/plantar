@@ -345,8 +345,12 @@ const MESSAGES = {
     en: "The web server did not accept the new configuration — the previous version of the file was put back.\n{stderr}",
   },
   nginxReloadFailedNotRestored: {
-    ru: "Веб-сервер не принял новые настройки, и вернуть его к прежним настройкам не удалось — проверьте файл {file}. Копия прежней версии сохранена: {backup}.\n{stderr}",
-    en: "The web server did not accept the new configuration, and returning it to the previous configuration failed — check the file {file}. A copy of the previous version is saved at {backup}.\n{stderr}",
+    ru: "Веб-сервер не принял новые настройки, и вернуть прежнюю версию файла не удалось — сейчас в файле {file} остаются настройки, которые веб-сервер не принял. Верните файл из сохранённой копии: {backup}.\n{stderr}",
+    en: "The web server did not accept the new configuration, and putting the previous version of the file back failed — the file {file} still holds the configuration the web server did not accept. Restore the file from the saved copy: {backup}.\n{stderr}",
+  },
+  nginxReloadFailedRestoredNotReloaded: {
+    ru: "Веб-сервер не принял новые настройки. Прежняя версия файла возвращена на место, и исправлять её не нужно, но веб-сервер пока не подтвердил, что снова работает по ней, — проверьте состояние веб-сервера на сервере. Копия прежней версии на всякий случай сохранена: {backup}.\n{stderr}",
+    en: "The web server did not accept the new configuration. The previous version of the file was put back and needs no fixing, but the web server has not yet confirmed it is running on it again — check the state of the web server on the server. A copy of the previous version is saved just in case: {backup}.\n{stderr}",
   },
   accessLogEnabled: {
     ru: "✓ Журнал посещений включён: {logPath}",
