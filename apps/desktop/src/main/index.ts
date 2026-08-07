@@ -2109,8 +2109,16 @@ app.whenReady().then(() => {
                   onClose: () => {
                     logStreams.delete(streamId);
                     if (snapshot) {
-                      saveServerLogSnapshot(name, "access", snapshot.access);
-                      saveServerLogSnapshot(name, "error", snapshot.error);
+                      // Best-effort: a failed write inside an ssh2 event callback
+                      // has no catcher above and would crash the main process.
+                      // Each write on its own so one failure does not skip the other.
+                      for (const kind of ["access", "error"] as const) {
+                        try {
+                          saveServerLogSnapshot(name, kind, snapshot[kind]);
+                        } catch (snapshotErr) {
+                          console.error("plantar: failed to save server log snapshot", snapshotErr);
+                        }
+                      }
                     }
                     send("logs:stream-end", { streamId });
                     closed();
