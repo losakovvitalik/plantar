@@ -585,7 +585,7 @@ describe("очистка файлов deploy-логов", () => {
       run("site-b", "2026-07-01T10:00:00.000Z"),
     ]);
 
-    removeProjectHistory("site-a");
+    expect(removeProjectHistory("site-a")).toBe(true);
 
     expect(readHistory().map((r) => r.project)).toEqual(["site-b"]);
   });
@@ -596,10 +596,10 @@ describe("очистка файлов deploy-логов", () => {
     const repos = path.join(dataDir(), "repos");
     mkdirSync(repos, { recursive: true });
 
-    removeProjectLogs("../repos");
+    expect(removeProjectLogs("../repos")).toBe("invalid-name");
     expect(existsSync(repos)).toBe(true);
 
-    removeProjectLogs("site-a");
+    expect(removeProjectLogs("site-a")).toBe("removed");
     expect(existsSync(dir)).toBe(false);
   });
 

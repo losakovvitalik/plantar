@@ -71,6 +71,21 @@ export class SshConnection {
   static connect(options: ConnectOptions): Promise<SshConnection> {
     return new Promise((resolve, reject) => {
       const client = new Client();
+      // A raw ssh2 error ("All configured authentication methods failed")
+      // names neither the server nor the user — useless in a log with
+      // several servers. The original text is kept inside the message:
+      // callers match on it (e.g. /authentication/i in friendlyKeyError).
+      const fail = (err: unknown) =>
+        reject(
+          new Error(
+            t("connectFailed", {
+              host: options.host,
+              user: options.username,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+            { cause: err },
+          ),
+        );
       client
         .on("ready", () => {
           const conn = new SshConnection(client, options.host);
@@ -79,8 +94,11 @@ export class SshConnection {
           });
           resolve(conn);
         })
-        .on("error", reject)
-        .connect({
+        .on("error", fail);
+      // connect() can also throw synchronously (unreadable key file,
+      // unparseable key) — wrap those the same way as "error" events.
+      try {
+        client.connect({
           host: options.host,
           port: options.port ?? 22,
           username: options.username,
@@ -92,6 +110,9 @@ export class SshConnection {
           // и позволяет заметить обрыв простаивающего соединения
           keepaliveInterval: 15_000,
         });
+      } catch (err) {
+        fail(err);
+      }
     });
   }
 
@@ -369,7 +390,9 @@ export class SshConnection {
 
       const mkdir = await this.exec(`mkdir -p ${shellQuote(remoteDir)}`);
       if (mkdir.code !== 0) {
-        throw new Error(t("mkdirFailed", { stderr: mkdir.stderr }));
+        throw new Error(
+          t("mkdirFailed", { dir: remoteDir, host: this.host, stderr: mkdir.stderr }),
+        );
       }
 
       // Архив кладём внутрь remoteDir: очистка staging-папки убирает и его
