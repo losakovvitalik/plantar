@@ -42,7 +42,7 @@ The builds are not code-signed yet, so the operating system will be suspicious o
 
 ## MVP
 
-Historical note: this was the scope of the first version. Today Plantar deploys static sites, Node.js and Next.js applications and Telegram bots (`static | node | next | bot`) — see [docs/features.md](docs/features.md) for the current feature set.
+Historical note — the scope of the first version was:
 
 - Ubuntu 22.04 / 24.04.
 - React applications.
@@ -51,6 +51,8 @@ Historical note: this was the scope of the first version. Today Plantar deploys 
 - pm2.
 - nginx.
 - Let's Encrypt.
+
+Today Plantar deploys static sites, Node.js and Next.js applications and Telegram bots (`static | node | next | bot`) — see [docs/features.md](docs/features.md) for the current feature set.
 
 ## Architecture
 
