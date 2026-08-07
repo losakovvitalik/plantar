@@ -7,7 +7,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ProjectRecord, ServerRecord } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
 import { canConnectSilently, passwordFor } from "../lib/server-auth";
@@ -63,7 +63,15 @@ export function EnvTab({ project, server, askPassword }: Props) {
   const [showAll, setShowAll] = useState(false);
   /** Локальные .env-файлы в папке проекта — предлагаются для импорта */
   const [localFiles, setLocalFiles] = useState<string[]>([]);
+  const savedFlashTimer = useRef<number | undefined>(undefined);
 
+  // The "saved" flash timeout must not fire after the tab is closed
+  useEffect(() => () => window.clearTimeout(savedFlashTimer.current), []);
+
+  /**
+   * Reads the env file from the server. Not a plain fetch: asks to confirm
+   * discarding unsaved edits and may show the server password dialog first.
+   */
   async function load() {
     if (dirty && !window.confirm(t("env.confirmDiscard"))) return;
     const password = await passwordFor(server, askPassword);
@@ -109,7 +117,8 @@ export function EnvTab({ project, server, askPassword }: Props) {
     }
     setDirty(false);
     setSavedFlash(true);
-    window.setTimeout(() => setSavedFlash(false), 3000);
+    window.clearTimeout(savedFlashTimer.current);
+    savedFlashTimer.current = window.setTimeout(() => setSavedFlash(false), 3000);
   }
 
   function update(

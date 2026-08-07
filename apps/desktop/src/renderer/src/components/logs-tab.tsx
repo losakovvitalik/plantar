@@ -325,16 +325,15 @@ function Segmented({
 
 function StreamStatus({ state, paused }: { state: StreamState; paused: boolean }) {
   const { t } = useI18n();
-  const [label, dotClass] =
-    state === "live"
-      ? paused
-        ? [t("logs.statusPaused"), "bg-amber"]
-        : [t("logs.statusLive"), "bg-moss animate-pulse"]
-      : state === "connecting"
-        ? [t("logs.statusConnecting"), "bg-sage"]
-        : state === "ended"
-          ? [t("logs.statusEnded"), "bg-clay"]
-          : [t("logs.statusIdle"), "bg-line"];
+  const views: Record<StreamState, [label: string, dotClass: string]> = {
+    live: paused
+      ? [t("logs.statusPaused"), "bg-amber"]
+      : [t("logs.statusLive"), "bg-moss animate-pulse"],
+    connecting: [t("logs.statusConnecting"), "bg-sage"],
+    ended: [t("logs.statusEnded"), "bg-clay"],
+    idle: [t("logs.statusIdle"), "bg-line"],
+  };
+  const [label, dotClass] = views[state];
   return (
     <span className="inline-flex items-center gap-1.5 text-[12px] text-ink-soft">
       <span className={cn("size-2 rounded-full", dotClass)} />

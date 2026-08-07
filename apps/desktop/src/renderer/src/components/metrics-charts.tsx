@@ -32,6 +32,11 @@ interface Props {
   apps?: ServerAppUsage[];
 }
 
+/** Chart windows in seconds — shared by every screen that shows the toggle */
+export const HOUR = 3600;
+export const DAY = 86400;
+export type ChartWindow = typeof HOUR | typeof DAY;
+
 /** Крупнейших приложений в стеке; остальные вместе с системой уходят в «Другое» */
 const MAX_STACK_APPS = 4;
 
@@ -285,14 +290,14 @@ export function WindowToggle({
   onChange,
   disabled,
 }: {
-  value: 3600 | 86400;
-  onChange: (seconds: 3600 | 86400) => void;
+  value: ChartWindow;
+  onChange: (seconds: ChartWindow) => void;
   disabled?: boolean;
 }) {
   const { t } = useI18n();
   return (
     <div className="flex items-center gap-1">
-      {([3600, 86400] as const).map((seconds) => (
+      {([HOUR, DAY] as const).map((seconds) => (
         <button
           key={seconds}
           type="button"
@@ -303,7 +308,7 @@ export function WindowToggle({
             value === seconds ? "bg-moss/10 text-moss" : "text-ink-soft hover:bg-line/50",
           )}
         >
-          {seconds === 3600 ? t("monitoring.hour") : t("monitoring.day")}
+          {seconds === HOUR ? t("monitoring.hour") : t("monitoring.day")}
         </button>
       ))}
     </div>

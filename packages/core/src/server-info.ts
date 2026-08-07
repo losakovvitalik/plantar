@@ -1,5 +1,6 @@
 import type { SshConnection } from "@plantar/ssh";
 import { t } from "./messages";
+import { MAX_ERROR_OUTPUT_CHARS } from "./output-limits";
 import { run } from "./process-checks";
 
 export interface ServerInfo {
@@ -93,7 +94,7 @@ export async function getServerInfo(conn: SshConnection): Promise<ServerInfo> {
   // parsing partial output into garbage (NaN cores, all tools null) — the
   // previous sequential execs surfaced a dropped connection as an error too.
   if (combined.code !== 0) {
-    const output = [combined.stdout, combined.stderr].filter(Boolean).join("\n").slice(-3000);
+    const output = [combined.stdout, combined.stderr].filter(Boolean).join("\n").slice(-MAX_ERROR_OUTPUT_CHARS);
     throw new Error(t("commandFailed", { code: combined.code, command, stderr: output }));
   }
   const sections = parseServerInfoOutput(combined.stdout);

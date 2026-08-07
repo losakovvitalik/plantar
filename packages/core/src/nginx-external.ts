@@ -1,5 +1,6 @@
 import { type SshConnection, shellQuote } from "@plantar/ssh";
 import { t } from "./messages";
+import { MAX_ERROR_STDERR_CHARS } from "./output-limits";
 import { blankComments, findBlocks, proxyPassPorts, upstreamPorts } from "./nginx-parse";
 import { run } from "./process-checks";
 
@@ -107,7 +108,7 @@ export async function enableExternalAccessLog(
     throw new Error(
       t("nginxConfReadFailed", {
         file: target.confFile,
-        stderr: read.stderr.slice(-2000),
+        stderr: read.stderr.slice(-MAX_ERROR_STDERR_CHARS),
       }),
     );
   }
@@ -147,7 +148,7 @@ export async function enableExternalAccessLog(
   );
   if (written.code !== 0) {
     const restored = await restoreBackup(conn, backup, target.confFile);
-    const stderr = written.stderr.slice(-2000);
+    const stderr = written.stderr.slice(-MAX_ERROR_STDERR_CHARS);
     throw new Error(
       restored
         ? t("accessLogWriteFailed", { stderr })
@@ -159,7 +160,7 @@ export async function enableExternalAccessLog(
   if (check.code !== 0) {
     // The broken config was never loaded — restoring the file is enough
     const restored = await restoreBackup(conn, backup, target.confFile);
-    const stderr = check.stderr.slice(-2000);
+    const stderr = check.stderr.slice(-MAX_ERROR_STDERR_CHARS);
     throw new Error(
       restored
         ? t("nginxCheckFailedRestored", { stderr })
@@ -173,7 +174,7 @@ export async function enableExternalAccessLog(
     // failed it would just retry the config the web server did not accept
     const restored = await restoreBackup(conn, backup, target.confFile);
     const reloaded = restored && (await conn.exec("systemctl reload nginx")).code === 0;
-    const stderr = reload.stderr.slice(-2000);
+    const stderr = reload.stderr.slice(-MAX_ERROR_STDERR_CHARS);
     throw new Error(
       reloaded
         ? t("nginxReloadFailedRestored", { stderr })

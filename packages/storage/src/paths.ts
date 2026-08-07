@@ -21,20 +21,21 @@ export function dataDir(): string {
   }
 }
 
+/** Log directory of a project; unlike dataDir(), creates the directory on first use */
 export function logsDir(project: string): string {
   const dir = path.join(dataDir(), "logs", project);
   mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-/** Директория для SSH-ключей, которые Plantar создаёт сам */
+/** Directory for SSH keys Plantar generates itself; created on first use */
 export function keysDir(): string {
   const dir = path.join(dataDir(), "keys");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
 }
 
-/** Директория для локальных клонов git-репозиториев проектов */
+/** Directory for local git clones of projects; created on first use */
 export function reposDir(): string {
   const dir = path.join(dataDir(), "repos");
   mkdirSync(dir, { recursive: true });

@@ -25,15 +25,17 @@ export function registerLogsIpc(): void {
         // Импортированное приложение пишет логи по своим путям, пока Plantar
         // не пересоздаст процесс при первом деплое
         const external = project.external;
-        const logPaths =
-          external && args.source === "app" && external.outLogPath && external.errLogPath
-            ? { out: external.outLogPath, err: external.errLogPath }
-            : external && args.source === "nginx"
-              ? {
-                  out: external.accessLogPath ?? "/var/log/nginx/access.log",
-                  err: external.errorLogPath ?? "/var/log/nginx/error.log",
-                }
-              : undefined;
+        let logPaths: { out: string; err: string } | undefined;
+        if (external && args.source === "app") {
+          if (external.outLogPath && external.errLogPath) {
+            logPaths = { out: external.outLogPath, err: external.errLogPath };
+          }
+        } else if (external && args.source === "nginx") {
+          logPaths = {
+            out: external.accessLogPath ?? "/var/log/nginx/access.log",
+            err: external.errorLogPath ?? "/var/log/nginx/error.log",
+          };
+        }
 
         const streamId = randomUUID();
         const send = <C extends keyof IpcEventMap>(channel: C, payload: IpcEventMap[C]) => {
