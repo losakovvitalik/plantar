@@ -1,3 +1,15 @@
+/**
+ * Error-handling convention of this file (data for the status screens):
+ *
+ * - A missing tool or an unreachable service throws a translated error — the
+ *   screen shows the message (GoAccess absent, Netdata not responding).
+ * - Data that legitimately may not exist yet is not an error: the result is a
+ *   Result-like object whose outcome field says why it is empty
+ *   (TrafficStats.logMissing / sharedLog), or an empty series where the
+ *   docstring says so (metric points not accumulated yet).
+ *
+ * A new function follows these rules or says in a comment why it cannot.
+ */
 import { type SshConnection, shellQuote } from "@plantar/ssh";
 import { mapWithConcurrency } from "./concurrency";
 import { t } from "./messages";
@@ -376,6 +388,9 @@ export function parseGoaccessReport(json: string): TrafficStats {
   try {
     report = JSON.parse(json);
   } catch {
+    // Deviation from the empty-vs-error rule, deliberate: a report GoAccess
+    // itself produced but this parser cannot read is not actionable for the
+    // user, so it degrades to "no visits" rather than failing the screen
     return EMPTY_TRAFFIC;
   }
 
@@ -446,6 +461,9 @@ export async function getTrafficStats(
     `{ cat ${base} ${base}.1 2>/dev/null; zcat -- ${base}.*.gz 2>/dev/null; } | ` +
       `goaccess - --log-format=COMBINED -o json 2>/dev/null`,
   );
+  // GoAccess exits non-zero when the piped logs held no parseable lines —
+  // an empty or fresh log — so the empty summary is the honest result here,
+  // not a swallowed failure (GoAccess being absent already threw above)
   if (result.code !== 0) return EMPTY_TRAFFIC;
   return parseGoaccessReport(result.stdout);
 }

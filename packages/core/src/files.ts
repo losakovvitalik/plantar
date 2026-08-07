@@ -91,7 +91,7 @@ export async function readRemoteTextFile(
   absPath: string,
 ): Promise<RemoteFileContent> {
   const stat = await conn.statEntry(absPath);
-  if (!stat?.isFile) throw new Error(t("fileNotFound"));
+  if (!stat?.isFile) throw new Error(t("fileNotFound", { path: absPath }));
   if (stat.size === 0) return { kind: "text", text: "", size: 0, truncated: false };
 
   const truncated = stat.size > MAX_VIEW_BYTES;

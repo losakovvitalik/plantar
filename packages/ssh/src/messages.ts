@@ -1,9 +1,13 @@
 import { type Messages, createT } from "@plantar/i18n";
 
 const MESSAGES = {
+  connectFailed: {
+    ru: "Не удалось подключиться к серверу {host} (пользователь {user}): {error}",
+    en: "Could not connect to the server {host} (user {user}): {error}",
+  },
   mkdirFailed: {
-    ru: "Не удалось создать директории на сервере: {stderr}",
-    en: "Failed to create directories on the server: {stderr}",
+    ru: "Не удалось создать папку {dir} на сервере {host}: {stderr}",
+    en: "Failed to create the folder {dir} on the server {host}: {stderr}",
   },
   uploadingArchive: {
     ru: "→ Загружаю архив ({size} МБ)…",

@@ -177,12 +177,12 @@ describe("readRemoteTextFile", () => {
     });
   });
 
-  it("отсутствующий файл и папка — ошибка", async () => {
+  it("отсутствующий файл и папка — ошибка с путём в тексте", async () => {
     const conn = fakeConn({
       stats: { "/f/dir": fileStat({ isDirectory: true, isFile: false }) },
     });
-    await expect(readRemoteTextFile(conn, "/f/missing")).rejects.toThrow();
-    await expect(readRemoteTextFile(conn, "/f/dir")).rejects.toThrow();
+    await expect(readRemoteTextFile(conn, "/f/missing")).rejects.toThrow("/f/missing");
+    await expect(readRemoteTextFile(conn, "/f/dir")).rejects.toThrow("/f/dir");
   });
 });
 

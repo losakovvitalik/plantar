@@ -71,6 +71,32 @@ async function finishPathProbe(client: FakeClient): Promise<void> {
   (await execCall(client, 0)).channel.emit("close", 0);
 }
 
+describe("connect errors", () => {
+  it("names the server and the user and keeps the ssh2 reason", async () => {
+    const { __clients } = (await import("ssh2")) as unknown as { __clients: FakeClient[] };
+    const pending = SshConnection.connect({
+      host: "h.example",
+      username: "deploy",
+      password: "p",
+    });
+    const client = __clients.at(-1);
+    if (!client) throw new Error("mock client was not created");
+    const reason = new Error("All configured authentication methods failed");
+    client.emit("error", reason);
+    const err = await pending.then(
+      () => {
+        throw new Error("connect resolved instead of rejecting");
+      },
+      (e: Error) => e,
+    );
+    // The exact wording is localized; the facts must be present in any language
+    expect(err.message).toContain("h.example");
+    expect(err.message).toContain("deploy");
+    expect(err.message).toContain("All configured authentication methods failed");
+    expect(err.cause).toBe(reason);
+  });
+});
+
 describe("exec channel errors", () => {
   it("rejects the command when the channel emits an error", async () => {
     const { conn, client } = await connect();

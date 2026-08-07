@@ -265,8 +265,8 @@ const MESSAGES = {
     en: "The file is outside the project folder.",
   },
   fileNotFound: {
-    ru: "Файл не найден на сервере.",
-    en: "The file was not found on the server.",
+    ru: "Файл {path} не найден на сервере.",
+    en: "The file {path} was not found on the server.",
   },
   externalAppDirMissing: {
     ru: "Папка приложения {dir} не найдена на сервере.",

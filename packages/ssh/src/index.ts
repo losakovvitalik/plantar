@@ -79,7 +79,22 @@ export class SshConnection {
           });
           resolve(conn);
         })
-        .on("error", reject)
+        // A raw ssh2 error ("All configured authentication methods failed")
+        // names neither the server nor the user — useless in a log with
+        // several servers. The original text is kept inside the message:
+        // callers match on it (e.g. /authentication/i in friendlyKeyError).
+        .on("error", (err) =>
+          reject(
+            new Error(
+              t("connectFailed", {
+                host: options.host,
+                user: options.username,
+                error: err instanceof Error ? err.message : String(err),
+              }),
+              { cause: err },
+            ),
+          ),
+        )
         .connect({
           host: options.host,
           port: options.port ?? 22,
@@ -369,7 +384,9 @@ export class SshConnection {
 
       const mkdir = await this.exec(`mkdir -p ${shellQuote(remoteDir)}`);
       if (mkdir.code !== 0) {
-        throw new Error(t("mkdirFailed", { stderr: mkdir.stderr }));
+        throw new Error(
+          t("mkdirFailed", { dir: remoteDir, host: this.host, stderr: mkdir.stderr }),
+        );
       }
 
       // Архив кладём внутрь remoteDir: очистка staging-папки убирает и его

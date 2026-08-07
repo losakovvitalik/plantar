@@ -1,3 +1,19 @@
+/**
+ * Error-handling convention of this package:
+ *
+ * - Reads log-and-degrade: a broken store must never crash startup.
+ *   readJsonOrNull returns null and keeps a .broken recovery copy when the
+ *   caller must tell a lost store from an empty one; readJsonSafe falls back
+ *   to a default otherwise.
+ * - Writes throw: the caller decides how a failed save reaches the user
+ *   (writeJsonAtomic and everything built on top of it).
+ * - Deletions return a success indicator instead of throwing: the caller
+ *   decides whether a failed cleanup matters.
+ * - Internal best-effort maintenance (pruneDeployLogs and friends) swallows
+ *   errors deliberately; each swallow carries a comment justifying it.
+ *
+ * A new function follows these rules or says in a comment why it cannot.
+ */
 import {
   chmodSync,
   closeSync,
@@ -689,25 +705,34 @@ function pruneLogDir(
  * Drops the history records of a project — for when the project itself is
  * removed together with its logs: a record whose file is gone would open as a
  * raw filesystem error if the project were added again under the same name.
+ * Returns false when the pruned history could not be written back — a failed
+ * cleanup must not fail removing the project, so the caller decides.
  */
-export function removeProjectHistory(project: string): void {
+export function removeProjectHistory(project: string): boolean {
   try {
     const history = readHistory();
     const kept = history.filter((r) => r.project !== project);
     if (kept.length !== history.length) writeJsonAtomic(historyFile(), kept);
+    return true;
   } catch {
-    // best effort — a failed write must not fail removing the project
+    return false;
   }
 }
 
-/** Deletes all logs of a project — for when the project itself is removed */
-export function removeProjectLogs(project: string): void {
+/**
+ * Deletes all logs of a project — for when the project itself is removed.
+ * Returns false when the directory could not be removed (a locked file, or a
+ * name escaping the logs directory) — a failed cleanup must not fail removing
+ * the project, so the caller decides.
+ */
+export function removeProjectLogs(project: string): boolean {
   const dir = safeLogDir(project);
-  if (dir === null) return;
+  if (dir === null) return false;
   try {
     rmSync(dir, { recursive: true, force: true });
+    return true;
   } catch {
-    // best effort — a locked file must not fail removing the project
+    return false;
   }
 }
 
