@@ -28,9 +28,11 @@ export interface RunFinishContext {
    *  undefined (history reads the absent field as an ordinary deploy) */
   kind?: DeployRecord["kind"];
   /** Sends the system notification about the result; the helper decides
-   *  when to notify (success respects notifyOnDeploySuccess, failure always
-   *  notifies), the caller only knows how. urlCheck lets the caller keep
-   *  the text honest when the site never answered the post-deploy check */
+   *  when to notify (a confirmed success respects notifyOnDeploySuccess,
+   *  failure always notifies, and so does a success whose urlCheck says the
+   *  site did not answer the post-deploy check — that warning must not be
+   *  silenced by the setting), the caller only knows how. urlCheck lets the
+   *  caller keep the text honest when the site never answered */
   notify: (success: boolean, urlCheck?: SiteCheckStatus) => void;
 }
 
@@ -59,7 +61,13 @@ export function finishRun(ctx: RunFinishContext, outcome: RunOutcome): void {
           logFile: ctx.logWriter.file,
         });
       }
-      if (readSettings().notifyOnDeploySuccess) ctx.notify(true, outcome.urlCheck);
+      // An unconfirmed site check means possible downtime — that warning
+      // must reach the user even when success notifications are off
+      const siteUnconfirmed =
+        outcome.urlCheck === "no-answer" || outcome.urlCheck === "plain-http";
+      if (siteUnconfirmed || readSettings().notifyOnDeploySuccess) {
+        ctx.notify(true, outcome.urlCheck);
+      }
       ctx.run.finish({ status: "success", url: outcome.url, urlCheck: outcome.urlCheck });
     } else {
       const message = (outcome.err as Error).message;

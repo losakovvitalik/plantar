@@ -140,6 +140,39 @@ describe("finishRun", () => {
     expect(failure.notified).toEqual([[false, undefined]]);
   });
 
+  it("unconfirmed site check notifies even when success notifications are off", () => {
+    writeSettings({ ...readSettings(), notifyOnDeploySuccess: false });
+    // Each urlCheck value that signals possible downtime bypasses the gate
+    const noAnswer = harness({ logWriter: new DeployLogWriter("app") });
+    noAnswer.finish({
+      status: "success",
+      url: "https://site.example/",
+      urlCheck: "no-answer",
+    });
+    expect(noAnswer.notified).toEqual([[true, "no-answer"]]);
+
+    const plainHttp = harness({ logWriter: new DeployLogWriter("app") });
+    plainHttp.finish({
+      status: "success",
+      url: "https://site.example/",
+      urlCheck: "plain-http",
+    });
+    expect(plainHttp.notified).toEqual([[true, "plain-http"]]);
+
+    // Confirmed successes stay gated: with a check result and without one
+    const answered = harness({ logWriter: new DeployLogWriter("app") });
+    answered.finish({
+      status: "success",
+      url: "https://site.example/",
+      urlCheck: "answered",
+    });
+    expect(answered.notified).toEqual([]);
+
+    const noCheck = harness({ logWriter: new DeployLogWriter("app") });
+    noCheck.finish({ status: "success" });
+    expect(noCheck.notified).toEqual([]);
+  });
+
   it("thrown deploy: error history record plus run.finish with status error", () => {
     const logWriter = new DeployLogWriter("app");
     // A plain managed deploy passes no kind and keeps the attempted commit
