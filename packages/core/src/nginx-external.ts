@@ -175,9 +175,15 @@ export async function enableExternalAccessLog(
     const restored = await restoreBackup(conn, backup, target.confFile);
     const reloaded = restored && (await conn.exec("systemctl reload nginx")).code === 0;
     const stderr = reload.stderr.slice(-MAX_ERROR_STDERR_CHARS);
+    if (reloaded) {
+      throw new Error(t("nginxReloadFailedRestored", { stderr }));
+    }
+    // Two distinct failure states: with the copy failed the refused config is
+    // still in the file; with the copy done the file is fine and the web
+    // server itself needs attention — the user's next step differs
     throw new Error(
-      reloaded
-        ? t("nginxReloadFailedRestored", { stderr })
+      restored
+        ? t("nginxReloadFailedRestoredNotReloaded", { backup, stderr })
         : t("nginxReloadFailedNotRestored", { file: target.confFile, backup, stderr }),
     );
   }

@@ -309,21 +309,28 @@ describe("enableExternalAccessLog", () => {
       ],
       commands,
     );
-    expect(await failureMessage(conn)).toBe(
+    const message = await failureMessage(conn);
+    expect(message).toBe(
       t("nginxReloadFailedNotRestored", { file: TARGET.confFile, backup: BACKUP, stderr }),
     );
+    // The refused config is still on disk — the message must not read like
+    // the state where the previous version is already back
+    expect(message).not.toBe(t("nginxReloadFailedRestoredNotReloaded", { backup: BACKUP, stderr }));
     // The copy failed, so a second reload would only retry the refused config
     expect(commands.filter((c) => c === "systemctl reload nginx")).toHaveLength(1);
   });
 
-  it("does not claim a rollback when the second reload fails after a restored copy", async () => {
+  it("says the previous config is back when the second reload fails after a restored copy", async () => {
     const stderr = "Job for nginx.service failed";
     const conn = fakeConn([
       [/^cat /, { stdout: CONF }],
       // Both the original reload and the rollback reload fail
-      [/^systemctl reload nginx$/, { code: 1, stderr }],
+      [/^systemctl reload nginx$/, [{ code: 1, stderr }, { code: 1, stderr }]],
     ]);
-    expect(await failureMessage(conn)).toBe(
+    const message = await failureMessage(conn);
+    expect(message).toBe(t("nginxReloadFailedRestoredNotReloaded", { backup: BACKUP, stderr }));
+    // The file is already fine — the message must not send the user to fix it
+    expect(message).not.toBe(
       t("nginxReloadFailedNotRestored", { file: TARGET.confFile, backup: BACKUP, stderr }),
     );
   });
