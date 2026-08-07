@@ -11,6 +11,8 @@ import {
 } from "@plantar/core";
 import {
   DeployLogWriter,
+  type ProjectRecord,
+  type ServerRecord,
   readProjects,
   readSettings,
   writeProjects,
@@ -50,12 +52,73 @@ export async function runDeploy(
   migrate = false,
 ): Promise<{ url?: string }> {
   const project = getProject(projectId);
-  const server = getServer(project.serverId);
   // Импортированный проект живёт в бережном режиме: обновляется в своей
   // папке на сервере, без переноса под структуру Plantar
   if (project.external && !migrate) return runExternalInPlace(projectId, password);
   // Перенос под управление Plantar возможен только после привязки папки с кодом
   if (project.external && !project.path) throw new Error(t("externalNeedsFolder"));
+  return runManagedDeploy(project, password, legacyPeerDeps, migrate);
+}
+
+/** Git source: brings the clone to the fresh tip of the branch before the
+ *  deploy; returns the restored config and the commit being deployed */
+async function updateGitClone(
+  project: ProjectRecord,
+  dir: string,
+  config: ProjectConfig,
+  log: (line: string) => void,
+): Promise<{ config: ProjectConfig; commit?: { hash: string; message: string } }> {
+  log(t("deployUpdatingRepo"));
+  await updateRepo(project.path, project.branch!, getToken() ?? undefined);
+  // plantar.json лежит untracked и переживает reset; на всякий случай восстанавливаем конфиг
+  const restored = writeProjectConfig(dir, config);
+  // Коммит фиксируем до сборки — он нужен и в успешной, и в упавшей записи истории
+  try {
+    return { config: restored, commit: await headCommit(project.path) };
+  } catch {
+    /* не смогли прочитать коммит — деплой всё равно продолжаем */
+    return { config: restored };
+  }
+}
+
+/** При переносе под управление Plantar переменные из .env приложения
+ *  переезжают в хранилище Plantar — деплой подставит их как раньше */
+async function migrateAppEnv(
+  server: ServerRecord,
+  password: string | undefined,
+  name: string,
+  appDir: string,
+): Promise<void> {
+  await withServer(server, password, async (conn) => {
+    if (!(await readProjectEnv(conn, name))) {
+      const env = await readAppEnv(conn, appDir);
+      if (env) await writeProjectEnv(conn, name, env);
+    }
+  });
+}
+
+/** Перенос под управление Plantar снимает прежний процесс и конфиг nginx */
+function takeoverTarget(
+  project: ProjectRecord,
+  migrate: boolean,
+): { pm2Name: string; nginxConfFile?: string } | undefined {
+  return migrate && project.external
+    ? {
+        pm2Name: project.external.pm2Name,
+        nginxConfFile: project.external.nginxConfFile,
+      }
+    : undefined;
+}
+
+/** The managed deploy shared by the regular, git and migrate modes;
+ *  the mode routing itself lives in runDeploy */
+async function runManagedDeploy(
+  project: ProjectRecord,
+  password: string | undefined,
+  legacyPeerDeps: boolean | undefined,
+  migrate: boolean,
+): Promise<{ url?: string }> {
+  const server = getServer(project.serverId);
   const dir = projectDir(project);
   let config = loadProjectConfig(dir);
 
@@ -65,7 +128,7 @@ export async function runDeploy(
   // migrate the old pm2 process is deleted, so the "return to previous
   // version" recovery must not be offered for this run
   const kind = migrate ? ("migrate" as const) : ("deploy" as const);
-  const run = startDeployRun(projectId, kind);
+  const run = startDeployRun(project.id, kind);
   const startedAt = new Date().toISOString();
 
   // git-проект: обновляем клон до свежего коммита ветки перед деплоем
@@ -83,7 +146,7 @@ export async function runDeploy(
         startedAt,
         kind: migrate ? kind : undefined,
         notify: (success, urlCheck) =>
-          notifyDeployResult(projectId, config.name, success, urlCheck),
+          notifyDeployResult(project.id, config.name, success, urlCheck),
       },
       outcome,
     );
@@ -95,43 +158,21 @@ export async function runDeploy(
       run.log(line);
     };
     if (project.source === "git") {
-      log(t("deployUpdatingRepo"));
-      await updateRepo(project.path, project.branch!, getToken() ?? undefined);
-      // plantar.json лежит untracked и переживает reset; на всякий случай восстанавливаем конфиг
-      config = writeProjectConfig(dir, config);
-      // Коммит фиксируем до сборки — он нужен и в успешной, и в упавшей записи истории
-      try {
-        deployedCommit = await headCommit(project.path);
-      } catch {
-        /* не смогли прочитать коммит — деплой всё равно продолжаем */
-      }
+      const updated = await updateGitClone(project, dir, config, log);
+      config = updated.config;
+      deployedCommit = updated.commit;
     }
 
     const settings = readSettings();
     // Флаг не пишем в конфиг заранее: он закрепится ниже, только если деплой удался
     const deployConfig = legacyPeerDeps ? { ...config, legacyPeerDeps: true } : config;
-    // При переносе под управление Plantar переменные из .env приложения
-    // переезжают в хранилище Plantar — деплой подставит их как раньше
     if (migrate && project.external) {
-      const appDir = project.external.appDir;
-      await withServer(server, password, async (conn) => {
-        if (!(await readProjectEnv(conn, config.name))) {
-          const env = await readAppEnv(conn, appDir);
-          if (env) await writeProjectEnv(conn, config.name, env);
-        }
-      });
+      await migrateAppEnv(server, password, config.name, project.external.appDir);
     }
     const result = await withServer(server, password, (conn) =>
       deployProject(conn, dir, deployConfig, log, {
         letsEncryptEmail: settings.letsEncryptEmail || undefined,
-        // Перенос под управление Plantar снимает прежний процесс и конфиг nginx
-        takeover:
-          migrate && project.external
-            ? {
-                pm2Name: project.external.pm2Name,
-                nginxConfFile: project.external.nginxConfFile,
-              }
-            : undefined,
+        takeover: takeoverTarget(project, migrate),
       }),
     );
     // Закрепляем в конфиге порт (выбирается на сервере при первом деплое)
