@@ -9,8 +9,8 @@ import { readPackageJson, type ProjectConfig } from "@plantar/config";
 import { ENV_FILE_RE } from "./discover";
 import { envStorePath, parseEnv, readProjectEnv } from "./env-store";
 import { t } from "./messages";
-import { MAX_ERROR_OUTPUT_CHARS } from "./output-limits";
 import { configureNginx, disableForeignNginxConf, setupSsl } from "./nginx";
+import { MAX_ERROR_OUTPUT_CHARS } from "./output-limits";
 import { run, verifySiteAvailable, waitForApp, waitForStableProcess } from "./process-checks";
 import type { SiteCheckStatus } from "./process-checks";
 import {

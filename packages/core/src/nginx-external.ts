@@ -1,7 +1,7 @@
 import { type SshConnection, shellQuote } from "@plantar/ssh";
 import { t } from "./messages";
-import { MAX_ERROR_STDERR_CHARS } from "./output-limits";
 import { blankComments, findBlocks, proxyPassPorts, upstreamPorts } from "./nginx-parse";
+import { MAX_ERROR_STDERR_CHARS } from "./output-limits";
 import { run } from "./process-checks";
 
 /**

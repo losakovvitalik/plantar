@@ -138,7 +138,7 @@ Main-процесс каждые 5 минут (`MONITOR_INTERVAL_MS` в `apps/de
 
 Весь пользовательский текст (GUI, CLI, деплой-лог, ошибки) переведён на русский и английский:
 
-- `packages/i18n` — общий механизм для Node-кода: текущий язык процесса (`setLanguage`/`getLanguage`, по умолчанию из локали системы: русская → ru, иначе en) и фабрика `createT(messages)`. Словари живут рядом с кодом: `packages/{core,config,ssh}/src/messages.ts`, `apps/cli/src/messages.ts`, `apps/desktop/src/main/i18n.ts`.
+- `packages/i18n` — общий механизм для Node-кода: текущий язык процесса (`setLanguage`, по умолчанию из локали системы: русская → ru, иначе en) и фабрика `createT(messages)`. Словари живут рядом с кодом: `packages/{core,config,ssh}/src/messages.ts`, `apps/cli/src/messages.ts`, `apps/desktop/src/main/i18n.ts`.
 - Renderer (React): `apps/desktop/src/renderer/src/i18n/` — `ru.ts` (эталон ключей), `en.ts`, `index.tsx` (`I18nProvider`, хук `useI18n` → `t(key, params)`). Компоненты не содержат захардкоженных пользовательских строк.
 - Язык хранится в настройках (`language` в `AppSettings`, `packages/storage`). Desktop: переключатель в диалоге настроек, применяется сразу, без перезапуска; main-процесс узнаёт о смене через `settings:set`. CLI читает язык из тех же настроек при старте.
 
