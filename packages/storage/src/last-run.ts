@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { DeployRecord } from "./index";
+import type { DeployRecord } from "./history";
 
 /**
  * Какой прогон считать последним для проекта: свежайший deploy-*.log
