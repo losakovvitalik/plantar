@@ -68,7 +68,14 @@ export function registerDeployIpc(): void {
   handle(
     "projects:migrate",
     (_e, args) =>
-      toResult(() => runDeploy(args.projectId, args.password, undefined, true)),
+      toResult(() =>
+        runDeploy(
+          args.projectId,
+          args.password,
+          /* legacyPeerDeps */ undefined,
+          /* migrate */ true,
+        ),
+      ),
   );
   // HTTPS for an imported app in place: certbot edits the app's own nginx
   // config, so no migration is needed. Runs only after an explicit
