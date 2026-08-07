@@ -1,13 +1,16 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { readExternalEnv, readProjectEnv, writeExternalEnv, writeProjectEnv } from "@plantar/core";
+import {
+  ENV_FILE_RE,
+  readExternalEnv,
+  readProjectEnv,
+  writeExternalEnv,
+  writeProjectEnv,
+} from "@plantar/core";
 import { withServer } from "../connections";
 import { t } from "../i18n";
 import { getProject, getServer, projectConfig, projectDir } from "../records";
 import { handle, toResult } from "./util";
-
-// Локальные .env-файлы из папки проекта — только на чтение, для импорта на сервер
-const ENV_FILE_RE = /^\.env[\w.-]*$/;
 
 export function registerEnvIpc(): void {
   // Переменные проекта хранятся на сервере (вне папки версии) и применяются
