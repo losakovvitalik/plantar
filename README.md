@@ -42,7 +42,7 @@ The builds are not code-signed yet, so the operating system will be suspicious o
 
 ## MVP
 
-The first version supports only:
+Historical note: this was the scope of the first version. Today Plantar deploys static sites, Node.js and Next.js applications and Telegram bots (`static | node | next | bot`) — see [docs/features.md](docs/features.md) for the current feature set.
 
 - Ubuntu 22.04 / 24.04.
 - React applications.
@@ -58,15 +58,16 @@ Two independent parts: CLI (`apps/cli`) and GUI (`apps/desktop`).
 
 This simplifies development and testing. The CLI will be usable on its own if someone doesn't want to use the UI. But the CLI's primary job is to serve the desktop application.
 
-The shared deploy logic should live in separate packages:
+The shared deploy logic lives in separate packages:
 
 ```text
 packages/
-  core/
-  ssh/
-  config/
-  recipes/
-  types/
+  core/     # deploy engine
+  ssh/      # SSH connection and file transfer
+  config/   # plantar.json schema and project detection
+  storage/  # local data: servers, projects, history, settings
+  i18n/     # translation helper for Node code
+  mcp/      # MCP server exposing Plantar to AI assistants
 ```
 
 ## Stack
@@ -76,7 +77,7 @@ packages/
 - commander.
 - ssh2.
 - zod.
-- SQLite
+- JSON files for local storage.
 
 ## Roadmap
 
@@ -89,7 +90,7 @@ packages/
 - View logs.
 - Redeploy without breaking the existing configuration.
 - Local storage: project config (`plantar.json`), deploy history, logs.
-- Server and key storage: secrets are encrypted via the system keychain (`safeStorage`), never stored in plain text.
+- Server and key storage: secrets are encrypted via the system keychain (`safeStorage`); when the keychain is unavailable, the key is stored in a file restricted to the current user (mode `0600`) instead.
 - Desktop GUI.
 
 ## Status
