@@ -36,15 +36,13 @@ async function pm2DumpHoldsProcess(conn: SshConnection, name: string): Promise<b
     // Unparsable dump — treat pm2 state as unknown rather than "process absent"
     throw new Error(t("pm2Unavailable", { stderr: output }));
   }
+  // Valid JSON that is not an array is as unexpected as unparsable JSON —
+  // treat pm2 state as unknown rather than "process absent"
+  if (!Array.isArray(entries)) throw new Error(t("pm2Unavailable", { stderr: output }));
   // Match strictly by the JSON "name" field, never by substring
-  return (
-    Array.isArray(entries) &&
-    entries.some(
-      (entry) =>
-        typeof entry === "object" &&
-        entry !== null &&
-        (entry as { name?: unknown }).name === name,
-    )
+  return entries.some(
+    (entry) =>
+      typeof entry === "object" && entry !== null && (entry as { name?: unknown }).name === name,
   );
 }
 

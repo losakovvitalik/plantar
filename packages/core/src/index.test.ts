@@ -573,6 +573,22 @@ describe("removeDeployedProject: проба pm2 перед удалением ф
     expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
   });
 
+  it("dump.pm2 — валидный JSON, но не массив — состояние pm2 неизвестно, удаление прерывается", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn(
+      [
+        [/^pm2 jlist$/, { stdout: "[]" }],
+        [/dump\.pm2/, { stdout: '{"name":"app"}' }],
+      ],
+      commands,
+    );
+
+    await expect(removeDeployedProject(conn, "app")).rejects.toThrow(
+      t("pm2Unavailable", { stderr: '{"name":"app"}' }),
+    );
+    expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
+  });
+
   it("dump.pm2 есть, но не читается (код ≠ 0) — удаление прерывается", async () => {
     const commands: string[] = [];
     const conn = fakeConn(
