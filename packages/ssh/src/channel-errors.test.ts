@@ -95,6 +95,25 @@ describe("connect errors", () => {
     expect(err.message).toContain("All configured authentication methods failed");
     expect(err.cause).toBe(reason);
   });
+
+  it("wraps synchronous throws (unreadable key file) the same way", async () => {
+    // readFileSync throws ENOENT inside the executor, before any "error" event
+    const pending = SshConnection.connect({
+      host: "h.example",
+      username: "deploy",
+      privateKeyPath: "/nonexistent/plantar-test-key",
+    });
+    const err = await pending.then(
+      () => {
+        throw new Error("connect resolved instead of rejecting");
+      },
+      (e: Error) => e,
+    );
+    expect(err.message).toContain("h.example");
+    expect(err.message).toContain("deploy");
+    expect(err.message).toContain("ENOENT");
+    expect((err.cause as NodeJS.ErrnoException).code).toBe("ENOENT");
+  });
 });
 
 describe("exec channel errors", () => {
