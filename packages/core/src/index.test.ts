@@ -562,14 +562,16 @@ describe("removeDeployedProject: проба pm2 перед удалением ф
     const conn = fakeConn(
       [
         [/^pm2 jlist$/, { stdout: "[]" }],
-        [/dump\.pm2/, { stdout: "not-json" }],
+        // Truncated dump: pm2 dumps hold each process's full env (secrets)
+        [/dump\.pm2/, { stdout: '[{"name":"app","env":{"TOKEN":"TOP_SECRET"' }],
       ],
       commands,
     );
 
-    await expect(removeDeployedProject(conn, "app")).rejects.toThrow(
-      t("pm2Unavailable", { stderr: "not-json" }),
-    );
+    const error = await removeDeployedProject(conn, "app").catch((e: unknown) => e);
+    expect(String(error)).toContain(t("pm2Unavailable", { stderr: t("pm2DumpCorrupt") }));
+    // The dump body must never leak into the error dialog / deploy log
+    expect(String(error)).not.toContain("TOP_SECRET");
     expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
   });
 
@@ -578,14 +580,15 @@ describe("removeDeployedProject: проба pm2 перед удалением ф
     const conn = fakeConn(
       [
         [/^pm2 jlist$/, { stdout: "[]" }],
-        [/dump\.pm2/, { stdout: '{"name":"app"}' }],
+        [/dump\.pm2/, { stdout: '{"name":"app","env":{"TOKEN":"TOP_SECRET"}}' }],
       ],
       commands,
     );
 
-    await expect(removeDeployedProject(conn, "app")).rejects.toThrow(
-      t("pm2Unavailable", { stderr: '{"name":"app"}' }),
-    );
+    const error = await removeDeployedProject(conn, "app").catch((e: unknown) => e);
+    expect(String(error)).toContain(t("pm2Unavailable", { stderr: t("pm2DumpCorrupt") }));
+    // The dump body must never leak into the error dialog / deploy log
+    expect(String(error)).not.toContain("TOP_SECRET");
     expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
   });
 

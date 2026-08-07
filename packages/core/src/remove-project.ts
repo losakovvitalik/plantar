@@ -2,7 +2,7 @@ import type { SshConnection } from "@plantar/ssh";
 import { parsePm2Jlist } from "./discover";
 import { envStorePath } from "./env-store";
 import { t } from "./messages";
-import { MAX_ERROR_OUTPUT_CHARS } from "./output-limits";
+import { MAX_ERROR_STDERR_CHARS } from "./output-limits";
 import { run } from "./process-checks";
 
 /** Marker printed by the dump probe when the pm2 dump file does not exist */
@@ -23,22 +23,27 @@ async function pm2DumpHoldsProcess(conn: SshConnection, name: string): Promise<b
   );
   // No dump file — pm2 has nothing to resurrect, the process is genuinely absent
   if (dump.code === 0 && dump.stdout.trim() === NO_DUMP_MARKER) return false;
-  const output = [dump.stdout.trim(), dump.stderr.trim()]
-    .filter(Boolean)
-    .join("\n")
-    .slice(-MAX_ERROR_OUTPUT_CHARS);
-  // The dump exists but cannot be read — pm2 state is unknown, err on the safe side
-  if (dump.code !== 0) throw new Error(t("pm2Unavailable", { stderr: output }));
+  // The dump exists but cannot be read — pm2 state is unknown, err on the safe
+  // side. Only stderr goes into the error: the dump body carries each process's
+  // full env (tokens, DB URLs) and must never leak into the error dialog or log.
+  if (dump.code !== 0) {
+    throw new Error(
+      t("pm2Unavailable", { stderr: dump.stderr.trim().slice(-MAX_ERROR_STDERR_CHARS) }),
+    );
+  }
   let entries: unknown;
   try {
     entries = JSON.parse(dump.stdout);
   } catch {
-    // Unparsable dump — treat pm2 state as unknown rather than "process absent"
-    throw new Error(t("pm2Unavailable", { stderr: output }));
+    // Unparsable dump — treat pm2 state as unknown rather than "process absent".
+    // A static note instead of the dump body, which may hold secrets (see above).
+    throw new Error(t("pm2Unavailable", { stderr: t("pm2DumpCorrupt") }));
   }
   // Valid JSON that is not an array is as unexpected as unparsable JSON —
   // treat pm2 state as unknown rather than "process absent"
-  if (!Array.isArray(entries)) throw new Error(t("pm2Unavailable", { stderr: output }));
+  if (!Array.isArray(entries)) {
+    throw new Error(t("pm2Unavailable", { stderr: t("pm2DumpCorrupt") }));
+  }
   // Match strictly by the JSON "name" field, never by substring
   return entries.some(
     (entry) =>
