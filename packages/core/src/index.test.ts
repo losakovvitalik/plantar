@@ -502,7 +502,14 @@ describe("removeDeployedProject: проба pm2 перед удалением ф
   it("процесса нет в pm2 (статический сайт) — файлы удаляются без pm2 delete", async () => {
     const commands: string[] = [];
     const logs: string[] = [];
-    const conn = fakeConn([[/^pm2 jlist$/, { stdout: "[]" }]], commands);
+    const conn = fakeConn(
+      [
+        [/^pm2 jlist$/, { stdout: "[]" }],
+        // No dump file on the server — nothing for pm2 to resurrect
+        [/dump\.pm2/, { stdout: "PLANTAR_NO_DUMP\n" }],
+      ],
+      commands,
+    );
 
     await removeDeployedProject(conn, "app", (line) => logs.push(line));
 
@@ -510,6 +517,76 @@ describe("removeDeployedProject: проба pm2 перед удалением ф
     expect(commands.some((c) => c.includes("pm2 delete"))).toBe(false);
     expect(commands.some((c) => c.includes("rm -rf '/var/www/app'"))).toBe(true);
     expect(logs).toContain(t("projectRemoved", { name: "app" }));
+  });
+
+  it("таблица pm2 пуста, но процесс остался в dump.pm2 — удаление прерывается, rm -rf не выполняется", async () => {
+    const commands: string[] = [];
+    // An earlier `pm2 jlist` (status polling, an old removal attempt) respawned
+    // an empty daemon: clean table, no banner — but the stale dump still holds
+    // the process, and a reboot would resurrect it from the deleted directory
+    const conn = fakeConn(
+      [
+        [/^pm2 jlist$/, { stdout: "[]" }],
+        [/dump\.pm2/, { stdout: JSON.stringify([{ name: "app", pm_exec_path: "/var/www/app" }]) }],
+      ],
+      commands,
+    );
+
+    await expect(removeDeployedProject(conn, "app")).rejects.toThrow(
+      t("pm2DumpStale", { name: "app" }),
+    );
+    expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
+    expect(commands.some((c) => c.includes("pm2 delete"))).toBe(false);
+  });
+
+  it("dump.pm2 держит только чужие процессы — совпадение строго по имени, удаление продолжается", async () => {
+    const commands: string[] = [];
+    const logs: string[] = [];
+    // "app" must not match "app-staging" by substring anywhere in the dump JSON
+    const conn = fakeConn(
+      [
+        [/^pm2 jlist$/, { stdout: "[]" }],
+        [/dump\.pm2/, { stdout: JSON.stringify([{ name: "app-staging" }, { name: "other" }]) }],
+      ],
+      commands,
+    );
+
+    await removeDeployedProject(conn, "app", (line) => logs.push(line));
+
+    expect(logs).toContain(t("pm2NotFound"));
+    expect(commands.some((c) => c.includes("rm -rf '/var/www/app'"))).toBe(true);
+  });
+
+  it("dump.pm2 не читается как JSON — состояние pm2 неизвестно, удаление прерывается", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn(
+      [
+        [/^pm2 jlist$/, { stdout: "[]" }],
+        [/dump\.pm2/, { stdout: "not-json" }],
+      ],
+      commands,
+    );
+
+    await expect(removeDeployedProject(conn, "app")).rejects.toThrow(
+      t("pm2Unavailable", { stderr: "not-json" }),
+    );
+    expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
+  });
+
+  it("dump.pm2 есть, но не читается (код ≠ 0) — удаление прерывается", async () => {
+    const commands: string[] = [];
+    const conn = fakeConn(
+      [
+        [/^pm2 jlist$/, { stdout: "[]" }],
+        [/dump\.pm2/, { code: 1, stderr: "cat: permission denied" }],
+      ],
+      commands,
+    );
+
+    await expect(removeDeployedProject(conn, "app")).rejects.toThrow(
+      t("pm2Unavailable", { stderr: "cat: permission denied" }),
+    );
+    expect(commands.some((c) => c.includes("rm -rf"))).toBe(false);
   });
 
   it("процесс есть — pm2 delete и pm2 save перед удалением файлов", async () => {
