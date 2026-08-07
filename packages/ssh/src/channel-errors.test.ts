@@ -98,16 +98,19 @@ describe("exec channel errors", () => {
 describe("execStream channel errors", () => {
   it("turns a channel error into a single onClose, not a crash", async () => {
     const { conn, client } = await connect();
+    const onStderr = vi.fn();
     const onClose = vi.fn();
     const handle = conn.execStream("tail -F /var/log/nginx/access.log", {
       onStdout: () => {},
-      onStderr: () => {},
+      onStderr,
       onClose,
     });
     await finishPathProbe(client);
     const { channel } = await execCall(client, 1);
     await handle;
     expect(() => channel.emit("error", new Error("transport lost"))).not.toThrow();
+    // The reason is forwarded so consumers can show why the stream ended
+    expect(onStderr).toHaveBeenCalledWith("transport lost");
     expect(onClose).toHaveBeenCalledTimes(1);
     // A close following the error must not fire onClose a second time
     channel.emit("close");

@@ -167,11 +167,13 @@ export class SshConnection {
           handlers.onClose();
         });
         // An unhandled "error" event would crash the process; treat a transport
-        // error as end-of-stream. reject() is a no-op once the promise settled.
+        // error as end-of-stream, forwarding the reason so consumers can show
+        // why the stream ended. The promise is already resolved by then, so
+        // there is no rejection path here.
         stream.on("error", (streamErr: Error) => {
-          reject(streamErr);
           if (closed) return;
           closed = true;
+          handlers.onStderr(streamErr.message);
           handlers.onClose();
         });
         // end() шлёт EOF — команда вида «tail … & cat; kill …» завершает себя сама
