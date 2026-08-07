@@ -343,7 +343,7 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
               <Input
                 id="le-email"
                 type="email"
-                placeholder="you@example.com"
+                placeholder={t("settings.leEmailPlaceholder")}
                 value={settings.letsEncryptEmail}
                 onChange={(e) => setSettings({ ...settings, letsEncryptEmail: e.target.value })}
                 className="max-w-xs"

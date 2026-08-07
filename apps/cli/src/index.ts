@@ -182,9 +182,9 @@ withConnectionOptions(program.command("logs"))
     const conn = await connect(opts);
     try {
       const logs = await getSiteLogs(conn, config.name, Number(opts.lines));
-      console.log(`\n=== access (${config.name}) ===`);
+      console.log(`\n${t("logsAccessHeader", { name: config.name })}`);
       console.log(logs.access || t("logsEmpty"));
-      console.log(`\n=== error (${config.name}) ===`);
+      console.log(`\n${t("logsErrorHeader", { name: config.name })}`);
       console.log(logs.error || t("logsEmpty"));
 
       const accessFile = saveServerLogSnapshot(config.name, "access", logs.access);

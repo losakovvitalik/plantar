@@ -156,7 +156,7 @@ export function AddServerDialog({ open, onOpenChange, onAdded }: Props) {
                 data-testid="server-host"
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
-                placeholder="185.42.10.7"
+                placeholder={t("addServer.hostPlaceholder")}
                 required
                 autoFocus
               />

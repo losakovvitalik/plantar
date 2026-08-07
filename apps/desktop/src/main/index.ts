@@ -502,6 +502,8 @@ async function startMcpRun(
   // fallback, which could mask a broken invariant with a stale restored run)
   // and fail loudly if it ever does not
   const state = deployRunState(project.id);
+  // Developer-facing invariant, intentionally not localized: it signals a bug
+  // in Plantar itself (MCP tooling reports it), never a normal user-visible flow
   if (!state) throw new Error(`No run state right after starting a run of ${project.id}`);
   return mcpStripLastSeq(state);
 }

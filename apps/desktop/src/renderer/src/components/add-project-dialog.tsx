@@ -135,7 +135,7 @@ export function AddProjectDialog({ open, onOpenChange, onPickLocal, onCloned }: 
                   // Ветки относятся к прежней ссылке — перезагрузим для новой
                   setBranches(null);
                 }}
-                placeholder="https://github.com/user/repo"
+                placeholder={t("addProjectDialog.repoUrlPlaceholder")}
                 autoFocus
               />
               <p className="text-[12px] leading-snug text-ink-soft/80">

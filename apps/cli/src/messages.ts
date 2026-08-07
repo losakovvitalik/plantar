@@ -65,6 +65,8 @@ const MESSAGES = {
     en: "show the site's nginx logs (access and error)",
   },
   optLines: { ru: "сколько последних строк показать", en: "how many last lines to show" },
+  logsAccessHeader: { ru: "=== access ({name}) ===", en: "=== access ({name}) ===" },
+  logsErrorHeader: { ru: "=== error ({name}) ===", en: "=== error ({name}) ===" },
   logsEmpty: { ru: "(пусто)", en: "(empty)" },
   logsSnapshots: {
     ru: "Снапшоты сохранены локально: {dir}",

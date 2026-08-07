@@ -78,6 +78,7 @@ export const en: Record<MessageKey, string> = {
   "addServer.description":
     "You will need the server address and login credentials — your hosting provider gives you these.",
   "addServer.host": "Address (IP)",
+  "addServer.hostPlaceholder": "185.42.10.7",
   "addServer.port": "Port",
   "addServer.user": "User",
   "addServer.name": "Name (optional)",
@@ -260,6 +261,7 @@ export const en: Record<MessageKey, string> = {
   "addProjectDialog.gitTitle": "GitHub repository",
   "addProjectDialog.gitHint": "Download the project from a repository link.",
   "addProjectDialog.repoUrl": "Repository link",
+  "addProjectDialog.repoUrlPlaceholder": "https://github.com/user/repo",
   "addProjectDialog.privateHint":
     "For private repositories, sign in to GitHub in settings first.",
   "addProjectDialog.branch": "Branch",
@@ -302,7 +304,6 @@ export const en: Record<MessageKey, string> = {
   "files.loading": "Loading the file list…",
   "files.load": "Show files",
   "files.passwordNeeded": "The server password will be needed.",
-  "files.refresh": "Refresh",
   "files.refreshTitle": "Reload the files from the server",
   "files.emptyDir": "The folder is empty",
   "files.linkBadge": "link",
@@ -374,6 +375,7 @@ export const en: Record<MessageKey, string> = {
   "projectSettings.portError": "Port: an integer from 1 to 65535.",
   "projectSettings.type": "Project type",
   "projectSettings.name": "Name",
+  "projectSettings.namePlaceholder": "my-app",
   "projectSettings.nameHint":
     "Lowercase latin letters, digits and hyphens. This will be the name of the site folder on the server.",
   "projectSettings.domain": "Domain",
@@ -568,6 +570,7 @@ export const en: Record<MessageKey, string> = {
   "settings.notifyAppDownHint":
     "Every 5 minutes Plantar checks the apps on your servers and sends a notification if one stops working — and when it is back up. Servers connected with a password are not checked in the background.",
   "settings.leEmail": "Email for SSL certificates",
+  "settings.leEmailPlaceholder": "you@example.com",
   "settings.leEmailHint":
     "Let's Encrypt will email you if certificate auto-renewal goes wrong. Applies on the next deploy with a domain. Can be left empty.",
 
