@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { type MockInstance, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IpcResult } from "../../shared/ipc";
 import { t } from "../i18n";
 import { registerShellIpc } from "./shell";
@@ -28,11 +28,19 @@ function invokeOpenExternal(url: string): Promise<IpcResult<void>> {
 }
 
 describe("open-external", () => {
+  // The handler warns about every blocked url: silencing it keeps the test
+  // output clean, and the spy lets the blocked cases assert the diagnostic —
+  // the only trace a blocked link leaves
+  let warn: MockInstance<typeof console.warn>;
+
   beforeEach(() => {
     openExternal.mockReset();
     openExternal.mockResolvedValue(undefined);
-    // The handler warns about every blocked url — keep the test output clean
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("opens a web link and reports success", async () => {
@@ -54,5 +62,6 @@ describe("open-external", () => {
       code: undefined,
     });
     expect(openExternal).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith("open-external: blocked url", url);
   });
 });
