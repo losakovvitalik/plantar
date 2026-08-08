@@ -26,10 +26,22 @@ export interface HistoryStores {
   servers: ServerRecord[];
   projects: ProjectRecord[];
   history: DeployRecord[];
+  /** Current name per project id, precomputed for a sweep; absent — resolve on demand */
+  names?: Map<string, string>;
 }
 
 export function readHistoryStores(): HistoryStores {
   return { servers: readServers(), projects: readProjects(), history: readHistory() };
+}
+
+/**
+ * Current names of every project resolved once. A sweep builds this map next
+ * to `readHistoryStores()` and threads it down — otherwise `historyIdentity`
+ * would re-read every same-host project's plantar.json per static site. Keeps
+ * `currentName`'s fallback: an unreadable config maps to the record name.
+ */
+export function currentNamesById(projects: ProjectRecord[]): Map<string, string> {
+  return new Map(projects.map((p) => [p.id, currentName(p)]));
 }
 
 /**
@@ -40,7 +52,7 @@ export function readHistoryStores(): HistoryStores {
  */
 export function historyIdentity(
   project: ProjectRecord,
-  stores: Pick<HistoryStores, "servers" | "projects"> = {
+  stores: Pick<HistoryStores, "servers" | "projects" | "names"> = {
     servers: readServers(),
     projects: readProjects(),
   },
@@ -48,16 +60,18 @@ export function historyIdentity(
   const server = stores.servers.find((s) => s.id === project.serverId);
   if (!server) throw new Error(t("serverNotFound"));
   const hostOf = new Map(stores.servers.map((s) => [s.id, s.host]));
+  // Sweeps precompute the names; without the map each call reads plantar.json
+  const nameOf = (p: ProjectRecord): string => stores.names?.get(p.id) ?? currentName(p);
   // A previous name that another project on the same host goes by today belongs
   // to that project: its records and its log directory are no longer ours
   const taken = new Set(
     stores.projects
       .filter((p) => p.id !== project.id && hostOf.get(p.serverId) === server.host)
-      .map((p) => currentName(p)),
+      .map(nameOf),
   );
   return {
     projectId: project.id,
-    names: [currentName(project), ...projectNames(project).filter((n) => !taken.has(n))],
+    names: [nameOf(project), ...projectNames(project).filter((n) => !taken.has(n))],
     host: server.host,
   };
 }

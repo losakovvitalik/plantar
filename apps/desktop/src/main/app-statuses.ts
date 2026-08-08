@@ -7,7 +7,7 @@ import {
   writeAppStatusCache,
 } from "@plantar/storage";
 import { withServer } from "./connections";
-import { projectHistory, readHistoryStores } from "./project-history";
+import { currentNamesById, projectHistory, readHistoryStores } from "./project-history";
 import { projectSite } from "./records";
 
 /** Статус приложения проекта по карте pm2-процессов сервера (имя → статус)
@@ -42,9 +42,11 @@ export async function collectServerAppStatuses(
   const sites: { projectId: string; url: string }[] = [];
   await withServer(server, undefined, async (conn) => {
     const pm2 = await pm2ProcessStatuses(conn);
-    // One read of each store for the whole sweep — projectHistory would
-    // otherwise re-read servers/projects/history per static site
+    // One read of each store and one name resolution per project for the
+    // whole sweep — projectHistory would otherwise re-read servers/projects/
+    // history and every same-host project's plantar.json per static site
     const stores = readHistoryStores();
+    stores.names = currentNamesById(stores.projects);
     for (const project of stores.projects.filter((p) => p.serverId === server.id)) {
       const { status, siteUrl } = appStatusOf(project, pm2, server.host);
       apps[project.id] = status;
