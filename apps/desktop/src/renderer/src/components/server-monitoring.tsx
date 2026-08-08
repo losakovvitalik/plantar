@@ -6,16 +6,12 @@ import type {
   ServerMetrics,
   ServerRecord,
 } from "../../../preload/index.d";
+import { type ChartWindow, HOUR } from "../../../shared/chart-windows";
 import { useI18n } from "../i18n";
 import { canConnectSilently, passwordFor } from "../lib/server-auth";
 import { cn } from "../lib/utils";
 import { EnableAppMetricsDialog } from "./enable-app-metrics-dialog";
-import {
-  type ChartWindow,
-  HOUR,
-  MetricsCharts,
-  WindowToggle,
-} from "./metrics-charts";
+import { MetricsCharts, WindowToggle } from "./metrics-charts";
 import { Button } from "./ui/button";
 
 interface Props {

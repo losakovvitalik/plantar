@@ -12,16 +12,13 @@ import {
   pm2ProcessHealth,
 } from "@plantar/core";
 import { readProjects, readStatusTabCache, writeStatusTabCache } from "@plantar/storage";
+import { DAY, HOUR } from "../../shared/chart-windows";
 import type { AppStatusTabCache } from "../../shared/ipc";
 import { withServer } from "../connections";
 import { t } from "../i18n";
 import { getProject, getServer, projectConfig } from "../records";
 import { trafficLogPath } from "../traffic-log";
 import { handle, toResult } from "./util";
-
-// Metrics windows in seconds; the untrusted renderer value is clamped to these
-const HOUR_SECONDS = 3600;
-const DAY_SECONDS = 86400;
 
 export function registerMetricsIpc(): void {
   handle(
@@ -130,7 +127,8 @@ export function registerMetricsIpc(): void {
     "metrics:server",
     (_e, args) =>
       toResult(async () => {
-        const seconds = args.seconds === DAY_SECONDS ? DAY_SECONDS : HOUR_SECONDS;
+        // The untrusted renderer value is clamped to a known window
+        const seconds = args.seconds === DAY ? DAY : HOUR;
         // Проекты сервера подписывают ряды разбивки по приложениям
         const apps = readProjects()
           .filter((p) => p.serverId === args.serverId)
@@ -165,7 +163,7 @@ export function registerMetricsIpc(): void {
           /* plantar.json недоступен — используем имя на момент добавления */
         }
         const pm2Name = project.external ? project.external.pm2Name : name;
-        const seconds = args.seconds === DAY_SECONDS ? DAY_SECONDS : HOUR_SECONDS;
+        const seconds = args.seconds === DAY ? DAY : HOUR;
         return withServer(server, args.password, (conn) =>
           getAppMetricsHistory(conn, pm2Name, seconds),
         );

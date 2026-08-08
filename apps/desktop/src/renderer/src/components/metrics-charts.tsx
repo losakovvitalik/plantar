@@ -1,5 +1,6 @@
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import type { ServerAppUsage, ServerMetricPoint } from "../../../preload/index.d";
+import { type ChartWindow, DAY, HOUR } from "../../../shared/chart-windows";
 import { useI18n } from "../i18n";
 import { cn } from "../lib/utils";
 import {
@@ -31,11 +32,6 @@ interface Props {
   /** Разбивка по приложениям: вместо одного ряда — стек «приложения + другое» */
   apps?: ServerAppUsage[];
 }
-
-/** Chart windows in seconds — shared by every screen that shows the toggle */
-export const HOUR = 3600;
-export const DAY = 86400;
-export type ChartWindow = typeof HOUR | typeof DAY;
 
 /** Крупнейших приложений в стеке; остальные вместе с системой уходят в «Другое» */
 const MAX_STACK_APPS = 4;
