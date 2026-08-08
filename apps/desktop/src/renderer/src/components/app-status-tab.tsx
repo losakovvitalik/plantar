@@ -19,6 +19,7 @@ import type {
   ServerRecord,
   TrafficStats,
 } from "../../../preload/index.d";
+import { type ChartWindow, HOUR } from "../../../shared/chart-windows";
 import { appAccessLogPath } from "@plantar/core/paths";
 import { useI18n } from "../i18n";
 import { canConnectSilently, passwordFor } from "../lib/server-auth";
@@ -26,7 +27,7 @@ import { cn } from "../lib/utils";
 import { EnableAppMetricsDialog } from "./enable-app-metrics-dialog";
 import { EnableVisitsLogDialog } from "./enable-visits-log-dialog";
 import { ExternalHttpsDialog } from "./external-https-dialog";
-import { type ChartWindow, HOUR, MetricsCharts, WindowToggle } from "./metrics-charts";
+import { MetricsCharts, WindowToggle } from "./metrics-charts";
 import { Button } from "./ui/button";
 import {
   type ChartConfig,

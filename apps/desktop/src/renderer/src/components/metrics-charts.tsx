@@ -33,9 +33,6 @@ interface Props {
   apps?: ServerAppUsage[];
 }
 
-/** Chart windows in seconds — re-exported for every screen that shows the toggle */
-export { type ChartWindow, DAY, HOUR };
-
 /** Крупнейших приложений в стеке; остальные вместе с системой уходят в «Другое» */
 const MAX_STACK_APPS = 4;
 

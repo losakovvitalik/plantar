@@ -163,7 +163,6 @@ export function registerMetricsIpc(): void {
           /* plantar.json недоступен — используем имя на момент добавления */
         }
         const pm2Name = project.external ? project.external.pm2Name : name;
-        // The untrusted renderer value is clamped to a known window
         const seconds = args.seconds === DAY ? DAY : HOUR;
         return withServer(server, args.password, (conn) =>
           getAppMetricsHistory(conn, pm2Name, seconds),
