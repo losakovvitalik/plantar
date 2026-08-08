@@ -48,6 +48,14 @@ const MESSAGES = {
     ru: "Не удалось связаться со службой запуска приложений (pm2) на сервере, поэтому удаление остановлено — файлы проекта не тронуты. Попробуйте ещё раз чуть позже.\n{stderr}",
     en: "Could not reach the application manager (pm2) on the server, so the removal was stopped — the project files were left untouched. Please try again a little later.\n{stderr}",
   },
+  pm2DumpCorrupt: {
+    ru: "Сохранённый список автозапуска (файл dump.pm2) на сервере повреждён и не читается.",
+    en: "The saved autostart list (the dump.pm2 file) on the server is corrupted and unreadable.",
+  },
+  pm2DumpStale: {
+    ru: "Проект «{name}» не числится среди запущенных приложений, но остался в сохранённом списке автозапуска службы запуска приложений (pm2) на сервере. Удаление остановлено — файлы проекта не тронуты: после перезагрузки сервера приложение попыталось бы запуститься из удалённой папки. Обновите сохранённый список автозапуска на сервере (команда pm2 save) и повторите удаление.",
+    en: "Project “{name}” is not listed among the running apps, but it is still present in the saved autostart list of the application manager (pm2) on the server. The removal was stopped — the project files were left untouched: after a server reboot the app would try to start from the deleted folder. Bring the saved autostart list on the server up to date (the pm2 save command) and retry the removal.",
+  },
   removingFiles: { ru: "→ Удаляю файлы проекта…", en: "→ Deleting project files…" },
   removingNginxConf: { ru: "→ Удаляю конфиг nginx…", en: "→ Deleting the nginx config…" },
   projectRemoved: {
