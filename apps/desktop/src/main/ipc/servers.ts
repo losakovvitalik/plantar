@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { app, dialog } from "electron";
 import { discoverApps, getServerInfo } from "@plantar/core";
-import { HostKeyRejectedError, SshConnection } from "@plantar/ssh";
+import { SshConnection } from "@plantar/ssh";
 import {
   type ServerRecord,
   readAppStatusCache,
@@ -34,9 +34,6 @@ import { handle, toResult } from "./util";
 
 /** Переводит технические ошибки ssh2 при входе по готовому ключу на язык пользователя */
 function friendlyKeyError(err: unknown): Error {
-  // A turned-down host key is about the server's identity, not about the
-  // user's key — it already says so itself, and its code must survive
-  if (err instanceof HostKeyRejectedError) return err;
   const message = err instanceof Error ? err.message : String(err);
   if (/passphrase/i.test(message)) return new Error(t("keyPassphraseUnsupported"));
   if (/authentication/i.test(message)) return new Error(t("keyAuthFailed"));
