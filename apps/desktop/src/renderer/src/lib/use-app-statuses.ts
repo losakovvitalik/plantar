@@ -78,6 +78,7 @@ export function useAppStatuses(servers: ServerRecord[]) {
         } else if (result.code === "host-key-rejected") {
           // The server answers, but with a key other than the stored one: its
           // own state, not "no connection" — the server header explains it
+          identityChanged.current.add(server.id);
           set(server.id, { kind: "identityChanged", apps: {} });
         } else {
           // Соединение могло закрыться между проверкой и запросом — для
