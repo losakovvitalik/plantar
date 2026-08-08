@@ -42,7 +42,7 @@ const SERVER_DOT: Record<ServerAppStatuses["kind"], string> = {
   ok: "bg-sprout",
   unreachable: "bg-clay",
   needsPassword: "border border-sage/50",
-  identityChanged: "bg-amber",
+  identityChanged: "bg-amber-light",
 };
 
 /** Статус проекта в сайдбаре; static не показывается — сайт ещё не проверялся */

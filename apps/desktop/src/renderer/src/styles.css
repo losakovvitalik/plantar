@@ -17,6 +17,10 @@
   --color-clay: #c2543f;
   --color-amber: #8a6420;
   --color-amber-bg: #f7efdd;
+  /* Amber for dark surfaces: --color-amber is tuned as text on --color-amber-bg
+     and only reaches 2.7:1 on the pine sidebar, below the 3:1 minimum for a
+     status dot. This one is 5.2:1 there */
+  --color-amber-light: #c9922f;
   /* Цвета серий графиков: насыщеннее фирменных — проверены на контраст
      и различимость при цветослепоте (dataviz-валидатор, поверхность card).
      Стек разбивки по приложениям идёт в порядке 1 → 3 → 2 → 4 (соседние
