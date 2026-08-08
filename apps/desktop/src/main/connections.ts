@@ -38,7 +38,18 @@ export async function connect(
   });
   // Only a server without a recorded key has anything to record — skip the
   // read of the store on every later connection
-  if (!server.hostKeyFingerprint) rememberHostKey(server.id, conn.hostKeyFingerprint);
+  if (!server.hostKeyFingerprint) {
+    try {
+      rememberHostKey(server.id, conn.hostKeyFingerprint);
+    } catch (err) {
+      // Writes throw by the storage package's convention, and this one runs on
+      // a connection that is already open: letting it out would lose the only
+      // reference to that connection, leaving it open until the process exits.
+      // An unrecorded key just means the next connection trusts on first use
+      // again — the state this server was already in.
+      console.error("plantar: failed to record the server host key", err);
+    }
+  }
   return conn;
 }
 

@@ -5,9 +5,10 @@ import { connect } from "./connections";
 
 const KEY = "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-const { send, sshConnect } = vi.hoisted(() => ({
+const { send, sshConnect, rememberHostKey } = vi.hoisted(() => ({
   send: vi.fn(),
   sshConnect: vi.fn(),
+  rememberHostKey: vi.fn(),
 }));
 
 // One live window, so the real activeWindow()/sendToWindow pair runs and the
@@ -23,6 +24,12 @@ vi.mock("electron", () => ({
 vi.mock("@plantar/ssh", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@plantar/ssh")>()),
   SshConnection: { connect: sshConnect },
+}));
+
+// Only the store write is faked; the verifier next to it stays real
+vi.mock("./host-keys", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./host-keys")>()),
+  rememberHostKey,
 }));
 
 // Password auth and a key already on record: nothing here reads a key file
@@ -66,5 +73,21 @@ describe("connect", () => {
     await connect(server, "secret");
 
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("keeps the connection when the host key cannot be recorded", async () => {
+    // Storage writes throw (a full disk, a read-only home). Letting that out
+    // would drop the only reference to a connection that is already open
+    sshConnect.mockResolvedValue({ hostKeyFingerprint: KEY });
+    rememberHostKey.mockImplementationOnce(() => {
+      throw new Error("ENOSPC: no space left on device");
+    });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const conn = await connect({ ...server, hostKeyFingerprint: undefined }, "secret");
+
+    expect(conn).toEqual({ hostKeyFingerprint: KEY });
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
   });
 });
