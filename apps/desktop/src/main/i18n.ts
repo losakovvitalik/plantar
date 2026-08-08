@@ -270,6 +270,10 @@ const MESSAGES = {
     ru: "Этот сервер входит по паролю, и пароль не хранится. Подключитесь к серверу в приложении Plantar и повторите запрос.",
     en: "This server signs in with a password, and the password is not stored. Connect to the server in the Plantar app, then retry.",
   },
+  externalLinkBlocked: {
+    ru: "Ссылку не удалось открыть: она не ведёт на сайт.",
+    en: "The link could not be opened: it does not lead to a website.",
+  },
 } satisfies Messages<string>;
 
 export const t = createT(MESSAGES);
