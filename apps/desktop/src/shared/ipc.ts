@@ -423,6 +423,7 @@ export interface IpcEventMap {
   "logs:stream-data": { streamId: string; channel: "out" | "err"; text: string };
   "logs:stream-end": { streamId: string };
   "deploy:open-project": { projectId: string };
+  "server:identity-changed": { serverId: string };
 }
 
 /**
@@ -684,5 +685,12 @@ export interface PlantarApi {
 
   onOpenProject: (
     callback: (event: IpcEventMap["deploy:open-project"]) => void,
+  ) => () => void;
+
+  /** The server answered with a key other than the recorded one. Every
+   *  connection reports it, because the silent status sweep never connects to
+   *  a password server on its own and would learn nothing about it */
+  onServerIdentityChanged: (
+    callback: (event: IpcEventMap["server:identity-changed"]) => void,
   ) => () => void;
 }

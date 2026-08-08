@@ -132,6 +132,7 @@ const api: PlantarApi = {
   onDeployFinished: (callback) => subscribe("deploy:finished", callback),
   onLogStreamData: (callback) => subscribe("logs:stream-data", callback),
   onLogStreamEnd: (callback) => subscribe("logs:stream-end", callback),
+  onServerIdentityChanged: (callback) => subscribe("server:identity-changed", callback),
 
   // Unlike the other subscriptions, only one subscriber at a time: a second
   // onOpenProject displaces the first callback. Enough for the single listener

@@ -53,9 +53,9 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
     user: input.user,
   };
 
-  // Все подключения при добавлении сервера идут через один и тот же
-  // проверяющий: ключ сервера определяется первым из них и дальше уже не
-  // меняется — в запись попадает ключ того же сервера, что и в начале
+  // Every connection made while adding the server goes through one and the
+  // same verifier: the first of them settles the host key and the rest have to
+  // match it — the record ends up with the key of the server it started on
   const hostKey = pinFirstHostKey();
 
   let record: ServerRecord;
@@ -108,8 +108,8 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
     record = { ...base, auth: "password" };
   }
 
-  // Ключ сервера сохраняется вместе с записью: следующие подключения сверяются
-  // с ним и прекращаются, если сервер отвечает уже другим ключом
+  // The host key is stored with the record: later connections check against it
+  // and stop when the server answers with a different one
   const server = { ...record, hostKeyFingerprint: hostKey.fingerprint };
   writeServers([...readServers(), server]);
   return server;

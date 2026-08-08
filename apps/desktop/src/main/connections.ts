@@ -1,9 +1,22 @@
-import { SshConnection } from "@plantar/ssh";
+import { HostKeyRejectedError, SshConnection } from "@plantar/ssh";
 import type { ServerRecord } from "@plantar/storage";
 import { hostKeyVerifier, rememberHostKey } from "./host-keys";
 import { t } from "./i18n";
+import { sendToWindow } from "./ipc/util";
 import { loadPrivateKey } from "./ssh-setup";
 import { withPooledConnection } from "./ssh-pool";
+import { activeWindow } from "./window";
+
+/**
+ * Puts the window into the "identity changed" state for this server. The
+ * silent status sweep cannot find a changed key on a password server — it
+ * never connects to one without a password — so the operation that ran into
+ * the mismatch is what has to tell the window about it.
+ */
+function reportIdentityChanged(serverId: string): void {
+  const win = activeWindow();
+  if (win) sendToWindow(win, "server:identity-changed", { serverId });
+}
 
 export async function connect(
   server: ServerRecord,
@@ -19,6 +32,9 @@ export async function connect(
     password: server.auth === "password" ? password : undefined,
     privateKey: server.auth === "key" ? loadPrivateKey(server.keyPath!) : undefined,
     verifyHostKey: hostKeyVerifier(server.hostKeyFingerprint),
+  }).catch((err: unknown) => {
+    if (err instanceof HostKeyRejectedError) reportIdentityChanged(server.id);
+    throw err;
   });
   // Only a server without a recorded key has anything to record — skip the
   // read of the store on every later connection
@@ -33,8 +49,8 @@ export const withServer = <T>(
   fn: (conn: SshConnection) => Promise<T>,
 ): Promise<T> => withPooledConnection(server.id, () => connect(server, password), fn);
 
-/** Подключение к серверу, которого ещё нет в записях: политику проверки
- *  ключа сервера задаёт вызывающий — записи с сохранённым ключом пока нет */
+/** Connects to a server that has no record yet: the caller owns the host key
+ *  policy — there is no stored key to check against at this point */
 export function connectWithPassword(
   base: { host: string; port: number; user: string },
   password: string,

@@ -21,6 +21,25 @@ export function useAppStatuses(servers: ServerRecord[]) {
   const [statuses, setStatuses] = useState<Record<string, ServerAppStatuses>>({});
   const [refreshing, setRefreshing] = useState(false);
   const inFlight = useRef(false);
+  // Servers that answered with a key other than the stored one. Kept aside
+  // because the sweep below cannot re-establish the fact for a password
+  // server: it never connects to one, so it would report "needs password"
+  // and quietly drop the state on the next refresh
+  const identityChanged = useRef(new Set<string>());
+
+  // Any operation on a server runs into the changed key; for a password server
+  // that operation is the only thing that ever will
+  useEffect(
+    () =>
+      window.plantar.onServerIdentityChanged(({ serverId }) => {
+        identityChanged.current.add(serverId);
+        setStatuses((prev) => ({
+          ...prev,
+          [serverId]: { kind: "identityChanged", apps: {} },
+        }));
+      }),
+    [],
+  );
 
   const refresh = useCallback(async () => {
     if (servers.length === 0 || inFlight.current) return;
@@ -40,19 +59,25 @@ export function useAppStatuses(servers: ServerRecord[]) {
     await Promise.all(
       servers.map(async (server) => {
         if (!(await canConnectSilently(server))) {
-          set(server.id, { kind: "needsPassword", apps: {} });
+          set(server.id, {
+            kind: identityChanged.current.has(server.id)
+              ? "identityChanged"
+              : "needsPassword",
+            apps: {},
+          });
           return;
         }
         const result = await window.plantar.getAppStatuses(server.id);
         if (result.ok) {
+          identityChanged.current.delete(server.id);
           set(server.id, {
             kind: "ok",
             apps: result.data.apps,
             checkedAt: result.data.checkedAt,
           });
         } else if (result.code === "host-key-rejected") {
-          // Сервер отвечает, но уже не тем ключом, что был сохранён: это
-          // отдельное состояние, а не «нет связи» — его объясняет шапка сервера
+          // The server answers, but with a key other than the stored one: its
+          // own state, not "no connection" — the server header explains it
           set(server.id, { kind: "identityChanged", apps: {} });
         } else {
           // Соединение могло закрыться между проверкой и запросом — для

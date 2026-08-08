@@ -109,6 +109,8 @@ export class SshConnection {
   static connect(options: ConnectOptions): Promise<SshConnection> {
     return new Promise((resolve, reject) => {
       const client = new Client();
+      // Filled by hostVerifier below: the key exchange always runs before
+      // "ready", so the empty value never reaches a constructed connection
       let fingerprint = "";
       let rejected: HostKeyRejectedError | undefined;
       // A raw ssh2 error ("All configured authentication methods failed")
