@@ -22,6 +22,10 @@ const MESSAGES = {
     ru: "Нужно указать --password (или переменную PLANTAR_PASSWORD) либо --key для аутентификации.",
     en: "Provide --password (or the PLANTAR_PASSWORD variable) or --key for authentication.",
   },
+  hostKeyInvalid: {
+    ru: "Значение --host-key (или PLANTAR_HOST_KEY) не похоже на отпечаток ключа: «{value}». Ожидается вид SHA256:… — такую строку печатает `ssh-keygen -lf` и сам plantar при подключении без --host-key. Ключ сервера не проверялся, подключение не выполнено.",
+    en: "The value of --host-key (or PLANTAR_HOST_KEY) does not look like a fingerprint: “{value}”. The expected form is SHA256:… — the line `ssh-keygen -lf` prints, and the one plantar itself prints when connecting without --host-key. The server key was not checked, no connection was made.",
+  },
   hostKeyUnchecked: {
     ru: "Ключ сервера не проверяется: укажите --host-key {fingerprint} (или PLANTAR_HOST_KEY), чтобы убедиться, что отвечает именно этот сервер.",
     en: "The server key is not being checked: pass --host-key {fingerprint} (or PLANTAR_HOST_KEY) to make sure it is this very server that answers.",
