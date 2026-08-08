@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -13,6 +14,32 @@ export function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+/**
+ * OpenSSH-style fingerprint of a host key: "SHA256:" followed by the base64 of
+ * its digest without padding. Same string `ssh-keygen -lf` and the ssh client
+ * print, so a value taken from either can be compared with this one.
+ */
+function hostKeyFingerprint(key: Buffer): string {
+  return `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}`;
+}
+
+/**
+ * The server presented a host key its verifier did not accept: either the
+ * server was rebuilt, or something else answers at that address. Carries a
+ * `code` so callers can tell it apart from an ordinary connection failure.
+ */
+export class HostKeyRejectedError extends Error {
+  readonly code = "host-key-rejected";
+
+  constructor(
+    readonly host: string,
+    readonly fingerprint: string,
+  ) {
+    super(t("hostKeyRejected", { host, fingerprint }));
+    this.name = "HostKeyRejectedError";
+  }
+}
+
 export interface ConnectOptions {
   host: string;
   port?: number;
@@ -21,6 +48,15 @@ export interface ConnectOptions {
   privateKeyPath?: string;
   /** Содержимое приватного ключа; имеет приоритет над privateKeyPath */
   privateKey?: string | Buffer;
+  /**
+   * Decides whether the host key the server presented is the expected one.
+   * Required on purpose: without a verifier ssh2 accepts any key, and anything
+   * able to answer at the server's address could impersonate it. The check runs
+   * during the key exchange, before authentication — a key turned down here
+   * means no password and no command ever reaches the other side. Returning
+   * false fails the connection with HostKeyRejectedError.
+   */
+  verifyHostKey: (fingerprint: string) => boolean;
 }
 
 export interface ExecResult {
@@ -61,6 +97,8 @@ export class SshConnection {
   private constructor(
     private client: Client,
     readonly host: string,
+    /** Fingerprint of the host key this connection was established with */
+    readonly hostKeyFingerprint: string,
   ) {}
 
   /** false после close() или разрыва — такое соединение нельзя переиспользовать */
@@ -71,11 +109,18 @@ export class SshConnection {
   static connect(options: ConnectOptions): Promise<SshConnection> {
     return new Promise((resolve, reject) => {
       const client = new Client();
+      let fingerprint = "";
+      let rejected: HostKeyRejectedError | undefined;
       // A raw ssh2 error ("All configured authentication methods failed")
       // names neither the server nor the user — useless in a log with
       // several servers. The original text is kept inside the message:
       // callers match on it (e.g. /authentication/i in friendlyKeyError).
-      const fail = (err: unknown) =>
+      const fail = (err: unknown) => {
+        // A turned-down host key reaches here as ssh2's "Host denied
+        // (verification failed)". Reported as itself instead of being folded
+        // into connectFailed: the reason is not a connection problem, and the
+        // UI keys off it.
+        if (rejected) return reject(rejected);
         reject(
           new Error(
             t("connectFailed", {
@@ -86,9 +131,10 @@ export class SshConnection {
             { cause: err },
           ),
         );
+      };
       client
         .on("ready", () => {
-          const conn = new SshConnection(client, options.host);
+          const conn = new SshConnection(client, options.host, fingerprint);
           client.on("close", () => {
             conn.closed = true;
           });
@@ -106,6 +152,12 @@ export class SshConnection {
           privateKey:
             options.privateKey ??
             (options.privateKeyPath ? readFileSync(options.privateKeyPath) : undefined),
+          hostVerifier: (key: Buffer) => {
+            fingerprint = hostKeyFingerprint(key);
+            if (options.verifyHostKey(fingerprint)) return true;
+            rejected = new HostKeyRejectedError(options.host, fingerprint);
+            return false;
+          },
           // Пинг раз в 15 секунд держит соединение живым за NAT
           // и позволяет заметить обрыв простаивающего соединения
           keepaliveInterval: 15_000,

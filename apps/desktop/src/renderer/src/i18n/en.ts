@@ -32,6 +32,9 @@ export const en: Record<MessageKey, string> = {
     "This is a server. Add a project via “+” in the list on the left to deploy.",
   "app.monitoringPasswordHint":
     "Background app checks are unavailable for this server: it connects with a password, and the password is never stored.",
+  "app.identityChanged": "The server answers differently than before.",
+  "app.identityChangedNote":
+    "A server with a different identifying key now answers at this address. This usually happens after the hosting provider reinstalls a server, but a substituted server looks exactly the same. While the key does not match, Plantar does not connect and sends nothing there. If the server was reinstalled, remove it here and add it again; removing the server also removes its projects from the list, and they will have to be added again. If it was not, do not connect and contact your hosting provider.",
   "app.emptyAddServer": "Add your first server",
   "app.emptySelect": "Select a server or project",
   "app.emptyAddServerHint":
@@ -69,6 +72,7 @@ export const en: Record<MessageKey, string> = {
   "sidebar.status.server.ok": "Server is reachable",
   "sidebar.status.server.unreachable": "No connection to the server",
   "sidebar.status.server.needsPassword": "Status unknown — password required",
+  "sidebar.status.server.identityChanged": "The server answers differently than before",
   "sidebar.status.checkedAt": "checked {time}",
   "sidebar.deploying.deploy": "Deploy in progress",
   "sidebar.deploying.rollback": "Rolling back to the previous version",

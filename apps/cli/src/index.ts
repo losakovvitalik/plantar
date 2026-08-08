@@ -27,6 +27,7 @@ interface ConnectionOpts {
   user: string;
   password?: string;
   key?: string;
+  hostKey?: string;
 }
 
 const program = new Command()
@@ -39,7 +40,8 @@ function withConnectionOptions(command: Command): Command {
     .option("--port <port>", t("optPort"), "22")
     .requiredOption("--user <user>", t("optUser"))
     .option("--password <password>", t("optPassword"))
-    .option("--key <path>", t("optKey"));
+    .option("--key <path>", t("optKey"))
+    .option("--host-key <fingerprint>", t("optHostKey"));
 }
 
 async function connect(opts: ConnectionOpts): Promise<SshConnection> {
@@ -50,12 +52,21 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
     console.error(t("authRequired"));
     process.exit(1);
   }
+  // The CLI keeps no server records, so the key to compare against comes from
+  // the run itself. Without it the key is only reported, not checked — the run
+  // prints the fingerprint to pin so the next one (a CI deploy) can verify.
+  const expectedHostKey = opts.hostKey ?? process.env.PLANTAR_HOST_KEY;
   const conn = await SshConnection.connect({
     host: opts.host,
     port: Number(opts.port),
     username: opts.user,
     password,
     privateKeyPath: opts.key,
+    verifyHostKey: (fingerprint) => {
+      if (expectedHostKey) return expectedHostKey === fingerprint;
+      console.warn(t("hostKeyUnchecked", { fingerprint }));
+      return true;
+    },
   });
   console.log(t("connected", { user: opts.user, host: opts.host }));
   return conn;
