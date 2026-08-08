@@ -78,6 +78,10 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
     console.error(t("hostKeyInvalid", { value: pinnedHostKey }));
     process.exit(1);
   }
+  // ssh2 runs the verifier again on every key exchange, and a long deploy
+  // rekeys mid-run: the check stays on each of them, the notice is printed once
+  // — repeated, it reads as if a second connection were being made
+  let warnedUnchecked = false;
   const conn = await SshConnection.connect({
     host: opts.host,
     port: Number(opts.port),
@@ -86,7 +90,10 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
     privateKeyPath: opts.key,
     verifyHostKey: (fingerprint) => {
       if (expectedHostKey) return expectedHostKey === fingerprint;
-      console.warn(t("hostKeyUnchecked", { fingerprint }));
+      if (!warnedUnchecked) {
+        warnedUnchecked = true;
+        console.warn(t("hostKeyUnchecked", { fingerprint }));
+      }
       return true;
     },
   });
