@@ -33,6 +33,13 @@ export function readHistoryStores(): HistoryStores {
 }
 
 /**
+ * Resolves the name a project goes by now. The default reads that project's
+ * plantar.json; a sweep that looks many projects up passes a resolver which
+ * reads each config once and answers the rest from memory.
+ */
+export type NameResolver = (project: ProjectRecord) => string;
+
+/**
  * The project to look its history records up by: the id of the project record
  * plus every name it deployed under — runs from before a rename are recorded
  * under the previous name and without an id (from the CLI or before the field
@@ -44,6 +51,7 @@ export function historyIdentity(
     servers: readServers(),
     projects: readProjects(),
   },
+  nameOf: NameResolver = currentName,
 ): ProjectHistoryIdentity {
   const server = stores.servers.find((s) => s.id === project.serverId);
   if (!server) throw new Error(t("serverNotFound"));
@@ -53,11 +61,11 @@ export function historyIdentity(
   const taken = new Set(
     stores.projects
       .filter((p) => p.id !== project.id && hostOf.get(p.serverId) === server.host)
-      .map((p) => currentName(p)),
+      .map((p) => nameOf(p)),
   );
   return {
     projectId: project.id,
-    names: [currentName(project), ...projectNames(project).filter((n) => !taken.has(n))],
+    names: [nameOf(project), ...projectNames(project).filter((n) => !taken.has(n))],
     host: server.host,
   };
 }
@@ -66,8 +74,9 @@ export function historyIdentity(
 export function projectHistory(
   project: ProjectRecord,
   stores: HistoryStores = readHistoryStores(),
+  nameOf: NameResolver = currentName,
 ): DeployRecord[] {
-  const identity = historyIdentity(project, stores);
+  const identity = historyIdentity(project, stores, nameOf);
   return stores.history.filter((r) => matchesProject(r, identity)).reverse();
 }
 
