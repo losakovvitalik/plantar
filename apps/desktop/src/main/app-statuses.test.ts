@@ -128,8 +128,9 @@ describe("collectServerAppStatuses", () => {
       "p-legacy": "running",
       "p-beta": "running",
     });
-    // Three static sites, each resolving the names of the other two: nine
-    // config reads before the sweep-wide lookup, three now
+    // Four reads per static site before the sweep-wide lookup — one for its own
+    // status plus three in historyIdentity (its own name and the other two) —
+    // so twelve across the three sites, three now
     expect([...configReads].sort()).toEqual([alpha.path, beta.path, legacy.path].sort());
   });
 

@@ -7,7 +7,7 @@ import {
   writeAppStatusCache,
 } from "@plantar/storage";
 import { withServer } from "./connections";
-import { projectHistory, readHistoryStores } from "./project-history";
+import { type NameResolver, projectHistory, readHistoryStores } from "./project-history";
 import { projectSite } from "./records";
 
 /** Name, type and site address of a project as its plantar.json defines them */
@@ -51,7 +51,10 @@ export async function collectServerAppStatuses(
     // One read of each project's plantar.json too: both the status of an app
     // and the names historyIdentity treats as taken by another project on the
     // host come from the config, so without this the sweep would re-read every
-    // same-host config per static site
+    // same-host config per static site. The cached siteUrl is pinned to this
+    // server's host, which stays right even for a project of another server:
+    // historyIdentity only asks the resolver about projects it has already
+    // filtered down to server.host
     const resolved = new Map<string, ProjectSite>();
     const siteOf = (project: ProjectRecord): ProjectSite => {
       let site = resolved.get(project.id);
@@ -61,14 +64,13 @@ export async function collectServerAppStatuses(
       }
       return site;
     };
+    const nameOf: NameResolver = (project) => siteOf(project).name;
     for (const project of stores.projects.filter((p) => p.serverId === server.id)) {
       const { status, siteUrl } = appStatusOf(project, pm2, siteOf(project));
       apps[project.id] = status;
       const deployedStatic =
         status === "static" &&
-        projectHistory(project, stores, (p) => siteOf(p).name).some(
-          (r) => r.status === "success",
-        );
+        projectHistory(project, stores, nameOf).some((r) => r.status === "success");
       if (siteUrl && (status === "running" || deployedStatic)) {
         sites.push({ projectId: project.id, url: siteUrl });
       }
