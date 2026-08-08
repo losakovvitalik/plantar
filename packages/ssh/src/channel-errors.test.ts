@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import type { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
-import { SshConnection } from "./index";
+import { HostKeyRejectedError, SshConnection } from "./index";
 
 interface FakeChannel extends EventEmitter {
   stderr: EventEmitter;
@@ -10,10 +11,13 @@ interface FakeChannel extends EventEmitter {
 
 interface FakeClient extends EventEmitter {
   execCalls: Array<{ command: string; channel: FakeChannel }>;
+  /** The config the code under test handed to ssh2 */
+  config?: { hostVerifier?: (key: Buffer) => boolean };
 }
 
 // Replaces ssh2 with a fake whose exec() hands out inert channels the tests
-// drive by emitting events. __clients exposes created clients to the tests.
+// drive by emitting events. __clients exposes created clients to the tests,
+// __hostKey is the key the fake server presents during the handshake.
 vi.mock("ssh2", async () => {
   const { EventEmitter } = await import("node:events");
 
@@ -24,13 +28,25 @@ vi.mock("ssh2", async () => {
   }
 
   const clients: Client[] = [];
+  const hostKey = Buffer.from("ssh-ed25519 fake host key");
 
   class Client extends EventEmitter {
     execCalls: Array<{ command: string; channel: Channel }> = [];
+    config?: { hostVerifier?: (key: Buffer) => boolean };
 
-    connect(): this {
+    connect(config: { hostVerifier?: (key: Buffer) => boolean }): this {
       clients.push(this);
-      queueMicrotask(() => this.emit("ready"));
+      this.config = config;
+      queueMicrotask(() => {
+        // Real ssh2 checks the host key during the key exchange — before
+        // "ready" and before authentication; a turned-down key ends the
+        // handshake with exactly this error
+        if (config.hostVerifier?.(hostKey) === false) {
+          this.emit("error", new Error("Host denied (verification failed)"));
+          return;
+        }
+        this.emit("ready");
+      });
       return this;
     }
 
@@ -44,12 +60,30 @@ vi.mock("ssh2", async () => {
     end(): void {}
   }
 
-  return { Client, __clients: clients };
+  return { Client, __clients: clients, __hostKey: hostKey };
 });
 
+function ssh2Mock(): Promise<{ __clients: FakeClient[]; __hostKey: Buffer }> {
+  return import("ssh2") as unknown as Promise<{
+    __clients: FakeClient[];
+    __hostKey: Buffer;
+  }>;
+}
+
+/** The fingerprint of the fake server's key, computed the way OpenSSH does */
+async function hostFingerprint(): Promise<string> {
+  const { __hostKey } = await ssh2Mock();
+  return `SHA256:${createHash("sha256").update(__hostKey).digest("base64").replace(/=+$/, "")}`;
+}
+
 async function connect(): Promise<{ conn: SshConnection; client: FakeClient }> {
-  const { __clients } = (await import("ssh2")) as unknown as { __clients: FakeClient[] };
-  const conn = await SshConnection.connect({ host: "test", username: "u", password: "p" });
+  const { __clients } = await ssh2Mock();
+  const conn = await SshConnection.connect({
+    host: "test",
+    username: "u",
+    password: "p",
+    verifyHostKey: () => true,
+  });
   const client = __clients.at(-1);
   if (!client) throw new Error("mock client was not created");
   return { conn, client };
@@ -73,11 +107,12 @@ async function finishPathProbe(client: FakeClient): Promise<void> {
 
 describe("connect errors", () => {
   it("names the server and the user and keeps the ssh2 reason", async () => {
-    const { __clients } = (await import("ssh2")) as unknown as { __clients: FakeClient[] };
+    const { __clients } = await ssh2Mock();
     const pending = SshConnection.connect({
       host: "h.example",
       username: "deploy",
       password: "p",
+      verifyHostKey: () => true,
     });
     const client = __clients.at(-1);
     if (!client) throw new Error("mock client was not created");
@@ -102,6 +137,7 @@ describe("connect errors", () => {
       host: "h.example",
       username: "deploy",
       privateKeyPath: "/nonexistent/plantar-test-key",
+      verifyHostKey: () => true,
     });
     const err = await pending.then(
       () => {
@@ -113,6 +149,54 @@ describe("connect errors", () => {
     expect(err.message).toContain("deploy");
     expect(err.message).toContain("ENOENT");
     expect((err.cause as NodeJS.ErrnoException).code).toBe("ENOENT");
+  });
+});
+
+describe("host key verification", () => {
+  it("always hands ssh2 a verifier, so no key is accepted by default", async () => {
+    const { client } = await connect();
+    expect(typeof client.config?.hostVerifier).toBe("function");
+  });
+
+  it("connects when the fingerprint matches and reports it on the connection", async () => {
+    const fingerprint = await hostFingerprint();
+    const seen: string[] = [];
+    const conn = await SshConnection.connect({
+      host: "h.example",
+      username: "deploy",
+      password: "p",
+      verifyHostKey: (fp) => {
+        seen.push(fp);
+        return fp === fingerprint;
+      },
+    });
+    // The verifier is asked with the OpenSSH form of the key the server sent
+    expect(seen).toEqual([fingerprint]);
+    expect(conn.hostKeyFingerprint).toBe(fingerprint);
+  });
+
+  it("fails with its own error when the fingerprint is not the expected one", async () => {
+    const fingerprint = await hostFingerprint();
+    const pending = SshConnection.connect({
+      host: "h.example",
+      username: "deploy",
+      password: "p",
+      verifyHostKey: (fp) => fp === "SHA256:the-key-this-server-used-to-have",
+    });
+    const err = await pending.then(
+      () => {
+        throw new Error("connect resolved instead of rejecting");
+      },
+      (e: Error) => e,
+    );
+    expect(err).toBeInstanceOf(HostKeyRejectedError);
+    const rejection = err as HostKeyRejectedError;
+    // The code is what the UI keys off to tell this apart from a failed connect
+    expect(rejection.code).toBe("host-key-rejected");
+    expect(rejection.host).toBe("h.example");
+    expect(rejection.fingerprint).toBe(fingerprint);
+    // Not folded into the generic "could not connect" wrapper
+    expect(rejection.message).not.toContain("Host denied");
   });
 });
 

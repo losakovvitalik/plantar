@@ -5,6 +5,10 @@ const MESSAGES = {
     ru: "Не удалось подключиться к серверу {host} (пользователь {user}): {error}",
     en: "Could not connect to the server {host} (user {user}): {error}",
   },
+  hostKeyRejected: {
+    ru: "Сервер {host} предъявил не тот опознавательный ключ, что был сохранён при первом подключении ({fingerprint}). Подключение прервано.",
+    en: "The server {host} presented a different identifying key ({fingerprint}) than the one saved on the first connection. The connection was stopped.",
+  },
   mkdirFailed: {
     ru: "Не удалось создать папку {dir} на сервере {host}: {stderr}",
     en: "Failed to create the folder {dir} on the server {host}: {stderr}",

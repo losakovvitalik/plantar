@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { app, dialog } from "electron";
 import { discoverApps, getServerInfo } from "@plantar/core";
-import { SshConnection } from "@plantar/ssh";
+import { HostKeyRejectedError, SshConnection } from "@plantar/ssh";
 import {
   type ServerRecord,
   readAppStatusCache,
@@ -17,6 +17,7 @@ import type { AddServerInput } from "../../shared/ipc";
 import { forgetServer } from "../app-monitor";
 import { collectServerAppStatuses } from "../app-statuses";
 import { connectWithPassword, withServer } from "../connections";
+import { pinFirstHostKey } from "../host-keys";
 import { t } from "../i18n";
 import { getServer, projectConfig } from "../records";
 import { dropConnection, isConnected } from "../ssh-pool";
@@ -33,6 +34,9 @@ import { handle, toResult } from "./util";
 
 /** Переводит технические ошибки ssh2 при входе по готовому ключу на язык пользователя */
 function friendlyKeyError(err: unknown): Error {
+  // A turned-down host key is about the server's identity, not about the
+  // user's key — it already says so itself, and its code must survive
+  if (err instanceof HostKeyRejectedError) return err;
   const message = err instanceof Error ? err.message : String(err);
   if (/passphrase/i.test(message)) return new Error(t("keyPassphraseUnsupported"));
   if (/authentication/i.test(message)) return new Error(t("keyAuthFailed"));
@@ -49,10 +53,15 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
     user: input.user,
   };
 
+  // Все подключения при добавлении сервера идут через один и тот же
+  // проверяющий: ключ сервера определяется первым из них и дальше уже не
+  // меняется — в запись попадает ключ того же сервера, что и в начале
+  const hostKey = pinFirstHostKey();
+
   let record: ServerRecord;
   if (input.auth === "key") {
     const { privateKeyPem, publicKey } = await generateKeyPair(id, `plantar-${base.name}`);
-    const conn = await connectWithPassword(base, input.password);
+    const conn = await connectWithPassword(base, input.password, hostKey.verify);
     try {
       await installPublicKey(conn, publicKey);
     } finally {
@@ -64,6 +73,7 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
       port: base.port,
       username: base.user,
       privateKey: privateKeyPem,
+      verifyHostKey: hostKey.verify,
     });
     test.close();
     const keyPath = storePrivateKey(id, privateKeyPem);
@@ -85,6 +95,7 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
         port: base.port,
         username: base.user,
         privateKey: pem,
+        verifyHostKey: hostKey.verify,
       });
       test.close();
     } catch (err) {
@@ -92,13 +103,16 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
     }
     record = { ...base, auth: "key", keyPath: input.keyPath };
   } else {
-    const conn = await connectWithPassword(base, input.password);
+    const conn = await connectWithPassword(base, input.password, hostKey.verify);
     conn.close();
     record = { ...base, auth: "password" };
   }
 
-  writeServers([...readServers(), record]);
-  return record;
+  // Ключ сервера сохраняется вместе с записью: следующие подключения сверяются
+  // с ним и прекращаются, если сервер отвечает уже другим ключом
+  const server = { ...record, hostKeyFingerprint: hostKey.fingerprint };
+  writeServers([...readServers(), server]);
+  return server;
 }
 
 export function registerServersIpc(): void {

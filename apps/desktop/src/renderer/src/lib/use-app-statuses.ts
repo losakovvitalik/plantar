@@ -4,7 +4,7 @@ import { canConnectSilently } from "./server-auth";
 
 /** Итог проверки одного сервера + статусы его приложений */
 export interface ServerAppStatuses {
-  kind: "checking" | "ok" | "unreachable" | "needsPassword";
+  kind: "checking" | "ok" | "unreachable" | "needsPassword" | "identityChanged";
   /** projectId → статус; при kind ≠ ok — данные прошлой проверки */
   apps: Record<string, AppStatus>;
   checkedAt?: string;
@@ -50,6 +50,10 @@ export function useAppStatuses(servers: ServerRecord[]) {
             apps: result.data.apps,
             checkedAt: result.data.checkedAt,
           });
+        } else if (result.code === "host-key-rejected") {
+          // Сервер отвечает, но уже не тем ключом, что был сохранён: это
+          // отдельное состояние, а не «нет связи» — его объясняет шапка сервера
+          set(server.id, { kind: "identityChanged", apps: {} });
         } else {
           // Соединение могло закрыться между проверкой и запросом — для
           // password-сервера это «нужен пароль», а не «нет связи»

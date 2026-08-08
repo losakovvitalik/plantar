@@ -9,6 +9,10 @@ export interface ServerRecord {
   /** password-серверы не хранят секрет — пароль запрашивается при каждом подключении */
   auth: "key" | "password";
   keyPath?: string;
+  /** The host key the server identifies itself with, recorded on the first
+   *  connection and required to stay the same afterwards. Servers added before
+   *  host keys were checked have none — the next connection records theirs. */
+  hostKeyFingerprint?: string;
 }
 
 /** Коммит, задеплоенный в последний раз (для git-проектов) */

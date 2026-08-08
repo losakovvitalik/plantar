@@ -480,6 +480,15 @@ export default function App() {
                   {t("app.monitoringPasswordHint")}
                 </p>
               )}
+              {/* The server answers with a different host key than the one saved:
+                  every connection to it is refused until this is sorted out, so
+                  the reason gets a place of its own instead of a failed request */}
+              {statuses[selectedServer.id]?.kind === "identityChanged" && (
+                <p className="mt-2 rounded-xl bg-amber-bg px-4 py-3 text-[13px] leading-relaxed text-ink">
+                  <span className="font-semibold">{t("app.identityChanged")}</span>{" "}
+                  {t("app.identityChangedNote")}
+                </p>
+              )}
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 thin-scroll">
               <div className="flex flex-col gap-4 pb-4">
