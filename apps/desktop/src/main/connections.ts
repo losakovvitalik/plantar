@@ -1,4 +1,4 @@
-import { HostKeyRejectedError, SshConnection } from "@plantar/ssh";
+import { type HostKeyVerifier, HostKeyRejectedError, SshConnection } from "@plantar/ssh";
 import type { ServerRecord } from "@plantar/storage";
 import { hostKeyVerifier, rememberHostKey } from "./host-keys";
 import { t } from "./i18n";
@@ -65,7 +65,7 @@ export const withServer = <T>(
 export function connectWithPassword(
   base: { host: string; port: number; user: string },
   password: string,
-  verifyHostKey: (fingerprint: string) => boolean,
+  verifyHostKey: HostKeyVerifier,
 ): Promise<SshConnection> {
   if (!password) throw new Error(t("enterPassword"));
   return SshConnection.connect({

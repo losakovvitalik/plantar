@@ -1,3 +1,4 @@
+import type { HostKeyVerifier } from "@plantar/ssh";
 import { readServers, writeServers } from "@plantar/storage";
 
 /**
@@ -9,9 +10,7 @@ import { readServers, writeServers } from "@plantar/storage";
  * host keys were checked has none stored — it records its key on the next
  * connection instead of forcing the user to add the server again.
  */
-export function hostKeyVerifier(
-  expected: string | undefined,
-): (fingerprint: string) => boolean {
+export function hostKeyVerifier(expected: string | undefined): HostKeyVerifier {
   return (fingerprint: string): boolean => expected === undefined || expected === fingerprint;
 }
 
@@ -37,7 +36,7 @@ export function rememberHostKey(serverId: string, fingerprint: string): void {
  * under the impostor's key.
  */
 export function pinFirstHostKey(): {
-  verify: (fingerprint: string) => boolean;
+  verify: HostKeyVerifier;
   readonly fingerprint: string | undefined;
 } {
   let pinned: string | undefined;

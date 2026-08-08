@@ -40,6 +40,15 @@ export class HostKeyRejectedError extends Error {
   }
 }
 
+/**
+ * Decides whether the host key the server presented is the expected one. The
+ * fingerprint is the OpenSSH "SHA256:<digest>" form — the same string
+ * `ssh-keygen -lf` and the ssh client print, so a value taken from either can
+ * be compared with it as-is. The contract between the SSH layer, which only
+ * asks, and the layer that owns the policy.
+ */
+export type HostKeyVerifier = (fingerprint: string) => boolean;
+
 export interface ConnectOptions {
   host: string;
   port?: number;
@@ -49,14 +58,13 @@ export interface ConnectOptions {
   /** Содержимое приватного ключа; имеет приоритет над privateKeyPath */
   privateKey?: string | Buffer;
   /**
-   * Decides whether the host key the server presented is the expected one.
    * Required on purpose: without a verifier ssh2 accepts any key, and anything
    * able to answer at the server's address could impersonate it. The check runs
    * during the key exchange, before authentication — a key turned down here
    * means no password and no command ever reaches the other side. Returning
    * false fails the connection with HostKeyRejectedError.
    */
-  verifyHostKey: (fingerprint: string) => boolean;
+  verifyHostKey: HostKeyVerifier;
 }
 
 export interface ExecResult {
