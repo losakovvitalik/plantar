@@ -64,11 +64,19 @@ async function setupGithubActions(
     await installPublicKey(conn, publicKey);
   });
 
+  // The host key goes into the secrets too: a CI deploy has nobody to ask and
+  // no records of its own, so an unpinned run would upload the project to
+  // whatever answers at that address. Re-read the record — the copy above was
+  // taken before the connection that records the key of a server without one.
+  const hostKeyFingerprint = getServer(project.serverId).hostKeyFingerprint;
+  if (!hostKeyFingerprint) throw new Error(t("actionsHostKeyMissing"));
+
   await putSecrets(token, repo, secretsKey, {
     PLANTAR_SSH_KEY: privateKeyPem,
     PLANTAR_HOST: server.host,
     PLANTAR_PORT: String(server.port),
     PLANTAR_USER: server.user,
+    PLANTAR_HOST_KEY: hostKeyFingerprint,
   });
 
   // plantar.json лежит в клоне untracked — без него CI не поймёт, как деплоить

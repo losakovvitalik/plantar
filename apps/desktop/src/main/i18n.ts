@@ -222,6 +222,10 @@ const MESSAGES = {
     ru: "GitHub отклонил запрос (код {status}). {message}",
     en: "GitHub rejected the request (status {status}). {message}",
   },
+  actionsHostKeyMissing: {
+    ru: "Опознавательный ключ этого сервера пока неизвестен, а без него деплой при коммите отправлял бы файлы на любой сервер, который ответит по этому адресу. Подключитесь к серверу в приложении Plantar и повторите настройку.",
+    en: "The identifying key of this server is not known yet, and without it deploy on commit would send files to any server that answers at this address. Connect to the server in the Plantar app, then set it up again.",
+  },
   subdirMissing: {
     ru: "Папка «{subdir}» не найдена в репозитории.",
     en: "The folder “{subdir}” was not found in the repository.",

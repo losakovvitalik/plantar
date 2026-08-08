@@ -147,7 +147,9 @@ export function buildWorkflowYaml(
   const project = shellQuote(subdir || ".");
 
   return `# Created by Plantar — deploys the project to your server on every push.
-# Server address and deploy key live in the repository secrets (PLANTAR_*).
+# Server address, deploy key and the server's expected host key live in the
+# repository secrets (PLANTAR_*). Without PLANTAR_HOST_KEY the deploy would go
+# to whatever machine answers at that address.
 name: Plantar deploy
 
 on:
@@ -180,5 +182,6 @@ ${pmStep}      - run: npm install -g @plantar/cli
           PLANTAR_HOST: \${{ secrets.PLANTAR_HOST }}
           PLANTAR_PORT: \${{ secrets.PLANTAR_PORT }}
           PLANTAR_USER: \${{ secrets.PLANTAR_USER }}
+          PLANTAR_HOST_KEY: \${{ secrets.PLANTAR_HOST_KEY }}
 `;
 }
