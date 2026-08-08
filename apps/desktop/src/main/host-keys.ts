@@ -37,7 +37,10 @@ export function rememberHostKey(serverId: string, fingerprint: string): void {
 export function pinFirstHostKey() {
   let pinned: string | undefined;
   return {
-    verify: (fingerprint: string): boolean => (pinned ??= fingerprint) === fingerprint,
+    verify: (fingerprint: string): boolean => {
+      pinned ??= fingerprint;
+      return pinned === fingerprint;
+    },
     /** The key that was settled on; undefined until the first connection */
     get fingerprint(): string | undefined {
       return pinned;

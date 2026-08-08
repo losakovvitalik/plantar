@@ -20,7 +20,9 @@ export async function connect(
     privateKey: server.auth === "key" ? loadPrivateKey(server.keyPath!) : undefined,
     verifyHostKey: hostKeyVerifier(server.hostKeyFingerprint),
   });
-  rememberHostKey(server.id, conn.hostKeyFingerprint);
+  // Only a server without a recorded key has anything to record — skip the
+  // read of the store on every later connection
+  if (!server.hostKeyFingerprint) rememberHostKey(server.id, conn.hostKeyFingerprint);
   return conn;
 }
 

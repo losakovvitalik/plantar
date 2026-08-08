@@ -34,7 +34,7 @@ export const en: Record<MessageKey, string> = {
     "Background app checks are unavailable for this server: it connects with a password, and the password is never stored.",
   "app.identityChanged": "The server answers differently than before.",
   "app.identityChangedNote":
-    "A server with a different identifying key now answers at this address. This usually happens after the hosting provider reinstalls a server, but a substituted server looks exactly the same. While the key does not match, Plantar does not connect and sends nothing there. If the server was reinstalled, remove it here and add it again; if it was not, do not connect and contact your hosting provider.",
+    "A server with a different identifying key now answers at this address. This usually happens after the hosting provider reinstalls a server, but a substituted server looks exactly the same. While the key does not match, Plantar does not connect and sends nothing there. If the server was reinstalled, remove it here and add it again; removing the server also removes its projects from the list, and they will have to be added again. If it was not, do not connect and contact your hosting provider.",
   "app.emptyAddServer": "Add your first server",
   "app.emptySelect": "Select a server or project",
   "app.emptyAddServerHint":
