@@ -69,7 +69,10 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
   // The CLI keeps no server records, so the key to compare against comes from
   // the run itself. Without it the key is only reported, not checked — the run
   // prints the fingerprint to pin so the next one (a CI deploy) can verify.
-  const pinnedHostKey = opts.hostKey ?? process.env.PLANTAR_HOST_KEY;
+  // An empty value counts as unset: an unfilled matrix entry or a missing
+  // secret expands to "", and reporting that as a mistyped fingerprint would
+  // blame the user for a value they never typed
+  const pinnedHostKey = opts.hostKey || process.env.PLANTAR_HOST_KEY || undefined;
   const expectedHostKey =
     pinnedHostKey === undefined ? undefined : parseHostKey(pinnedHostKey);
   if (pinnedHostKey !== undefined && !expectedHostKey) {
