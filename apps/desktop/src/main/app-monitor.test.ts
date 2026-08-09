@@ -56,11 +56,15 @@ let monitor: typeof import("./app-monitor");
 // instanceof, and after the reset a class imported at the top of this file is
 // no longer the class it checks against
 let ssh: typeof import("@plantar/ssh");
+// The same copy the monitor talks to — the collector below reports the changed
+// identity through it, as the real connection does
+let identity: typeof import("./server-identity");
 
 beforeEach(async () => {
   vi.resetModules();
   monitor = await import("./app-monitor");
   ssh = await import("@plantar/ssh");
+  identity = await import("./server-identity");
 });
 
 afterEach(() => {
@@ -76,7 +80,15 @@ describe("the background monitor on a changed host key", () => {
     vi.useFakeTimers();
     vi.spyOn(console, "error").mockImplementation(() => {});
     const collect = vi.fn();
-    collect.mockRejectedValue(new ssh.HostKeyRejectedError(server.host, "SHA256:other"));
+    // As the real collector fails: it connects through connections.ts, which
+    // records the changed identity itself and only then lets the error out. A
+    // bare rejection would test the monitor's branch without the wiring it runs
+    // in — and the fact reaching the monitor as old news is exactly the case
+    // that once left the user with nothing said
+    collect.mockImplementation(() => {
+      identity.reportIdentityChanged(server.id);
+      return Promise.reject(new ssh.HostKeyRejectedError(server.host, "SHA256:other"));
+    });
     monitor.startAppMonitor({ collectStatuses: collect, openFromBackground: () => {} });
 
     await vi.advanceTimersByTimeAsync(monitor.MONITOR_INTERVAL_MS);
