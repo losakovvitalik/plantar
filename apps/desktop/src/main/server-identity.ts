@@ -19,13 +19,16 @@ const inQuestion = new Set<string>();
 /**
  * Records that this server's identity is in question and tells the window, if
  * one is open. Returns true when the fact is news — the background monitor uses
- * it to warn once instead of on every sweep.
+ * it to warn once instead of on every sweep. The event goes out on the same
+ * terms: a window that already has the server on its list learns nothing from
+ * hearing about it again on every sweep, and one opening later asks for the
+ * list anyway.
  */
 export function reportIdentityChanged(serverId: string): boolean {
-  const win = activeWindow();
-  if (win) sendToWindow(win, "server:identity-changed", { serverId });
   if (inQuestion.has(serverId)) return false;
   inQuestion.add(serverId);
+  const win = activeWindow();
+  if (win) sendToWindow(win, "server:identity-changed", { serverId });
   return true;
 }
 

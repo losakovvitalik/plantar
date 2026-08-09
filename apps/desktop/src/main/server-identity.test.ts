@@ -51,8 +51,13 @@ describe("reportIdentityChanged", () => {
 
   it("reports the fact as news only once", () => {
     // The monitor sweeps every few minutes; a warning every time would be noise
+    openWindow();
+
     expect(reportIdentityChanged("s1")).toBe(true);
     expect(reportIdentityChanged("s1")).toBe(false);
+    // The event is held to the same rule: the window already has this server on
+    // its list, and hearing it again on every sweep tells it nothing new
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it("is news again after the server proved its key", () => {
