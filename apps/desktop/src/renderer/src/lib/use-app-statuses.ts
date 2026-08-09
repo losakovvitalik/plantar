@@ -113,14 +113,18 @@ export function useAppStatuses(servers: ServerRecord[]) {
         // Main knows about a changed identity found while this window did not
         // exist — the event that reports it had nowhere to go then. Asked for
         // before the first sweep, so the warning is on screen from the start;
-        // for a password server the sweep would never find it out at all
-        const inQuestion = await window.plantar.getIdentityChangedServers();
+        // for a password server the sweep would never find it out at all.
+        // Together with the cache: neither needs the other, and the cached
+        // statuses are what makes the first render instant
+        const [inQuestion, cached] = await Promise.all([
+          window.plantar.getIdentityChangedServers(),
+          window.plantar.getAppStatusCache(),
+        ]);
         // Kept even when this pass was superseded: the fact belongs to the
         // server, not to one render — dropping it would lose the warning again
         if (inQuestion.ok) {
           for (const id of inQuestion.data) identityChanged.current.add(id);
         }
-        const cached = await window.plantar.getAppStatusCache();
         if (active && cached.ok) {
           setStatuses((prev) => {
             const next = { ...prev };
