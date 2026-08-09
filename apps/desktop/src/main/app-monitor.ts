@@ -248,6 +248,30 @@ function scheduleRecheck(server: ServerRecord, pending: PendingCheck): void {
   );
 }
 
+/** Text of a system notification of each kind. name — the app, server — the
+ *  server it lives on; the server-wide kinds name the server itself */
+function notificationText(
+  kind: MonitorNotification["kind"],
+  params: { name: string; server: string },
+): { title: string; body: string } {
+  switch (kind) {
+    case "appDown":
+      return { title: t("notifyAppDownTitle"), body: t("notifyAppDownBody", params) };
+    case "appUp":
+      return { title: t("notifyAppUpTitle"), body: t("notifyAppUpBody", params) };
+    case "serverUnreachable":
+      return {
+        title: t("notifyServerUnreachableTitle"),
+        body: t("notifyServerUnreachableBody", { name: params.server }),
+      };
+    case "identityChanged":
+      return {
+        title: t("notifyIdentityChangedTitle"),
+        body: t("notifyIdentityChangedBody", { name: params.server }),
+      };
+  }
+}
+
 function notify(server: ServerRecord, notification: MonitorNotification): void {
   const project = notification.projectId
     ? readProjects().find((p) => p.id === notification.projectId)
@@ -260,21 +284,7 @@ function notify(server: ServerRecord, notification: MonitorNotification): void {
   if (notification.projectId && !project) return;
 
   const params = { name: project?.name ?? "", server: server.name };
-  const shown = new Notification(
-    notification.kind === "appDown"
-      ? { title: t("notifyAppDownTitle"), body: t("notifyAppDownBody", params) }
-      : notification.kind === "appUp"
-        ? { title: t("notifyAppUpTitle"), body: t("notifyAppUpBody", params) }
-        : notification.kind === "serverUnreachable"
-          ? {
-              title: t("notifyServerUnreachableTitle"),
-              body: t("notifyServerUnreachableBody", { name: server.name }),
-            }
-          : {
-              title: t("notifyIdentityChangedTitle"),
-              body: t("notifyIdentityChangedBody", { name: server.name }),
-            },
-  );
+  const shown = new Notification(notificationText(notification.kind, params));
   const projectId = notification.projectId;
   shown.on("click", () => deps?.openFromBackground(projectId));
   shown.show();
