@@ -1,12 +1,5 @@
-import { HostKeyRejectedError } from "@plantar/ssh";
 import type { ServerRecord } from "@plantar/storage";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  MONITOR_CONFIRM_DELAY_MS,
-  MONITOR_INTERVAL_MS,
-  startAppMonitor,
-  stopAppMonitor,
-} from "./app-monitor";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { t } from "./i18n";
 
 const server: ServerRecord = {
@@ -19,8 +12,9 @@ const server: ServerRecord = {
   hostKeyFingerprint: "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 };
 
-const { notified } = vi.hoisted(() => ({
+const { notified, settings } = vi.hoisted(() => ({
   notified: [] as { title: string; body: string }[],
+  settings: { notifyOnAppDown: true },
 }));
 
 vi.mock("electron", () => {
@@ -45,7 +39,7 @@ vi.mock("electron", () => {
 
 vi.mock("@plantar/storage", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@plantar/storage")>()),
-  readSettings: () => ({ notifyOnAppDown: true }),
+  readSettings: () => settings,
   readServers: () => [server],
   readProjects: () => [],
   // A fresh snapshot of the previous session is the baseline the monitor
@@ -55,8 +49,23 @@ vi.mock("@plantar/storage", async (importOriginal) => ({
   }),
 }));
 
+// The monitor and the identity it reports to live in module state, and stopping
+// the monitor is final — each test needs its own copy of both
+let monitor: typeof import("./app-monitor");
+// From the same fresh copy: the monitor recognises a rejected host key by
+// instanceof, and after the reset a class imported at the top of this file is
+// no longer the class it checks against
+let ssh: typeof import("@plantar/ssh");
+
+beforeEach(async () => {
+  vi.resetModules();
+  monitor = await import("./app-monitor");
+  ssh = await import("@plantar/ssh");
+});
+
 afterEach(() => {
-  stopAppMonitor();
+  monitor.stopAppMonitor();
+  settings.notifyOnAppDown = true;
   vi.useRealTimers();
   vi.restoreAllMocks();
   notified.length = 0;
@@ -67,12 +76,12 @@ describe("the background monitor on a changed host key", () => {
     vi.useFakeTimers();
     vi.spyOn(console, "error").mockImplementation(() => {});
     const collect = vi.fn();
-    collect.mockRejectedValue(new HostKeyRejectedError(server.host, "SHA256:other"));
-    startAppMonitor({ collectStatuses: collect, openFromBackground: () => {} });
+    collect.mockRejectedValue(new ssh.HostKeyRejectedError(server.host, "SHA256:other"));
+    monitor.startAppMonitor({ collectStatuses: collect, openFromBackground: () => {} });
 
-    await vi.advanceTimersByTimeAsync(MONITOR_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(monitor.MONITOR_INTERVAL_MS);
     // Long enough for a suspected outage to be confirmed, had one been suspected
-    await vi.advanceTimersByTimeAsync(MONITOR_CONFIRM_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(monitor.MONITOR_CONFIRM_DELAY_MS);
 
     expect(notified).toEqual([
       {
@@ -82,18 +91,37 @@ describe("the background monitor on a changed host key", () => {
     ]);
 
     // Every sweep runs into the same key — the warning is not repeated
-    await vi.advanceTimersByTimeAsync(MONITOR_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(monitor.MONITOR_INTERVAL_MS);
     expect(notified).toHaveLength(1);
 
     // The server was never recorded as fallen: a real outage after this is
     // still news, and would have been swallowed by a recorded fall
     collect.mockRejectedValue(new Error("Timed out while waiting for handshake"));
-    await vi.advanceTimersByTimeAsync(MONITOR_INTERVAL_MS);
-    await vi.advanceTimersByTimeAsync(MONITOR_CONFIRM_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(monitor.MONITOR_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(monitor.MONITOR_CONFIRM_DELAY_MS);
 
     expect(notified).toContainEqual({
       title: t("notifyServerUnreachableTitle"),
       body: t("notifyServerUnreachableBody", { name: server.name }),
     });
+  });
+
+  it("does not go looking for it with background watching switched off", async () => {
+    // notifyOnAppDown switches background monitoring off, so no sweep runs and
+    // nothing connects: going to the server on its own for a user who turned
+    // that off is what the app must never do. The changed key then waits for
+    // the next operation the user starts, which reports it itself
+    settings.notifyOnAppDown = false;
+    vi.useFakeTimers();
+    const collect = vi
+      .fn()
+      .mockRejectedValue(new ssh.HostKeyRejectedError(server.host, "SHA256:other"));
+    monitor.startAppMonitor({ collectStatuses: collect, openFromBackground: () => {} });
+
+    await vi.advanceTimersByTimeAsync(monitor.MONITOR_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(monitor.MONITOR_CONFIRM_DELAY_MS);
+
+    expect(collect).not.toHaveBeenCalled();
+    expect(notified).toEqual([]);
   });
 });

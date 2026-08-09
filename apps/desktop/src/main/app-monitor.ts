@@ -169,9 +169,12 @@ async function checkServer(
       // ever told about a possible substitution, and the state would record a
       // fall that a sorted-out key would later report as a recovery. Nothing is
       // recorded, so the next sweep starts from the last real observation.
-      // Deliberately not gated by notifyOnAppDown: that setting is about apps
-      // going down, and a setting must not silence a warning of another kind
-      // (#126). Reported once — the sweep runs every few minutes
+      // Found in the background only while notifyOnAppDown is on: that setting
+      // switches background monitoring off, and going to the server on its own
+      // for a user who turned it off is what the app must never do — with it
+      // off, the changed key is found by the next operation the user starts.
+      // What #126 forbids still holds: within a sweep that is running, nothing
+      // suppresses this warning. Reported once — the sweep runs every few minutes
       if (err instanceof HostKeyRejectedError) {
         console.error(`[monitor] host key changed on ${server.name}:`, err.message);
         if (reportIdentityChanged(server.id)) notify(server, { kind: "identityChanged" });
