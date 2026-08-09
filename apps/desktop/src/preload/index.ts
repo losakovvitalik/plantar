@@ -85,6 +85,7 @@ const api: PlantarApi = {
   isServerConnected: (serverId) => invoke("server:isConnected", serverId),
   getAppStatuses: (serverId) => invoke("server:appStatuses", { serverId }),
   getAppStatusCache: () => invoke("server:appStatusesCache"),
+  getIdentityChangedServers: () => invoke("servers:identityChanged"),
   getMonitoringStatus: (serverId, password) =>
     invoke("monitoring:status", { serverId, password }),
   installMonitoringTool: (serverId, tool, password) =>

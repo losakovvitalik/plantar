@@ -20,6 +20,7 @@ import { connectWithPassword, withServer } from "../connections";
 import { pinFirstHostKey } from "../host-keys";
 import { t } from "../i18n";
 import { getServer, projectConfig } from "../records";
+import { clearIdentityChanged, identityChangedServers } from "../server-identity";
 import { dropConnection, isConnected } from "../ssh-pool";
 import {
   detectSshConfigHosts,
@@ -144,6 +145,9 @@ export function registerServersIpc(): void {
     toResult(async () => {
       dropConnection(id);
       forgetServer(id);
+      // Removing and adding the server again is the way out of a changed
+      // identity — the record is gone, so the question about it goes too
+      clearIdentityChanged(id);
       writeServers(readServers().filter((s) => s.id !== id));
       writeProjects(readProjects().filter((p) => p.serverId !== id));
       // Убираем осиротевший снимок статусов приложений
@@ -204,5 +208,10 @@ export function registerServersIpc(): void {
   // Кэш статусов прошлой проверки — показывается сразу, пока идёт живая
   handle("server:appStatusesCache", () =>
     toResult(async () => readAppStatusCache()),
+  );
+  // Servers that answered with a key other than the recorded one: the window
+  // may have been closed when that came to light, so it asks on opening
+  handle("servers:identityChanged", () =>
+    toResult(async () => identityChangedServers()),
   );
 }

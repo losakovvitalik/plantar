@@ -332,6 +332,7 @@ export interface IpcInvokeMap {
   "server:isConnected": { args: string; result: boolean };
   "server:appStatuses": { args: { serverId: string }; result: AppStatusEntry };
   "server:appStatusesCache": { args: void; result: Record<string, AppStatusEntry> };
+  "servers:identityChanged": { args: void; result: string[] };
   "monitoring:status": {
     args: { serverId: string; password?: string };
     result: MonitoringStatus;
@@ -551,6 +552,10 @@ export interface PlantarApi {
   getAppStatuses: (serverId: string) => Promise<IpcResult<AppStatusEntry>>;
   /** Кэш статусов приложений по serverId — снимок прошлой проверки */
   getAppStatusCache: () => Promise<IpcResult<Record<string, AppStatusEntry>>>;
+  /** Servers that answered with a key other than the recorded one, as main
+   *  knows it: the mismatch can be found while no window is open, and the
+   *  onServerIdentityChanged event has nowhere to go then */
+  getIdentityChangedServers: () => Promise<IpcResult<string[]>>;
   /** Что из инструментов мониторинга установлено на сервере */
   getMonitoringStatus: (
     serverId: string,

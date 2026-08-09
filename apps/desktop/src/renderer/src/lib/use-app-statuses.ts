@@ -27,6 +27,15 @@ export function useAppStatuses(servers: ServerRecord[]) {
   // and quietly drop the state on the next refresh
   const identityChanged = useRef(new Set<string>());
 
+  /** The kind a server gets while a check of it is under way. A server whose
+   *  identity is in question keeps saying so: "checking" would blink the
+   *  warning off the screen on every mount, deploy and refresh, and for a key
+   *  server the check it blinks for is a connection that will be refused */
+  const sweepKind = (serverId: string) =>
+    identityChanged.current.has(serverId)
+      ? ("identityChanged" as const)
+      : ("checking" as const);
+
   // Any operation on a server runs into the changed key; for a password server
   // that operation is the only thing that ever will
   useEffect(
@@ -50,7 +59,7 @@ export function useAppStatuses(servers: ServerRecord[]) {
       Object.fromEntries(
         servers.map((s) => [
           s.id,
-          { ...prev[s.id], kind: "checking" as const, apps: prev[s.id]?.apps ?? {} },
+          { ...prev[s.id], kind: sweepKind(s.id), apps: prev[s.id]?.apps ?? {} },
         ]),
       ),
     );
@@ -101,6 +110,16 @@ export function useAppStatuses(servers: ServerRecord[]) {
     void (async () => {
       if (!cacheLoaded.current) {
         cacheLoaded.current = true;
+        // Main knows about a changed identity found while this window did not
+        // exist — the event that reports it had nowhere to go then. Asked for
+        // before the first sweep, so the warning is on screen from the start;
+        // for a password server the sweep would never find it out at all
+        const inQuestion = await window.plantar.getIdentityChangedServers();
+        // Kept even when this pass was superseded: the fact belongs to the
+        // server, not to one render — dropping it would lose the warning again
+        if (inQuestion.ok) {
+          for (const id of inQuestion.data) identityChanged.current.add(id);
+        }
         const cached = await window.plantar.getAppStatusCache();
         if (active && cached.ok) {
           setStatuses((prev) => {
@@ -111,7 +130,7 @@ export function useAppStatuses(servers: ServerRecord[]) {
               // устаревшие статусы так и остались бы на экране
               if (!entry || server.auth !== "key" || next[server.id]) continue;
               next[server.id] = {
-                kind: "checking",
+                kind: sweepKind(server.id),
                 apps: entry.apps,
                 checkedAt: entry.checkedAt,
               };
