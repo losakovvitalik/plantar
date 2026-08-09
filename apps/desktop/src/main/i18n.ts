@@ -84,6 +84,14 @@ const MESSAGES = {
     ru: "Нет связи с сервером «{name}». Приложения на нём сейчас не проверяются.",
     en: "Server “{name}” is unreachable. Its apps cannot be checked right now.",
   },
+  notifyIdentityChangedTitle: {
+    ru: "Сервер отвечает не так, как раньше",
+    en: "The server answers differently than before",
+  },
+  notifyIdentityChangedBody: {
+    ru: "По адресу сервера «{name}» отвечает сервер с другим опознавательным ключом. Plantar не подключается к нему и ничего туда не отправляет. Откройте приложение — там написано, что делать.",
+    en: "A server with a different identifying key answers at the address of “{name}”. Plantar does not connect to it and sends nothing there. Open the app to see what to do.",
+  },
   trayOpen: { ru: "Открыть Plantar", en: "Open Plantar" },
   trayQuit: { ru: "Выйти из Plantar", en: "Quit Plantar" },
   trayBackgroundTitle: {

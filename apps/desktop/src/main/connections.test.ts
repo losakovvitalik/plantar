@@ -2,6 +2,7 @@ import { HostKeyRejectedError } from "@plantar/ssh";
 import type { ServerRecord } from "@plantar/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { connect } from "./connections";
+import { identityChangedServers } from "./server-identity";
 
 const KEY = "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -73,6 +74,19 @@ describe("connect", () => {
     await connect(server, "secret");
 
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("forgets a changed identity once the server proves its key again", async () => {
+    // Kept in main so a window opening later still learns about it — which
+    // means it also has to be dropped there, or the warning outlives its reason
+    sshConnect.mockRejectedValueOnce(new HostKeyRejectedError(server.host, KEY));
+    await expect(connect(server, "secret")).rejects.toBeInstanceOf(HostKeyRejectedError);
+    expect(identityChangedServers()).toEqual(["s1"]);
+
+    sshConnect.mockResolvedValue({ hostKeyFingerprint: KEY });
+    await connect(server, "secret");
+
+    expect(identityChangedServers()).toEqual([]);
   });
 
   it("keeps the connection when the host key cannot be recorded", async () => {

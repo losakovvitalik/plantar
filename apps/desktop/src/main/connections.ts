@@ -2,21 +2,9 @@ import { type HostKeyVerifier, HostKeyRejectedError, SshConnection } from "@plan
 import type { ServerRecord } from "@plantar/storage";
 import { hostKeyVerifier, rememberHostKey } from "./host-keys";
 import { t } from "./i18n";
-import { sendToWindow } from "./ipc/util";
+import { clearIdentityChanged, reportIdentityChanged } from "./server-identity";
 import { loadPrivateKey } from "./ssh-setup";
 import { withPooledConnection } from "./ssh-pool";
-import { activeWindow } from "./window";
-
-/**
- * Puts the window into the "identity changed" state for this server. The
- * silent status sweep cannot find a changed key on a password server — it
- * never connects to one without a password — so the operation that ran into
- * the mismatch is what has to tell the window about it.
- */
-function reportIdentityChanged(serverId: string): void {
-  const win = activeWindow();
-  if (win) sendToWindow(win, "server:identity-changed", { serverId });
-}
 
 export async function connect(
   server: ServerRecord,
@@ -33,9 +21,16 @@ export async function connect(
     privateKey: server.auth === "key" ? loadPrivateKey(server.keyPath!) : undefined,
     verifyHostKey: hostKeyVerifier(server.hostKeyFingerprint),
   }).catch((err: unknown) => {
+    // The silent status sweep cannot find a changed key on a password server —
+    // it never connects to one without a password — so the operation that ran
+    // into the mismatch is what has to report it
     if (err instanceof HostKeyRejectedError) reportIdentityChanged(server.id);
     throw err;
   });
+  // The server presented the recorded key: whatever put its identity in
+  // question is over, and neither the window nor the monitor should keep
+  // warning about it
+  clearIdentityChanged(server.id);
   // Only a server without a recorded key has anything to record — skip the
   // read of the store on every later connection
   if (!server.hostKeyFingerprint) {

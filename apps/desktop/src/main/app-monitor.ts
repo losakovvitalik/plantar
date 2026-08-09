@@ -1,4 +1,5 @@
 import { Notification, net, powerMonitor } from "electron";
+import { HostKeyRejectedError } from "@plantar/ssh";
 import {
   type AppStatusEntry,
   type ServerRecord,
@@ -17,6 +18,7 @@ import {
   detectTransitions,
   stateFromCache,
 } from "./monitor-transitions";
+import { reportIdentityChanged } from "./server-identity";
 import { isConnected } from "./ssh-pool";
 
 /**
@@ -162,6 +164,19 @@ async function checkServer(
       if (!net.isOnline()) return;
       // The pooled connection died mid-flight and reconnecting needs a password
       if (server.auth === "password" && !isConnected(server.id)) return;
+      // Something answers at the server's address with another host key. Not an
+      // outage: "the server is unreachable" would be the only thing the user is
+      // ever told about a possible substitution, and the state would record a
+      // fall that a sorted-out key would later report as a recovery. Nothing is
+      // recorded, so the next sweep starts from the last real observation.
+      // Deliberately not gated by notifyOnAppDown: that setting is about apps
+      // going down, and a setting must not silence a warning of another kind
+      // (#126). Reported once — the sweep runs every few minutes
+      if (err instanceof HostKeyRejectedError) {
+        console.error(`[monitor] host key changed on ${server.name}:`, err.message);
+        if (reportIdentityChanged(server.id)) notify(server, { kind: "identityChanged" });
+        return;
+      }
       // Logged before blaming the server: a bug in the collector looks exactly
       // like an unreachable server otherwise
       console.error(`[monitor] collect failed on ${server.name}:`, err);
@@ -226,10 +241,15 @@ function notify(server: ServerRecord, notification: MonitorNotification): void {
       ? { title: t("notifyAppDownTitle"), body: t("notifyAppDownBody", params) }
       : notification.kind === "appUp"
         ? { title: t("notifyAppUpTitle"), body: t("notifyAppUpBody", params) }
-        : {
-            title: t("notifyServerUnreachableTitle"),
-            body: t("notifyServerUnreachableBody", { name: server.name }),
-          },
+        : notification.kind === "serverUnreachable"
+          ? {
+              title: t("notifyServerUnreachableTitle"),
+              body: t("notifyServerUnreachableBody", { name: server.name }),
+            }
+          : {
+              title: t("notifyIdentityChangedTitle"),
+              body: t("notifyIdentityChangedBody", { name: server.name }),
+            },
   );
   const projectId = notification.projectId;
   shown.on("click", () => deps?.openFromBackground(projectId));
