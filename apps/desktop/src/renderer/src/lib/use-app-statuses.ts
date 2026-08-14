@@ -54,6 +54,14 @@ export function useAppStatuses(servers: ServerRecord[]) {
     if (servers.length === 0 || inFlight.current) return;
     inFlight.current = true;
     setRefreshing(true);
+    // Main owns which identities are in question, and an operation there can
+    // settle the question between sweeps — the server presented the recorded
+    // key again. This sweep never connects to a password server, so it cannot
+    // find that out on its own: re-read the list every time and replace the
+    // copy, or a question main already settled would be re-asserted here from
+    // a stale one for as long as the window lives.
+    const inQuestion = await window.plantar.getIdentityChangedServers();
+    if (inQuestion.ok) identityChanged.current = new Set(inQuestion.data);
     // Прежние статусы остаются на экране, пока идёт проверка
     setStatuses((prev) =>
       Object.fromEntries(

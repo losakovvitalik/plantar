@@ -231,8 +231,8 @@ const MESSAGES = {
     en: "GitHub rejected the request (status {status}). {message}",
   },
   actionsHostKeyMissing: {
-    ru: "Опознавательный ключ этого сервера пока неизвестен, а без него деплой при коммите отправлял бы файлы на любой сервер, который ответит по этому адресу. Подключитесь к серверу в приложении Plantar и повторите настройку.",
-    en: "The identifying key of this server is not known yet, and without it deploy on commit would send files to any server that answers at this address. Connect to the server in the Plantar app, then set it up again.",
+    ru: "Не удалось сохранить опознавательный ключ сервера, поэтому настройка остановлена: без него деплой при коммите отправлял бы файлы на любой сервер, который ответит по этому адресу. Обычно так бывает, когда на диске не осталось свободного места или папка данных Plantar недоступна для записи.",
+    en: "The server's identifying key could not be saved, so the setup was stopped: without it, deploy on commit would send files to any server that answers at this address. This usually happens when the disk has run out of free space or the Plantar data folder cannot be written to.",
   },
   subdirMissing: {
     ru: "Папка «{subdir}» не найдена в репозитории.",
