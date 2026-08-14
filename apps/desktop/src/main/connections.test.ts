@@ -2,7 +2,7 @@ import { HostKeyRejectedError } from "@plantar/ssh";
 import type { ServerRecord } from "@plantar/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { connect } from "./connections";
-import { identityChangedServers } from "./server-identity";
+import { clearIdentityChanged, identityChangedServers } from "./server-identity";
 
 const KEY = "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -47,6 +47,9 @@ const server: ServerRecord = {
 
 afterEach(() => {
   vi.clearAllMocks();
+  // The identity list is module state shared by every test here — drain it so
+  // no test depends on what the previous one left in it
+  for (const id of identityChangedServers()) clearIdentityChanged(id);
 });
 
 describe("connect", () => {

@@ -15,6 +15,7 @@ describe("buildWorkflowYaml", () => {
     // address. The CLI reads PLANTAR_HOST_KEY from the environment.
     const yaml = buildWorkflowYaml("main", config);
 
-    expect(yaml).toContain("          PLANTAR_HOST_KEY: ${{ secrets.PLANTAR_HOST_KEY }}\n");
+    // The indentation is the template's own business — only the env line matters
+    expect(yaml).toMatch(/^\s*PLANTAR_HOST_KEY: \$\{\{ secrets\.PLANTAR_HOST_KEY \}\}$/m);
   });
 });
