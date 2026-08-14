@@ -77,6 +77,9 @@ describe("deploy core over real SSH", () => {
       port: inject("sshPort"),
       username: SSH_USER,
       password: SSH_PASSWORD,
+      // The container is built fresh for the run and gets a new host key with
+      // it, so there is nothing to compare against — accept what it presents
+      verifyHostKey: () => true,
     });
     projectDir = mkdtempSync(path.join(tmpdir(), "plantar-it-app-"));
     config = parseProjectConfig({

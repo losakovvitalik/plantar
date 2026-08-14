@@ -59,9 +59,18 @@ async function setupGithubActions(
     `github-actions-${project.id}`,
     comment,
   );
-  await withServer(server, password, async (conn) => {
+  // The host key goes into the secrets too: a CI deploy has nobody to ask and
+  // no records of its own, so an unpinned run would upload the project to
+  // whatever answers at that address. Read inside the operation, before the
+  // keys are touched: the connection that records the key of a server without
+  // one has been made by then, and giving up here leaves authorized_keys as it
+  // was — the same ordering rule as the secrets key above.
+  const hostKeyFingerprint = await withServer(server, password, async (conn) => {
+    const fingerprint = getServer(project.serverId).hostKeyFingerprint;
+    if (!fingerprint) throw new Error(t("actionsHostKeyMissing"));
     await removeKeysWithComment(conn, comment);
     await installPublicKey(conn, publicKey);
+    return fingerprint;
   });
 
   await putSecrets(token, repo, secretsKey, {
@@ -69,6 +78,7 @@ async function setupGithubActions(
     PLANTAR_HOST: server.host,
     PLANTAR_PORT: String(server.port),
     PLANTAR_USER: server.user,
+    PLANTAR_HOST_KEY: hostKeyFingerprint,
   });
 
   // plantar.json лежит в клоне untracked — без него CI не поймёт, как деплоить

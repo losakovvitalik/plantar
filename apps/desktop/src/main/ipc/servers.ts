@@ -17,8 +17,10 @@ import type { AddServerInput } from "../../shared/ipc";
 import { forgetServer } from "../app-monitor";
 import { collectServerAppStatuses } from "../app-statuses";
 import { connectWithPassword, withServer } from "../connections";
+import { pinFirstHostKey } from "../host-keys";
 import { t } from "../i18n";
 import { getServer, projectConfig } from "../records";
+import { clearIdentityChanged, identityChangedServers } from "../server-identity";
 import { dropConnection, isConnected } from "../ssh-pool";
 import {
   detectSshConfigHosts,
@@ -49,10 +51,15 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
     user: input.user,
   };
 
+  // Every connection made while adding the server goes through one and the
+  // same verifier: the first of them settles the host key and the rest have to
+  // match it — the record ends up with the key of the server it started on
+  const hostKey = pinFirstHostKey();
+
   let record: ServerRecord;
   if (input.auth === "key") {
     const { privateKeyPem, publicKey } = await generateKeyPair(id, `plantar-${base.name}`);
-    const conn = await connectWithPassword(base, input.password);
+    const conn = await connectWithPassword(base, input.password, hostKey.verify);
     try {
       await installPublicKey(conn, publicKey);
     } finally {
@@ -64,6 +71,7 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
       port: base.port,
       username: base.user,
       privateKey: privateKeyPem,
+      verifyHostKey: hostKey.verify,
     });
     test.close();
     const keyPath = storePrivateKey(id, privateKeyPem);
@@ -85,6 +93,7 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
         port: base.port,
         username: base.user,
         privateKey: pem,
+        verifyHostKey: hostKey.verify,
       });
       test.close();
     } catch (err) {
@@ -92,13 +101,16 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
     }
     record = { ...base, auth: "key", keyPath: input.keyPath };
   } else {
-    const conn = await connectWithPassword(base, input.password);
+    const conn = await connectWithPassword(base, input.password, hostKey.verify);
     conn.close();
     record = { ...base, auth: "password" };
   }
 
-  writeServers([...readServers(), record]);
-  return record;
+  // The host key is stored with the record: later connections check against it
+  // and stop when the server answers with a different one
+  const server = { ...record, hostKeyFingerprint: hostKey.fingerprint };
+  writeServers([...readServers(), server]);
+  return server;
 }
 
 export function registerServersIpc(): void {
@@ -133,6 +145,9 @@ export function registerServersIpc(): void {
     toResult(async () => {
       dropConnection(id);
       forgetServer(id);
+      // Removing and adding the server again is the way out of a changed
+      // identity — the record is gone, so the question about it goes too
+      clearIdentityChanged(id);
       writeServers(readServers().filter((s) => s.id !== id));
       writeProjects(readProjects().filter((p) => p.serverId !== id));
       // Убираем осиротевший снимок статусов приложений
@@ -193,5 +208,10 @@ export function registerServersIpc(): void {
   // Кэш статусов прошлой проверки — показывается сразу, пока идёт живая
   handle("server:appStatusesCache", () =>
     toResult(async () => readAppStatusCache()),
+  );
+  // Servers that answered with a key other than the recorded one: the window
+  // may have been closed when that came to light, so it asks on opening
+  handle("servers:identityChanged", () =>
+    toResult(async () => identityChangedServers()),
   );
 }

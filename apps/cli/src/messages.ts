@@ -14,9 +14,21 @@ const MESSAGES = {
     en: "password (when not using a key); safer to pass it in PLANTAR_PASSWORD",
   },
   optKey: { ru: "путь к приватному ключу", en: "path to the private key" },
+  optHostKey: {
+    ru: "ожидаемый ключ сервера в виде SHA256:… (или переменная PLANTAR_HOST_KEY); подключение прервётся, если сервер предъявит другой",
+    en: "expected server key as SHA256:… (or the PLANTAR_HOST_KEY variable); the connection stops if the server presents another one",
+  },
   authRequired: {
     ru: "Нужно указать --password (или переменную PLANTAR_PASSWORD) либо --key для аутентификации.",
     en: "Provide --password (or the PLANTAR_PASSWORD variable) or --key for authentication.",
+  },
+  hostKeyInvalid: {
+    ru: "Значение --host-key (или PLANTAR_HOST_KEY) не похоже на отпечаток ключа: «{value}». Ожидается вид SHA256:… — такую строку печатает `ssh-keygen -lf` и сам plantar при подключении без --host-key. Ключ сервера не проверялся, подключение не выполнено.",
+    en: "The value of --host-key (or PLANTAR_HOST_KEY) does not look like a fingerprint: “{value}”. The expected form is SHA256:… — the line `ssh-keygen -lf` prints, and the one plantar itself prints when connecting without --host-key. The server key was not checked, no connection was made.",
+  },
+  hostKeyUnchecked: {
+    ru: "Ключ сервера не проверяется: укажите --host-key {fingerprint} (или PLANTAR_HOST_KEY), чтобы убедиться, что отвечает именно этот сервер.",
+    en: "The server key is not being checked: pass --host-key {fingerprint} (or PLANTAR_HOST_KEY) to make sure it is this very server that answers.",
   },
   connected: { ru: "Подключено к {user}@{host}.", en: "Connected to {user}@{host}." },
   disconnected: { ru: "Отключено.", en: "Disconnected." },

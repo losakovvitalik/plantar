@@ -36,7 +36,10 @@ export interface PendingCheck {
 }
 
 export interface MonitorNotification {
-  kind: "appDown" | "appUp" | "serverUnreachable";
+  /** identityChanged is raised by the monitor itself, not by detectTransitions:
+   *  a server answering with another host key is a lasting fact about that
+   *  server (kept in server-identity.ts) rather than a transition of its apps */
+  kind: "appDown" | "appUp" | "serverUnreachable" | "identityChanged";
   /** Present for appDown/appUp */
   projectId?: string;
 }

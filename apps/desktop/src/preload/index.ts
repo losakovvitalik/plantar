@@ -85,6 +85,7 @@ const api: PlantarApi = {
   isServerConnected: (serverId) => invoke("server:isConnected", serverId),
   getAppStatuses: (serverId) => invoke("server:appStatuses", { serverId }),
   getAppStatusCache: () => invoke("server:appStatusesCache"),
+  getIdentityChangedServers: () => invoke("servers:identityChanged"),
   getMonitoringStatus: (serverId, password) =>
     invoke("monitoring:status", { serverId, password }),
   installMonitoringTool: (serverId, tool, password) =>
@@ -132,6 +133,7 @@ const api: PlantarApi = {
   onDeployFinished: (callback) => subscribe("deploy:finished", callback),
   onLogStreamData: (callback) => subscribe("logs:stream-data", callback),
   onLogStreamEnd: (callback) => subscribe("logs:stream-end", callback),
+  onServerIdentityChanged: (callback) => subscribe("server:identity-changed", callback),
 
   // Unlike the other subscriptions, only one subscriber at a time: a second
   // onOpenProject displaces the first callback. Enough for the single listener

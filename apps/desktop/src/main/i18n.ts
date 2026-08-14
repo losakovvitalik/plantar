@@ -84,6 +84,14 @@ const MESSAGES = {
     ru: "Нет связи с сервером «{name}». Приложения на нём сейчас не проверяются.",
     en: "Server “{name}” is unreachable. Its apps cannot be checked right now.",
   },
+  notifyIdentityChangedTitle: {
+    ru: "Сервер отвечает не так, как раньше",
+    en: "The server answers differently than before",
+  },
+  notifyIdentityChangedBody: {
+    ru: "По адресу сервера «{name}» отвечает сервер с другим опознавательным ключом. Plantar не подключается к нему и ничего туда не отправляет. Откройте приложение — там написано, что делать.",
+    en: "A server with a different identifying key answers at the address of “{name}”. Plantar does not connect to it and sends nothing there. Open the app to see what to do.",
+  },
   trayOpen: { ru: "Открыть Plantar", en: "Open Plantar" },
   trayQuit: { ru: "Выйти из Plantar", en: "Quit Plantar" },
   trayBackgroundTitle: {
@@ -221,6 +229,10 @@ const MESSAGES = {
   actionsApiFailed: {
     ru: "GitHub отклонил запрос (код {status}). {message}",
     en: "GitHub rejected the request (status {status}). {message}",
+  },
+  actionsHostKeyMissing: {
+    ru: "Не удалось сохранить опознавательный ключ сервера, поэтому настройка остановлена: без него деплой при коммите отправлял бы файлы на любой сервер, который ответит по этому адресу. Обычно так бывает, когда на диске не осталось свободного места или папка данных Plantar недоступна для записи.",
+    en: "The server's identifying key could not be saved, so the setup was stopped: without it, deploy on commit would send files to any server that answers at this address. This usually happens when the disk has run out of free space or the Plantar data folder cannot be written to.",
   },
   subdirMissing: {
     ru: "Папка «{subdir}» не найдена в репозитории.",

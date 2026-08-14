@@ -1,4 +1,5 @@
 import { Notification, net, powerMonitor } from "electron";
+import { HostKeyRejectedError } from "@plantar/ssh";
 import {
   type AppStatusEntry,
   type ServerRecord,
@@ -17,6 +18,7 @@ import {
   detectTransitions,
   stateFromCache,
 } from "./monitor-transitions";
+import { reportIdentityChanged, shouldWarnIdentityChanged } from "./server-identity";
 import { isConnected } from "./ssh-pool";
 
 /**
@@ -162,6 +164,32 @@ async function checkServer(
       if (!net.isOnline()) return;
       // The pooled connection died mid-flight and reconnecting needs a password
       if (server.auth === "password" && !isConnected(server.id)) return;
+      // Something answers at the server's address with another host key. Not an
+      // outage: "the server is unreachable" would be the only thing the user is
+      // ever told about a possible substitution, and the state would record a
+      // fall that a sorted-out key would later report as a recovery. Nothing is
+      // recorded, so the next sweep starts from the last real observation.
+      // Found in the background only while notifyOnAppDown is on: that setting
+      // switches background monitoring off, and going to the server on its own
+      // for a user who turned it off is what the app must never do — with it
+      // off, the changed key is found by the next operation the user starts.
+      // What #126 forbids still holds: within a sweep that is running, nothing
+      // suppresses this warning. Reported once — the sweep runs every few minutes
+      if (err instanceof HostKeyRejectedError) {
+        console.error(`[monitor] host key changed on ${server.name}:`, err.message);
+        // Keeps the fact for a window that opens later. The connection this
+        // sweep made has already recorded it, so this call usually changes
+        // nothing — the sweep must not depend on being the first to know
+        reportIdentityChanged(server.id);
+        // Once per episode, and the episode ends where the question does: a
+        // successful connection anywhere (clearIdentityChanged) re-arms the
+        // warning, so a second change after a settle is said again even if no
+        // sweep succeeded in between
+        if (shouldWarnIdentityChanged(server.id)) {
+          notify(server, { kind: "identityChanged" });
+        }
+        return;
+      }
       // Logged before blaming the server: a bug in the collector looks exactly
       // like an unreachable server otherwise
       console.error(`[monitor] collect failed on ${server.name}:`, err);
@@ -209,6 +237,30 @@ function scheduleRecheck(server: ServerRecord, pending: PendingCheck): void {
   );
 }
 
+/** Text of a system notification of each kind. name — the app, server — the
+ *  server it lives on; the server-wide kinds name the server itself */
+function notificationText(
+  kind: MonitorNotification["kind"],
+  params: { name: string; server: string },
+): { title: string; body: string } {
+  switch (kind) {
+    case "appDown":
+      return { title: t("notifyAppDownTitle"), body: t("notifyAppDownBody", params) };
+    case "appUp":
+      return { title: t("notifyAppUpTitle"), body: t("notifyAppUpBody", params) };
+    case "serverUnreachable":
+      return {
+        title: t("notifyServerUnreachableTitle"),
+        body: t("notifyServerUnreachableBody", { name: params.server }),
+      };
+    case "identityChanged":
+      return {
+        title: t("notifyIdentityChangedTitle"),
+        body: t("notifyIdentityChangedBody", { name: params.server }),
+      };
+  }
+}
+
 function notify(server: ServerRecord, notification: MonitorNotification): void {
   const project = notification.projectId
     ? readProjects().find((p) => p.id === notification.projectId)
@@ -221,16 +273,7 @@ function notify(server: ServerRecord, notification: MonitorNotification): void {
   if (notification.projectId && !project) return;
 
   const params = { name: project?.name ?? "", server: server.name };
-  const shown = new Notification(
-    notification.kind === "appDown"
-      ? { title: t("notifyAppDownTitle"), body: t("notifyAppDownBody", params) }
-      : notification.kind === "appUp"
-        ? { title: t("notifyAppUpTitle"), body: t("notifyAppUpBody", params) }
-        : {
-            title: t("notifyServerUnreachableTitle"),
-            body: t("notifyServerUnreachableBody", { name: server.name }),
-          },
-  );
+  const shown = new Notification(notificationText(notification.kind, params));
   const projectId = notification.projectId;
   shown.on("click", () => deps?.openFromBackground(projectId));
   shown.show();

@@ -27,6 +27,7 @@ interface ConnectionOpts {
   user: string;
   password?: string;
   key?: string;
+  hostKey?: string;
 }
 
 const program = new Command()
@@ -39,7 +40,22 @@ function withConnectionOptions(command: Command): Command {
     .option("--port <port>", t("optPort"), "22")
     .requiredOption("--user <user>", t("optUser"))
     .option("--password <password>", t("optPassword"))
-    .option("--key <path>", t("optKey"));
+    .option("--key <path>", t("optKey"))
+    .option("--host-key <fingerprint>", t("optHostKey"));
+}
+
+/**
+ * Brings a pinned host key to the canonical "SHA256:<digest>" form. Accepts the
+ * canonical form itself, a whole `ssh-keygen -lf` line (the fingerprint field is
+ * picked out of it) and the bare digest without the prefix. Returns null for
+ * anything else: a mistyped value must be reported as a bad argument, not as a
+ * server that changed its key.
+ */
+function parseHostKey(value: string): string | null {
+  // A SHA-256 digest in base64 without padding is exactly 43 characters; the
+  // boundaries keep a longer base64 blob (a whole public key) from matching
+  const match = value.trim().match(/(?:^|\s)(?:SHA256:)?([A-Za-z0-9+/]{43})=*(?=\s|$)/i);
+  return match ? `SHA256:${match[1]}` : null;
 }
 
 async function connect(opts: ConnectionOpts): Promise<SshConnection> {
@@ -50,12 +66,39 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
     console.error(t("authRequired"));
     process.exit(1);
   }
+  // The CLI keeps no server records, so the key to compare against comes from
+  // the run itself. Without it the key is only reported, not checked — the run
+  // prints the fingerprint to pin so the next one (a CI deploy) can verify.
+  // An empty value counts as unset: an unfilled matrix entry or a missing
+  // secret expands to "", and reporting that as a mistyped fingerprint would
+  // blame the user for a value they never typed
+  const pinnedHostKey = opts.hostKey || process.env.PLANTAR_HOST_KEY || undefined;
+  const expectedHostKey =
+    pinnedHostKey === undefined ? undefined : parseHostKey(pinnedHostKey);
+  if (pinnedHostKey !== undefined && !expectedHostKey) {
+    // Stop on the value itself: comparing it as-is would fail as a key mismatch,
+    // which in CI reads as a compromised server rather than as a typo
+    console.error(t("hostKeyInvalid", { value: pinnedHostKey }));
+    process.exit(1);
+  }
+  // ssh2 runs the verifier again on every key exchange, and a long deploy
+  // rekeys mid-run: the check stays on each of them, the notice is printed once
+  // — repeated, it reads as if a second connection were being made
+  let warnedUnchecked = false;
   const conn = await SshConnection.connect({
     host: opts.host,
     port: Number(opts.port),
     username: opts.user,
     password,
     privateKeyPath: opts.key,
+    verifyHostKey: (fingerprint) => {
+      if (expectedHostKey) return expectedHostKey === fingerprint;
+      if (!warnedUnchecked) {
+        warnedUnchecked = true;
+        console.warn(t("hostKeyUnchecked", { fingerprint }));
+      }
+      return true;
+    },
   });
   console.log(t("connected", { user: opts.user, host: opts.host }));
   return conn;
