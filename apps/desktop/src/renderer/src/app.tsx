@@ -374,6 +374,15 @@ export default function App() {
                   {t("app.projectSettings")}
                 </Button>
               </div>
+              {/* Same explanation as in the server view: deploys and refreshes
+                  from this screen fail with a raw host-key error, so the human
+                  reason has to be visible right here too */}
+              {statuses[projectServer.id]?.kind === "identityChanged" && (
+                <p className="mt-2 rounded-xl bg-amber-bg px-4 py-3 text-[13px] leading-relaxed text-ink">
+                  <span className="font-semibold">{t("app.identityChanged")}</span>{" "}
+                  {t("app.identityChangedNote")}
+                </p>
+              )}
             </header>
             <div className="min-h-0 flex-1 px-6 py-5">
               <TabsContent value="deploy" className="h-full">
