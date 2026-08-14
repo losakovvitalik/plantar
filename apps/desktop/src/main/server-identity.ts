@@ -16,6 +16,11 @@ import { activeWindow } from "./window";
  */
 const inQuestion = new Set<string>();
 
+/** Servers the user has already been warned about by a system notification —
+ *  once per episode. Lives next to inQuestion and is drained with it, so an
+ *  episode settled by any successful connection re-arms the warning */
+const warned = new Set<string>();
+
 /**
  * Records that this server's identity is in question and tells the window, if
  * one is open. Returns true when the fact is news — the background monitor uses
@@ -32,9 +37,27 @@ export function reportIdentityChanged(serverId: string): boolean {
   return true;
 }
 
+/**
+ * Whether the user still has to be told about this server by a system
+ * notification — true once per episode, an episode being one stay on the
+ * inQuestion list. The background monitor asks this instead of keeping its own
+ * flag: the answer of reportIdentityChanged cannot serve, because the
+ * connection the sweep makes reports the mismatch itself before the error gets
+ * to the monitor (connections.ts), so there the fact is never news. A flag of
+ * the monitor's own would go stale — an episode settled by a successful
+ * foreground connection would not drain it, and a second key change before the
+ * next successful sweep would never be notified with the window closed.
+ */
+export function shouldWarnIdentityChanged(serverId: string): boolean {
+  if (!inQuestion.has(serverId) || warned.has(serverId)) return false;
+  warned.add(serverId);
+  return true;
+}
+
 /** The server presented the recorded key again — the question is settled */
 export function clearIdentityChanged(serverId: string): void {
   inQuestion.delete(serverId);
+  warned.delete(serverId);
 }
 
 /** Servers whose identity is in question — for a window that is only now opening */

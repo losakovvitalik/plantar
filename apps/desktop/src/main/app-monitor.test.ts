@@ -118,6 +118,28 @@ describe("the background monitor on a changed host key", () => {
     });
   });
 
+  it("warns again about a second change after a settle it never saw", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const collect = vi.fn().mockImplementation(() => {
+      identity.reportIdentityChanged(server.id);
+      return Promise.reject(new ssh.HostKeyRejectedError(server.host, "SHA256:other"));
+    });
+    monitor.startAppMonitor({ collectStatuses: collect, openFromBackground: () => {} });
+
+    await vi.advanceTimersByTimeAsync(monitor.MONITOR_INTERVAL_MS);
+    expect(notified).toHaveLength(1);
+
+    // A successful foreground connection settled the episode (connections.ts
+    // calls this); no sweep of the monitor's own succeeded in between
+    identity.clearIdentityChanged(server.id);
+
+    // The key changes again before the next successful sweep — with the window
+    // closed this notification is the only thing the user is ever told
+    await vi.advanceTimersByTimeAsync(monitor.MONITOR_INTERVAL_MS);
+    expect(notified).toHaveLength(2);
+  });
+
   it("does not go looking for it with background watching switched off", async () => {
     // notifyOnAppDown switches background monitoring off, so no sweep runs and
     // nothing connects: going to the server on its own for a user who turned

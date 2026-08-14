@@ -3,6 +3,7 @@ import {
   clearIdentityChanged,
   identityChangedServers,
   reportIdentityChanged,
+  shouldWarnIdentityChanged,
 } from "./server-identity";
 
 const { send, windows } = vi.hoisted(() => ({
@@ -67,5 +68,31 @@ describe("reportIdentityChanged", () => {
 
     expect(identityChangedServers()).toEqual([]);
     expect(reportIdentityChanged("s1")).toBe(true);
+  });
+});
+
+describe("shouldWarnIdentityChanged", () => {
+  it("warns once per episode", () => {
+    reportIdentityChanged("s1");
+
+    expect(shouldWarnIdentityChanged("s1")).toBe(true);
+    // The monitor asks on every sweep — the answer must not repeat the warning
+    expect(shouldWarnIdentityChanged("s1")).toBe(false);
+  });
+
+  it("does not warn about a server whose identity is not in question", () => {
+    expect(shouldWarnIdentityChanged("s1")).toBe(false);
+  });
+
+  it("warns again about a second change after the question was settled", () => {
+    reportIdentityChanged("s1");
+    shouldWarnIdentityChanged("s1");
+    // A successful foreground connection settles the episode (connections.ts) —
+    // the warning must re-arm here, not wait for a successful sweep
+    clearIdentityChanged("s1");
+
+    reportIdentityChanged("s1");
+
+    expect(shouldWarnIdentityChanged("s1")).toBe(true);
   });
 });

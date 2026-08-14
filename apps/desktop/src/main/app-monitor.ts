@@ -18,7 +18,7 @@ import {
   detectTransitions,
   stateFromCache,
 } from "./monitor-transitions";
-import { reportIdentityChanged } from "./server-identity";
+import { reportIdentityChanged, shouldWarnIdentityChanged } from "./server-identity";
 import { isConnected } from "./ssh-pool";
 
 /**
@@ -53,16 +53,6 @@ interface AppMonitorDeps {
 let deps: AppMonitorDeps | null = null;
 /** serverId → last confirmed state */
 const states = new Map<string, ServerMonitorState>();
-/**
- * Servers the user has already been warned about answering with a different
- * host key — so the warning is said once instead of on every sweep.
- *
- * Its own set rather than the "is this news" answer of reportIdentityChanged:
- * that one is about the window having been told, and the connection this sweep
- * makes reports the mismatch itself before the error gets here (connections.ts),
- * so by then the fact is never news and the warning would never be said.
- */
-const identityWarned = new Set<string>();
 let cycleTimer: NodeJS.Timeout | null = null;
 const recheckTimers = new Map<string, NodeJS.Timeout>();
 /** Servers being checked right now — a second check would race on the state */
@@ -108,7 +98,6 @@ export function forgetServer(serverId: string): void {
   if (timer) clearTimeout(timer);
   recheckTimers.delete(serverId);
   states.delete(serverId);
-  identityWarned.delete(serverId);
 }
 
 function clearTimers(): void {
@@ -170,9 +159,6 @@ async function checkServer(
     let observation: ServerObservation;
     try {
       observation = { reachable: true, apps: (await deps.collectStatuses(server)).apps };
-      // The server presented the recorded key again — a change after this is
-      // news once more, and worth saying again
-      identityWarned.delete(server.id);
     } catch (err) {
       // The user's own connectivity vanishing is not a server incident
       if (!net.isOnline()) return;
@@ -195,8 +181,11 @@ async function checkServer(
         // sweep made has already recorded it, so this call usually changes
         // nothing — the sweep must not depend on being the first to know
         reportIdentityChanged(server.id);
-        if (!identityWarned.has(server.id)) {
-          identityWarned.add(server.id);
+        // Once per episode, and the episode ends where the question does: a
+        // successful connection anywhere (clearIdentityChanged) re-arms the
+        // warning, so a second change after a settle is said again even if no
+        // sweep succeeded in between
+        if (shouldWarnIdentityChanged(server.id)) {
           notify(server, { kind: "identityChanged" });
         }
         return;

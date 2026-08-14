@@ -42,9 +42,15 @@ export function useAppStatuses(servers: ServerRecord[]) {
     () =>
       window.plantar.onServerIdentityChanged(({ serverId }) => {
         identityChanged.current.add(serverId);
+        // Last check's data stays, as the interface promises for non-ok kinds —
+        // wiping it here would blink the project dots away when the event lands
         setStatuses((prev) => ({
           ...prev,
-          [serverId]: { kind: "identityChanged", apps: {} },
+          [serverId]: {
+            ...prev[serverId],
+            kind: "identityChanged",
+            apps: prev[serverId]?.apps ?? {},
+          },
         }));
       }),
     [],
@@ -100,8 +106,16 @@ export function useAppStatuses(servers: ServerRecord[]) {
         } else {
           // Соединение могло закрыться между проверкой и запросом — для
           // password-сервера это «нужен пароль», а не «нет связи»
+          // A server whose identity is in question keeps saying so even when
+          // the check fails for another reason (the impostor stopped answering,
+          // a timeout): main still holds the question, and the next sweep's
+          // reset would flip the kind right back — a blink, not a state
           set(server.id, {
-            kind: server.auth === "password" ? "needsPassword" : "unreachable",
+            kind: identityChanged.current.has(server.id)
+              ? "identityChanged"
+              : server.auth === "password"
+                ? "needsPassword"
+                : "unreachable",
             apps: {},
           });
         }
