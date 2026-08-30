@@ -135,12 +135,18 @@ export function useAppStatuses(servers: ServerRecord[]) {
     }
     inFlight.current = true;
     setRefreshing(true);
-    do {
-      pending.current = false;
-      await sweep();
-    } while (pending.current);
-    setRefreshing(false);
-    inFlight.current = false;
+    try {
+      do {
+        pending.current = false;
+        await sweep();
+      } while (pending.current);
+    } finally {
+      // A sweep that throws must not leave the flag held: every later refresh
+      // would take the branch above and none would ever run again, with the
+      // spinner on for as long as the window lives
+      setRefreshing(false);
+      inFlight.current = false;
+    }
   }, [servers, sweep]);
 
   const cacheLoaded = useRef(false);

@@ -137,7 +137,9 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
           <Button variant="ghost" onClick={close} disabled={busy}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={() => void trust()} disabled={busy || !fingerprint}>
+          {/* Nothing to confirm while the box shows no key: during the re-read
+              after a refusal the one held here is the key just turned down */}
+          <Button onClick={() => void trust()} disabled={busy || loading || !fingerprint}>
             {busy ? t("trustHostKey.saving") : t("trustHostKey.confirm")}
           </Button>
         </DialogFooter>
