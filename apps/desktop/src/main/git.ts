@@ -9,20 +9,70 @@ const execFileAsync = promisify(execFile);
 const GIT_OPTS = { maxBuffer: 32 * 1024 * 1024 } as const;
 
 /**
+ * The single notion of "this URL points at GitHub" in the app. The host is
+ * parsed out of the URL instead of being matched as text, so lookalikes never
+ * pass: `https://github.com.evil.example/a/b`, `https://notgithub.com/a/b`
+ * and `https://github.com@evil.example/a/b` all name a different host.
+ *
+ * `new URL()` is not the parser git uses, and where the two can disagree about
+ * the host the answer is simply "no". A backslash ends the authority for
+ * `new URL()` but not for git's, so `https://github.com\@evil.example/a/b`
+ * reads as github.com here while git connects to evil.example; credentials in
+ * the URL are the other half of that authority, and nothing in the app needs
+ * them.
+ */
+export function isGithubUrl(url: string): boolean {
+  if (url.includes("\\")) return false;
+  try {
+    const { protocol, hostname, username, password } = new URL(url);
+    if (username || password) return false;
+    return protocol === "https:" && hostname === "github.com";
+  } catch {
+    return false; // not even a URL — certainly not GitHub
+  }
+}
+
+/**
  * Auth for git: the token travels as an Authorization header via the
  * GIT_CONFIG_* environment variables, not in the URL (it must never end up
  * in .git/config) and not in argv (argv is visible in `ps` output and gets
  * quoted into execFile error messages). The header exists only in the
  * environment of the single git process for the duration of the call.
+ *
+ * The token is a GitHub credential for every private repository of the
+ * account, so it is attached only when the call really goes to github.com:
+ * repository URLs are pasted by the user or read off a server, and no other
+ * host may receive it. Redirects are switched off on the same call so git
+ * cannot carry the header to another host on its own either.
  */
-function authEnv(token?: string): NodeJS.ProcessEnv | undefined {
-  if (!token) return undefined;
+function authEnv(url: string, token?: string): NodeJS.ProcessEnv | undefined {
+  if (!token || !isGithubUrl(url)) return undefined;
   const basic = Buffer.from(`x-access-token:${token}`).toString("base64");
   return {
-    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_COUNT: "2",
     GIT_CONFIG_KEY_0: "http.extraHeader",
     GIT_CONFIG_VALUE_0: `Authorization: Basic ${basic}`,
+    GIT_CONFIG_KEY_1: "http.followRedirects",
+    GIT_CONFIG_VALUE_1: "false",
   };
+}
+
+/**
+ * Auth for a call that runs inside an existing clone: the destination host is
+ * not among the arguments, so it is read from the clone's own origin remote.
+ * A remote that cannot be read is treated as non-GitHub and gets no token.
+ */
+async function cloneAuthEnv(
+  dir: string,
+  token?: string,
+): Promise<NodeJS.ProcessEnv | undefined> {
+  if (!token) return undefined;
+  try {
+    const url = await git(["-C", dir, "remote", "get-url", "origin"]);
+    return authEnv(url.trim(), token);
+  } catch {
+    return undefined;
+  }
 }
 
 /** Ссылка должна быть https — сервер к GitHub не ходит, клонируем локально */
@@ -98,7 +148,7 @@ export async function listRemoteBranches(
   let stdout: string;
   try {
     // --symref выводит симссылку HEAD (дефолтная ветка) + все refs; --heads её бы скрыл
-    stdout = await git(["ls-remote", "--symref", "--", url], authEnv(token));
+    stdout = await git(["ls-remote", "--symref", "--", url], authEnv(url, token));
   } catch (err) {
     throw new Error(t("lsRemoteFailed", { message: (err as Error).message }));
   }
@@ -136,7 +186,7 @@ export async function cloneRepo(
     branchArgs.push("--branch", branch);
   }
   try {
-    await git(["clone", ...branchArgs, "--", url, dir], authEnv(token));
+    await git(["clone", ...branchArgs, "--", url, dir], authEnv(url, token));
   } catch (err) {
     throw new Error(t("cloneFailed", { message: (err as Error).message }));
   }
@@ -150,7 +200,7 @@ export async function updateRepo(
 ): Promise<void> {
   assertValidBranch(branch);
   try {
-    await git(["-C", dir, "fetch", "--prune", "origin"], authEnv(token));
+    await git(["-C", dir, "fetch", "--prune", "origin"], await cloneAuthEnv(dir, token));
     // -B создаёт/сбрасывает локальную ветку на origin/<branch>. -f нужен, когда в ветке
     // появился файл, лежащий в клоне как untracked (plantar.json после настройки
     // деплоя при коммите): без него checkout отказывается его перезаписать.
@@ -184,7 +234,7 @@ export async function listCommits(
 ): Promise<GitCommit[]> {
   assertValidBranch(branch);
   try {
-    await git(["-C", dir, "fetch", "--prune", "origin"], authEnv(token));
+    await git(["-C", dir, "fetch", "--prune", "origin"], await cloneAuthEnv(dir, token));
   } catch {
     /* нет сети/доступа — покажем локальную историю клона */
   }

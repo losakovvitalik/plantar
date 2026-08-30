@@ -1,6 +1,7 @@
 import sodium from "libsodium-wrappers";
 import type { ProjectConfig } from "@plantar/config";
 import { shellQuote } from "@plantar/ssh";
+import { isGithubUrl } from "./git";
 import { t } from "./i18n";
 
 /** Путь workflow-файла в репозитории пользователя */
@@ -13,7 +14,10 @@ export interface GithubRepo {
 
 /** Разбирает https-ссылку на репозиторий GitHub; другие хосты не поддерживаются */
 export function parseGithubRepo(repoUrl: string): GithubRepo {
-  const match = /^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(repoUrl);
+  // The host question has one answer in the app (isGithubUrl); only the
+  // owner/repo pair is read out of the path here.
+  const repoPath = isGithubUrl(repoUrl) ? new URL(repoUrl).pathname : "";
+  const match = /^\/([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(repoPath);
   if (!match) throw new Error(t("actionsGithubOnly"));
   return { owner: match[1], repo: match[2] };
 }
