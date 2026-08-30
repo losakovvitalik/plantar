@@ -2,19 +2,23 @@ import { sendToWindow } from "./ipc/util";
 import { activeWindow } from "./window";
 
 /**
- * Which servers answered with a host key other than the recorded one — the one
- * place in main that keeps that fact.
+ * Which servers answered with a host key other than the recorded one, and which
+ * key each of them answered with — the one place in main that keeps that fact.
  *
  * It has to outlive the operation that ran into it. The window can be closed to
  * the tray while the background monitor finds the mismatch, and the push event
  * below then has nowhere to go; a window opening later asks for the list
  * instead of learning nothing about it.
  *
+ * The key comes along because the rejected handshake is the only place it is
+ * seen: offering to record it as the server's new key must not need a second
+ * connection, which would be a connection to a server the app is refusing.
+ *
  * Nothing is written to disk: the handshake turns the connection down on its
  * own, restart or not, so after a restart the next connection to that server
  * establishes the fact again — one warning less, never one connection more.
  */
-const inQuestion = new Set<string>();
+const inQuestion = new Map<string, string>();
 
 /** Servers the user has already been warned about by a system notification —
  *  once per episode. Lives next to inQuestion and is drained with it, so an
@@ -29,9 +33,13 @@ const warned = new Set<string>();
  * hearing about it again on every sweep, and one opening later asks for the
  * list anyway.
  */
-export function reportIdentityChanged(serverId: string): boolean {
-  if (inQuestion.has(serverId)) return false;
-  inQuestion.add(serverId);
+export function reportIdentityChanged(serverId: string, fingerprint: string): boolean {
+  const known = inQuestion.has(serverId);
+  // Always the key of the latest attempt, even when the fact itself is old
+  // news: what the user is offered to record has to be what the server answers
+  // with now, not the first key of the episode
+  inQuestion.set(serverId, fingerprint);
+  if (known) return false;
   const win = activeWindow();
   if (win) sendToWindow(win, "server:identity-changed", { serverId });
   return true;
@@ -62,5 +70,15 @@ export function clearIdentityChanged(serverId: string): void {
 
 /** Servers whose identity is in question — for a window that is only now opening */
 export function identityChangedServers(): string[] {
-  return [...inQuestion];
+  return [...inQuestion.keys()];
+}
+
+/**
+ * The key this server answers with while its identity is in question — the one
+ * the user is shown and asked to confirm. undefined once the question is
+ * settled, which is what stops a confirmation left open on screen from
+ * recording a key the server no longer presents.
+ */
+export function presentedHostKey(serverId: string): string | undefined {
+  return inQuestion.get(serverId);
 }

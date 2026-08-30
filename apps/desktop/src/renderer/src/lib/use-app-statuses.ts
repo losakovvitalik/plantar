@@ -21,6 +21,8 @@ export function useAppStatuses(servers: ServerRecord[]) {
   const [statuses, setStatuses] = useState<Record<string, ServerAppStatuses>>({});
   const [refreshing, setRefreshing] = useState(false);
   const inFlight = useRef(false);
+  // A refresh asked for while a sweep runs, kept for after it
+  const pending = useRef(false);
   // Servers that answered with a key other than the stored one. Kept aside
   // because the sweep below cannot re-establish the fact for a password
   // server: it never connects to one, so it would report "needs password"
@@ -56,10 +58,8 @@ export function useAppStatuses(servers: ServerRecord[]) {
     [],
   );
 
-  const refresh = useCallback(async () => {
-    if (servers.length === 0 || inFlight.current) return;
-    inFlight.current = true;
-    setRefreshing(true);
+  /** One pass over the servers; refresh below owns the in-flight bookkeeping */
+  const sweep = useCallback(async () => {
     // Main owns which identities are in question, and an operation there can
     // settle the question between sweeps — the server presented the recorded
     // key again. This sweep never connects to a password server, so it cannot
@@ -121,8 +121,40 @@ export function useAppStatuses(servers: ServerRecord[]) {
         }
       }),
     );
-    setRefreshing(false);
-    inFlight.current = false;
+  }, [servers]);
+
+  // The queued repeat below has to sweep the list as it stands when it runs.
+  // The refresh that queued it may be the one a changed `servers` list itself
+  // triggered, and the closure the loop started with would sweep the previous
+  // list and replace the whole map with it — leaving a server added meanwhile
+  // out of it and unchecked, with no timer to come back to it
+  const sweepRef = useRef(sweep);
+  sweepRef.current = sweep;
+
+  const refresh = useCallback(async () => {
+    if (servers.length === 0) return;
+    // A refresh asked for while a sweep runs is repeated after it instead of
+    // being dropped: the caller may have just settled something the running
+    // sweep read before it happened — recording a server's new key does
+    // exactly that — and nothing else here would run it, there being no timer
+    if (inFlight.current) {
+      pending.current = true;
+      return;
+    }
+    inFlight.current = true;
+    setRefreshing(true);
+    try {
+      do {
+        pending.current = false;
+        await sweepRef.current();
+      } while (pending.current);
+    } finally {
+      // A sweep that throws must not leave the flag held: every later refresh
+      // would take the branch above and none would ever run again, with the
+      // spinner on for as long as the window lives
+      setRefreshing(false);
+      inFlight.current = false;
+    }
   }, [servers]);
 
   const cacheLoaded = useRef(false);

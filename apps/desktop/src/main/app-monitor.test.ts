@@ -86,7 +86,7 @@ describe("the background monitor on a changed host key", () => {
     // in — and the fact reaching the monitor as old news is exactly the case
     // that once left the user with nothing said
     collect.mockImplementation(() => {
-      identity.reportIdentityChanged(server.id);
+      identity.reportIdentityChanged(server.id, "SHA256:other");
       return Promise.reject(new ssh.HostKeyRejectedError(server.host, "SHA256:other"));
     });
     monitor.startAppMonitor({ collectStatuses: collect, openFromBackground: () => {} });
@@ -122,7 +122,7 @@ describe("the background monitor on a changed host key", () => {
     vi.useFakeTimers();
     vi.spyOn(console, "error").mockImplementation(() => {});
     const collect = vi.fn().mockImplementation(() => {
-      identity.reportIdentityChanged(server.id);
+      identity.reportIdentityChanged(server.id, "SHA256:other");
       return Promise.reject(new ssh.HostKeyRejectedError(server.host, "SHA256:other"));
     });
     monitor.startAppMonitor({ collectStatuses: collect, openFromBackground: () => {} });
