@@ -13,10 +13,19 @@ const GIT_OPTS = { maxBuffer: 32 * 1024 * 1024 } as const;
  * parsed out of the URL instead of being matched as text, so lookalikes never
  * pass: `https://github.com.evil.example/a/b`, `https://notgithub.com/a/b`
  * and `https://github.com@evil.example/a/b` all name a different host.
+ *
+ * `new URL()` is not the parser git uses, and where the two can disagree about
+ * the host the answer is simply "no". A backslash ends the authority for
+ * `new URL()` but not for git's, so `https://github.com\@evil.example/a/b`
+ * reads as github.com here while git connects to evil.example; credentials in
+ * the URL are the other half of that authority, and nothing in the app needs
+ * them.
  */
 export function isGithubUrl(url: string): boolean {
+  if (url.includes("\\")) return false;
   try {
-    const { protocol, hostname } = new URL(url);
+    const { protocol, hostname, username, password } = new URL(url);
+    if (username || password) return false;
     return protocol === "https:" && hostname === "github.com";
   } catch {
     return false; // not even a URL — certainly not GitHub

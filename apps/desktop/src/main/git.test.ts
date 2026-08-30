@@ -55,6 +55,13 @@ function callsTo(subcommand: string): ExecCall[] {
   );
 }
 
+/** Same, for a subcommand that is not args[0] because `-C <dir>` comes first */
+function callsIncluding(arg: string): ExecCall[] {
+  return (execFileMock.mock.calls as ExecCall[]).filter(([, args]) =>
+    args.includes(arg),
+  );
+}
+
 /**
  * Succeeds `git --version` and answers `remote get-url origin` with the given
  * URL; every other command succeeds with empty output. Used for the calls that
@@ -182,6 +189,10 @@ describe("the GitHub token reaches github.com and nothing else", () => {
     "https://notgithub.com/acme/repo.git",
     "https://github.com@evil.example/acme/repo.git",
     "https://evil.example/github.com/acme/repo.git",
+    // A backslash ends the authority for `new URL()` but not for the parser
+    // git uses: this reads as host github.com there, while git connects to
+    // evil.example and would receive the header
+    "https://github.com\\@evil.example/acme/repo.git",
   ];
 
   it("authenticates github.com and forbids redirects on the same call", async () => {
@@ -269,6 +280,32 @@ describe("the GitHub token reaches github.com and nothing else", () => {
     );
 
     await updateRepo("/repos/app", "main", TOKEN);
+    // A fetch that never ran reads the same as an unauthenticated one, so
+    // prove the spawn separately (`fetch` is not args[0] — `-C <dir>` is)
+    expect(callsIncluding("fetch")).toHaveLength(1);
     expect(envOf("fetch")).toBeUndefined();
+  });
+
+  it("withholds the token when the clone's origin only looks like GitHub", async () => {
+    const { updateRepo } = await importGit();
+    // Stored verbatim by git, so without this the token would go out to
+    // evil.example again on every later deploy of the project
+    mockCloneOrigin("https://github.com\\@evil.example/acme/repo.git");
+
+    await updateRepo("/repos/app", "main", TOKEN);
+
+    expect(callsIncluding("fetch")).toHaveLength(1);
+    expect(envOf("fetch")).toBeUndefined();
+  });
+
+  it("withholds the token from a URL that carries credentials of its own", async () => {
+    const { listRemoteBranches } = await importGit();
+    mockGitVersion("2.39.3");
+
+    // Userinfo is the half of the authority the two parsers split differently
+    await listRemoteBranches("https://someone:secret@github.com/acme/repo.git", TOKEN);
+
+    expect(callsTo("ls-remote")).toHaveLength(1);
+    expect(envOf("ls-remote")).toBeUndefined();
   });
 });
