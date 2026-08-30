@@ -24,7 +24,9 @@ export async function connect(
     // The silent status sweep cannot find a changed key on a password server —
     // it never connects to one without a password — so the operation that ran
     // into the mismatch is what has to report it
-    if (err instanceof HostKeyRejectedError) reportIdentityChanged(server.id);
+    if (err instanceof HostKeyRejectedError) {
+      reportIdentityChanged(server.id, err.fingerprint);
+    }
     throw err;
   });
   // The server presented the recorded key: whatever put its identity in

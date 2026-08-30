@@ -17,6 +17,10 @@ const MESSAGES = {
     ru: "Проект не найден. Обнови список.",
     en: "Project not found. Refresh the list.",
   },
+  hostKeyNoLongerPresented: {
+    ru: "Сервер отвечает уже не тем ключом, который был показан. Закройте это окно и посмотрите заново.",
+    en: "The server no longer answers with the key that was shown. Close this window and look again.",
+  },
   passwordRequired: {
     ru: "Для этого сервера нужен пароль.",
     en: "This server requires a password.",

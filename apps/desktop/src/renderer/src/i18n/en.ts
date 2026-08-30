@@ -34,7 +34,7 @@ export const en: Record<MessageKey, string> = {
     "Background app checks are unavailable for this server: it connects with a password, and the password is never stored.",
   "app.identityChanged": "The server answers differently than before.",
   "app.identityChangedNote":
-    "A server with a different identifying key now answers at this address. This usually happens after the hosting provider reinstalls a server, but a substituted server looks exactly the same. While the key does not match, Plantar does not connect and sends nothing there. If the server was reinstalled, remove it here and add it again; removing the server also removes its projects from the list, and they will have to be added again. If it was not, do not connect and contact your hosting provider.",
+    "A server with a different identifying key now answers at this address. This usually happens after the hosting provider reinstalls a server, but a substituted server looks exactly the same. While the key does not match, Plantar does not connect and sends nothing there. If the server was reinstalled, remember its new key with the button below — the server and its projects stay where they are. If it was not, do not connect and contact your hosting provider.",
   "app.emptyAddServer": "Add your first server",
   "app.emptySelect": "Select a server or project",
   "app.emptyAddServerHint":
@@ -425,6 +425,21 @@ export const en: Record<MessageKey, string> = {
   "removeProject.fromServerHint":
     " — stops the process, removes it from autostart and deletes the project files from the server (for sites, the nginx config too).",
   "removeProject.removing": "Deleting…",
+
+  "trustHostKey.action": "The server was reinstalled",
+  "trustHostKey.title": "Remember the new key of “{name}”?",
+  "trustHostKey.description":
+    "Plantar will start connecting to this server again and treat it as the same one as before. The server and its projects stay in the list — nothing has to be set up again.",
+  "trustHostKey.warning":
+    "Agree only if the server really was reinstalled — either you did it yourself, or your hosting provider said so. If nothing of the sort happened, someone else's server may be answering at this address, and you would be giving it access to your apps and data.",
+  "trustHostKey.fingerprintLabel": "The key the server answers with now",
+  "trustHostKey.fingerprintHint":
+    "Your hosting provider shows the same line in the server control panel. If the values match, this is your server.",
+  "trustHostKey.loading": "Looking up the key…",
+  "trustHostKey.settled":
+    "The server answers with its previous key again — there is nothing to remember.",
+  "trustHostKey.confirm": "Remember the new key",
+  "trustHostKey.saving": "Saving…",
 
   "status.checking": "Checking…",
   "status.check": "Check server",

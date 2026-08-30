@@ -17,10 +17,14 @@ import type { AddServerInput } from "../../shared/ipc";
 import { forgetServer } from "../app-monitor";
 import { collectServerAppStatuses } from "../app-statuses";
 import { connectWithPassword, withServer } from "../connections";
-import { pinFirstHostKey } from "../host-keys";
+import { pinFirstHostKey, trustNewHostKey } from "../host-keys";
 import { t } from "../i18n";
 import { getServer, projectConfig } from "../records";
-import { clearIdentityChanged, identityChangedServers } from "../server-identity";
+import {
+  clearIdentityChanged,
+  identityChangedServers,
+  presentedHostKey,
+} from "../server-identity";
 import { dropConnection, isConnected } from "../ssh-pool";
 import {
   detectSshConfigHosts,
@@ -213,5 +217,24 @@ export function registerServersIpc(): void {
   // may have been closed when that came to light, so it asks on opening
   handle("servers:identityChanged", () =>
     toResult(async () => identityChangedServers()),
+  );
+  // The key such a server answers with, taken from the handshake that was
+  // turned down — shown to the user, who alone can say whether it is expected
+  handle("servers:presentedHostKey", (_e, serverId) =>
+    toResult(async () => presentedHostKey(serverId) ?? null),
+  );
+  // The user confirmed the server was reinstalled: its new key replaces the
+  // stored one, and the server keeps its record and its projects
+  handle("servers:trustHostKey", (_e, args) =>
+    toResult(async () => {
+      // Only the key the user was actually shown gets recorded. A confirmation
+      // left open while the server moved on to yet another key — or while the
+      // question was settled — must not pin anything
+      if (presentedHostKey(args.serverId) !== args.fingerprint) {
+        throw new Error(t("hostKeyNoLongerPresented"));
+      }
+      trustNewHostKey(args.serverId, args.fingerprint);
+      clearIdentityChanged(args.serverId);
+    }),
   );
 }

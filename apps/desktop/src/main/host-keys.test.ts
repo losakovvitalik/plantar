@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { type ServerRecord, readServers, writeServers } from "@plantar/storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { hostKeyVerifier, pinFirstHostKey, rememberHostKey } from "./host-keys";
+import {
+  hostKeyVerifier,
+  pinFirstHostKey,
+  rememberHostKey,
+  trustNewHostKey,
+} from "./host-keys";
 
 const KEY = "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const OTHER_KEY = "SHA256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -70,6 +75,37 @@ describe("rememberHostKey", () => {
     writeServers([server]);
 
     rememberHostKey("gone", KEY);
+
+    expect(readServers()).toEqual([server]);
+  });
+});
+
+describe("trustNewHostKey", () => {
+  it("replaces the recorded key and leaves the rest of the record alone", () => {
+    // The remedy for a server the hosting provider reinstalled. Removing it
+    // was the only way out before, and that took its projects with it
+    const record: ServerRecord = { ...server, hostKeyFingerprint: KEY };
+    writeServers([record]);
+
+    trustNewHostKey(server.id, OTHER_KEY);
+
+    expect(readServers()).toEqual([{ ...record, hostKeyFingerprint: OTHER_KEY }]);
+  });
+
+  it("touches only the server it was asked about", () => {
+    const other: ServerRecord = { ...server, id: "s2", hostKeyFingerprint: KEY };
+    writeServers([{ ...server, hostKeyFingerprint: KEY }, other]);
+
+    trustNewHostKey(server.id, OTHER_KEY);
+
+    expect(readServers()[1]).toEqual(other);
+  });
+
+  it("ignores a server that is not in the records", () => {
+    // Removed while the confirmation was on screen — there is nothing to record
+    writeServers([server]);
+
+    trustNewHostKey("gone", KEY);
 
     expect(readServers()).toEqual([server]);
   });

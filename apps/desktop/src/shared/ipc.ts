@@ -333,6 +333,11 @@ export interface IpcInvokeMap {
   "server:appStatuses": { args: { serverId: string }; result: AppStatusEntry };
   "server:appStatusesCache": { args: void; result: Record<string, AppStatusEntry> };
   "servers:identityChanged": { args: void; result: string[] };
+  "servers:presentedHostKey": { args: string; result: string | null };
+  "servers:trustHostKey": {
+    args: { serverId: string; fingerprint: string };
+    result: void;
+  };
   "monitoring:status": {
     args: { serverId: string; password?: string };
     result: MonitoringStatus;
@@ -556,6 +561,17 @@ export interface PlantarApi {
    *  knows it: the mismatch can be found while no window is open, and the
    *  onServerIdentityChanged event has nowhere to go then */
   getIdentityChangedServers: () => Promise<IpcResult<string[]>>;
+  /** The key this server answers with while its identity is in question — shown
+   *  for confirmation; null once the question has been settled */
+  getPresentedHostKey: (serverId: string) => Promise<IpcResult<string | null>>;
+  /** Records the key the server answers with now in place of the stored one:
+   *  the user confirmed the server was reinstalled on purpose. The record and
+   *  its projects are left alone — removing the server was the only way out
+   *  before, and it took them with it */
+  trustServerHostKey: (
+    serverId: string,
+    fingerprint: string,
+  ) => Promise<IpcResult<void>>;
   /** Что из инструментов мониторинга установлено на сервере */
   getMonitoringStatus: (
     serverId: string,

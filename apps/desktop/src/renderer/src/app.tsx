@@ -16,6 +16,7 @@ import { DeployTab } from "./components/deploy-tab";
 import { EnvTab } from "./components/env-tab";
 import { FilesTab } from "./components/files-tab";
 import { HistoryTab } from "./components/history-tab";
+import { IdentityChangedBanner } from "./components/identity-changed-banner";
 import { LogsTab } from "./components/logs-tab";
 import { PasswordDialog } from "./components/password-dialog";
 import { RemoveProjectDialog } from "./components/remove-project-dialog";
@@ -23,6 +24,7 @@ import { ServerMonitoring } from "./components/server-monitoring";
 import { SettingsDialog } from "./components/settings-dialog";
 import { Sidebar } from "./components/sidebar";
 import { StatusTab } from "./components/status-tab";
+import { TrustHostKeyDialog } from "./components/trust-host-key-dialog";
 import { VersionsTab } from "./components/versions-tab";
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
@@ -219,6 +221,11 @@ export default function App() {
   // Сервер, на котором открыт поиск запущенных приложений («Найдено на сервере»)
   const [discoverFor, setDiscoverFor] = useState<ServerRecord | null>(null);
 
+  // Сервер, для которого открыто подтверждение записи нового ключа
+  const [trustHostKeyFor, setTrustHostKeyFor] = useState<ServerRecord | null>(
+    null,
+  );
+
   const selectedServer =
     selection?.kind === "server"
       ? servers.find((s) => s.id === selection.id)
@@ -374,14 +381,10 @@ export default function App() {
                   {t("app.projectSettings")}
                 </Button>
               </div>
-              {/* Same explanation as in the server view: deploys and refreshes
-                  from this screen fail with a raw host-key error, so the human
-                  reason has to be visible right here too */}
               {statuses[projectServer.id]?.kind === "identityChanged" && (
-                <p className="mt-2 rounded-xl bg-amber-bg px-4 py-3 text-[13px] leading-relaxed text-ink">
-                  <span className="font-semibold">{t("app.identityChanged")}</span>{" "}
-                  {t("app.identityChangedNote")}
-                </p>
+                <IdentityChangedBanner
+                  onTrustHostKey={() => setTrustHostKeyFor(projectServer)}
+                />
               )}
             </header>
             <div className="min-h-0 flex-1 px-6 py-5">
@@ -489,14 +492,10 @@ export default function App() {
                   {t("app.monitoringPasswordHint")}
                 </p>
               )}
-              {/* The server answers with a different host key than the one saved:
-                  every connection to it is refused until this is sorted out, so
-                  the reason gets a place of its own instead of a failed request */}
               {statuses[selectedServer.id]?.kind === "identityChanged" && (
-                <p className="mt-2 rounded-xl bg-amber-bg px-4 py-3 text-[13px] leading-relaxed text-ink">
-                  <span className="font-semibold">{t("app.identityChanged")}</span>{" "}
-                  {t("app.identityChangedNote")}
-                </p>
+                <IdentityChangedBanner
+                  onTrustHostKey={() => setTrustHostKeyFor(selectedServer)}
+                />
               )}
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 thin-scroll">
@@ -677,6 +676,15 @@ export default function App() {
         askPassword={askPassword}
         onClose={() => setDiscoverFor(null)}
         onImported={() => void refresh()}
+      />
+
+      {/* The new key is recorded only from here; the status sweep that follows
+          re-reads which identities main still holds in question, so the sidebar
+          leaves the warning state on its own */}
+      <TrustHostKeyDialog
+        server={trustHostKeyFor}
+        onClose={() => setTrustHostKeyFor(null)}
+        onTrusted={refreshStatuses}
       />
 
       <RemoveProjectDialog

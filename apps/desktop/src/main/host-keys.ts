@@ -29,6 +29,22 @@ export function rememberHostKey(serverId: string, fingerprint: string): void {
 }
 
 /**
+ * Records the key the server presents now in place of the one on record — the
+ * user confirmed the change is expected, the machine having been reinstalled.
+ * Deliberately not a relaxation of rememberHostKey: never overwriting is what
+ * makes the stored key worth checking against, and only an explicit, confirmed
+ * request reaches this one. A server no longer in the records has nothing to
+ * record — it was removed while the confirmation was on screen.
+ */
+export function trustNewHostKey(serverId: string, fingerprint: string): void {
+  const servers = readServers();
+  const server = servers.find((s) => s.id === serverId);
+  if (!server) return;
+  server.hostKeyFingerprint = fingerprint;
+  writeServers(servers);
+}
+
+/**
  * Host key policy while a server is being added: there is no record yet, so the
  * first of the connections that adding makes settles which key this server has,
  * and the rest of the setup must see that same key. Without the pinning, a
