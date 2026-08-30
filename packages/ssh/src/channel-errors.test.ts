@@ -1,7 +1,30 @@
 import { createHash } from "node:crypto";
 import type { EventEmitter } from "node:events";
+import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type HostKey, HostKeyRejectedError, SshConnection } from "./index";
+
+// ssh2's own algorithm-list builder and its defaults, reached through the
+// modules it keeps them in. The code under test asks for an adjustment of that
+// list ("these names first"), and only ssh2 can say what list the adjustment
+// produces — a version of it that answers differently has to fail here instead
+// of quietly settling handshakes on another key type. A plain require, so the
+// fake below does not stand in for the real thing.
+const nodeRequire = createRequire(import.meta.url);
+const { generateAlgorithmList } = nodeRequire("ssh2/lib/utils.js") as {
+  generateAlgorithmList: (
+    requested: unknown,
+    defaults: string[],
+    supported: string[],
+  ) => string[];
+};
+const { DEFAULT_SERVER_HOST_KEY, SUPPORTED_SERVER_HOST_KEY } = nodeRequire(
+  "ssh2/lib/protocol/constants.js",
+) as { DEFAULT_SERVER_HOST_KEY: string[]; SUPPORTED_SERVER_HOST_KEY: string[] };
+
+/** The host key algorithms ssh2 ends up offering for a requested adjustment */
+const offeredAlgorithms = (requested: unknown): string[] =>
+  generateAlgorithmList(requested, DEFAULT_SERVER_HOST_KEY, SUPPORTED_SERVER_HOST_KEY);
 
 interface FakeChannel extends EventEmitter {
   stderr: EventEmitter;
@@ -12,7 +35,9 @@ interface FakeChannel extends EventEmitter {
 /** The part of the ssh2 config these tests look at */
 interface FakeConfig {
   hostVerifier?: (key: Buffer) => boolean;
-  algorithms?: { serverHostKey?: string[] };
+  algorithms?: {
+    serverHostKey?: { remove: string[]; prepend: string[]; append: string[] };
+  };
 }
 
 interface FakeClient extends EventEmitter {
@@ -283,18 +308,19 @@ describe("host key verification", () => {
     });
 
     // An RSA key is presented under all three of these and names itself
-    // "ssh-rsa" in each case, so one known type moves the three. The rest stay
-    // on the list: a server that no longer has an RSA key still connects, and
-    // the verifier is what decides whether the key it does present is accepted
-    expect(__clients.at(-1)?.config?.algorithms?.serverHostKey).toEqual([
-      "rsa-sha2-512",
-      "rsa-sha2-256",
-      "ssh-rsa",
-      "ssh-ed25519",
-      "ecdsa-sha2-nistp256",
-      "ecdsa-sha2-nistp384",
-      "ecdsa-sha2-nistp521",
-    ]);
+    // "ssh-rsa" in each case, so one known type moves the three. Asked for as
+    // an adjustment of ssh2's list, not as a list of its own: the names are
+    // lifted off it and put back in front
+    const rsa = ["rsa-sha2-512", "rsa-sha2-256", "ssh-rsa"];
+    const requested = __clients.at(-1)?.config?.algorithms?.serverHostKey;
+    expect(requested).toEqual({ remove: rsa, prepend: rsa, append: [] });
+
+    // What ssh2 makes of it: the RSA names first, and nothing else touched —
+    // a server that no longer has an RSA key still negotiates, and the verifier
+    // is what decides whether the key it does present is accepted
+    const offered = offeredAlgorithms(requested);
+    expect(offered.slice(0, rsa.length)).toEqual(rsa);
+    expect([...offered].sort()).toEqual([...DEFAULT_SERVER_HOST_KEY].sort());
   });
 
   it("leaves the algorithms to ssh2 when no known type moves them", async () => {

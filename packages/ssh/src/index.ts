@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { Client, type SFTPWrapper, type ServerHostKeyAlgorithm } from "ssh2";
+import {
+  type AlgorithmList,
+  Client,
+  type SFTPWrapper,
+  type ServerHostKeyAlgorithm,
+} from "ssh2";
 import { create as createTar } from "tar";
 import { t } from "./messages";
 
@@ -49,10 +54,11 @@ function hostKeyType(key: Buffer): string {
 }
 
 /**
- * The host key algorithms a handshake may settle on, in the order ssh2 offers
- * them by default. Spelled out here because the order is what has to be
- * changed, and ssh2's own `algorithms.serverHostKey.prepend` cannot do it: it
- * skips a name that is already on the list instead of moving it.
+ * The host key algorithms whose key type this layer can ask for, in the order
+ * to prefer them. Not a copy of what ssh2 offers: which algorithms a handshake
+ * may settle on stays ssh2's to decide, and these names are only lifted to the
+ * front of that list (see preferredHostKeyAlgorithms). A recorded type no name
+ * here matches simply asks for nothing.
  */
 const HOST_KEY_ALGORITHMS: ServerHostKeyAlgorithm[] = [
   "ssh-ed25519",
@@ -75,19 +81,26 @@ function keyTypeOf(algorithm: ServerHostKeyAlgorithm): string {
 }
 
 /**
- * The algorithms to ask for, with the ones that would bring a key type the
- * caller already knows first. Nothing is left out: a server that no longer has
- * a key of a known type still negotiates, and the verifier is what decides
- * whether the key it does present is acceptable. undefined when the known types
- * change nothing — ssh2 then offers its own defaults, and a version of it that
- * knows more algorithms than this list stays free to use them.
+ * How to bend ssh2's own list of host key algorithms so the ones that would
+ * bring a key type the caller already knows come first. Asked for as an
+ * adjustment rather than as an exact list: an exact list would have to spell
+ * out everything ssh2 offers, freezing a copy of a list that is the library's
+ * to change — a name it later drops would then fail every connection outright,
+ * and one it adds would be left out. `prepend` alone cannot reorder, since it
+ * skips a name already on the list, so the same names are removed first and
+ * unshifted after; everything else keeps its place behind them. Nothing is
+ * ruled out: a server that no longer has a key of a known type still
+ * negotiates, and the verifier is what decides whether the key it does present
+ * is acceptable. undefined when the known types change nothing.
  */
 function preferredHostKeyAlgorithms(
   knownTypes: string[],
-): ServerHostKeyAlgorithm[] | undefined {
+): AlgorithmList<ServerHostKeyAlgorithm> | undefined {
   const known = HOST_KEY_ALGORITHMS.filter((a) => knownTypes.includes(keyTypeOf(a)));
   if (known.length === 0) return undefined;
-  return [...known, ...HOST_KEY_ALGORITHMS.filter((a) => !known.includes(a))];
+  // ssh2 applies the keys in the order they are written here. `append` is empty
+  // and only present because its type declares all three of them
+  return { remove: known, prepend: known, append: [] };
 }
 
 /**
