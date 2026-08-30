@@ -222,6 +222,9 @@ describe("the GitHub token reaches github.com and nothing else", () => {
     mockGitVersion("2.39.3");
 
     await listRemoteBranches(url, TOKEN);
+    // envOf reads the env of a call that ran; a command that never ran reads
+    // the same as one that ran without auth, so prove the spawn separately
+    expect(callsTo("ls-remote")).toHaveLength(1);
     expect(envOf("ls-remote")).toBeUndefined();
   });
 
