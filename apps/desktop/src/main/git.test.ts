@@ -246,11 +246,10 @@ describe("the GitHub token reaches github.com and nothing else", () => {
     await updateRepo("/repos/app", "main", TOKEN);
 
     // The host of a fetch is not in its arguments — it is read from the clone
-    const lookups = (execFileMock.mock.calls as ExecCall[]).filter(([, args]) =>
-      args.includes("get-url"),
-    );
+    const lookups = callsIncluding("get-url");
     expect(lookups).toHaveLength(1);
     expect(lookups[0][2].env).toBeUndefined();
+    expect(callsIncluding("fetch")).toHaveLength(1);
     expect(envOf("fetch")).toBeUndefined();
   });
 
