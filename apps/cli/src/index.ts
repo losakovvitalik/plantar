@@ -102,11 +102,14 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
     // The pinned value is a bare fingerprint, so the key type is not part of
     // the comparison: a CI run is given one key to expect and stops on anything
     // else, which is what an explicit --host-key is for
-    verifyHostKey: ({ fingerprint }) => {
+    verifyHostKey: ({ type, fingerprint }) => {
       if (expectedHostKey) return expectedHostKey === fingerprint;
+      // Both halves of a pin are printed: the fingerprint alone leaves the next
+      // run picking the type by the ssh library's order, which is the drift the
+      // type is kept against. PLANTAR_HOST_KEY_TYPE has no flag of its own
       if (!warnedUnchecked) {
         warnedUnchecked = true;
-        console.warn(t("hostKeyUnchecked", { fingerprint }));
+        console.warn(t("hostKeyUnchecked", { fingerprint, type }));
       }
       return true;
     },

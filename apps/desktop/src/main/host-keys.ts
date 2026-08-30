@@ -42,7 +42,10 @@ export function hostKeyVerifier(server: WithHostKeys): HostKeyVerifier {
 }
 
 /** Whether the record already holds this exact key — the case on every
- *  connection after the first, and the one that spares a read of the store */
+ *  connection after the first once the record is typed, and only then does it
+ *  spare a read of the store. A record written by #135 (a bare fingerprint, no
+ *  type) answers no whatever the store holds, so such a server keeps going
+ *  through rememberHostKey until the first match upgrades it to a typed one. */
 export function hostKeyRecorded(server: WithHostKeys, key: HostKey): boolean {
   if (server.hostKeyFingerprint) return false;
   return (

@@ -38,7 +38,10 @@ export async function connect(
   // warning about it
   clearIdentityChanged(server.id);
   // Only a key the record does not hold yet has anything to record — skip the
-  // read of the store on every later connection
+  // read of the store on every later connection. The read is spared once the
+  // record is typed: a record written by #135 (a bare fingerprint, no type) is
+  // never "already held", so it keeps going through rememberHostKey until the
+  // first match upgrades it
   if (!hostKeyRecorded(server, conn.hostKey)) {
     try {
       rememberHostKey(server.id, conn.hostKey);

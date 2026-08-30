@@ -1,7 +1,11 @@
 import { readJsonList, writeJsonList } from "./json-store";
 
 /** A key a server identifies itself with: the algorithm it names
- *  ("ssh-ed25519", "ssh-rsa", …) and its OpenSSH "SHA256:…" fingerprint */
+ *  ("ssh-ed25519", "ssh-rsa", …) and its OpenSSH "SHA256:…" fingerprint.
+ *  Twin of `HostKey` in @plantar/ssh: values cross between the two on
+ *  structural typing alone (this package deliberately keeps no dependency on
+ *  @plantar/ssh), so a field added to one has to be added to the other by
+ *  hand — nothing here will fail to compile if it is not. */
 export interface HostKeyRecord {
   type: string;
   fingerprint: string;
