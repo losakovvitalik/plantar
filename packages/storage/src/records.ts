@@ -20,10 +20,10 @@ export interface ServerRecord {
    *  whose type is unknown. Still required to match, and the connection that
    *  matches it replaces it with a typed entry in hostKeys. */
   hostKeyFingerprint?: string;
-  /** The host keys the server has identified itself with, at most one per type,
-   *  the way known_hosts keeps them. A key of a type already here has to match
-   *  it; a type not here yet is recorded on first sight — that is a server
-   *  gaining a key, not a server being replaced. */
+  /** The host keys the server has identified itself with, at most one per type
+   *  — in practice one: the app refuses a key whose type is not here, so the
+   *  first key recorded is the only one, and a second entry can appear only if
+   *  that policy is relaxed later. A key of a type here has to match it. */
   hostKeys?: HostKeyRecord[];
 }
 

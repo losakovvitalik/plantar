@@ -121,7 +121,9 @@ describe("rememberHostKey", () => {
   });
 
   it("records a key of a type the server had none of", () => {
-    // The keys already on record keep their meaning: this one joins them
+    // The other branch of the guard below. No connection brings such a key here
+    // — the verifier turns it down first — so this pins what the record would
+    // do if that policy were relaxed: keep what it holds and add to it
     writeServers([{ ...server, hostKeys: [KEY] }]);
 
     rememberHostKey(server.id, RSA_KEY);

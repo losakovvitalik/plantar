@@ -52,10 +52,13 @@ export function hostKeyRecorded(server: WithHostKeys, key: HostKey): boolean {
 }
 
 /**
- * Records a host key of a type the server had none of. Called after the
- * connection succeeded, so only a key that actually carried a session gets
- * stored. A type already on record is left alone: overwriting it here would
- * undo the check the record exists for.
+ * Records the key a connection was established with, when the record has
+ * nothing for its type yet. Called after the connection succeeded, so only a
+ * key that actually carried a session gets stored. In practice that is the
+ * server's first connection: a key of a type not on record does not get past
+ * the verifier, so a record that holds a typed key already keeps just that one.
+ * A type already on record is left alone in any case — overwriting it here
+ * would undo the check the record exists for.
  */
 export function rememberHostKey(serverId: string, key: HostKey): void {
   const servers = readServers();
