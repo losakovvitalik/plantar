@@ -9,10 +9,16 @@ interface FakeChannel extends EventEmitter {
   close: () => void;
 }
 
+/** The part of the ssh2 config these tests look at */
+interface FakeConfig {
+  hostVerifier?: (key: Buffer) => boolean;
+  algorithms?: { serverHostKey?: string[] };
+}
+
 interface FakeClient extends EventEmitter {
   execCalls: Array<{ command: string; channel: FakeChannel }>;
   /** The config the code under test handed to ssh2 */
-  config?: { hostVerifier?: (key: Buffer) => boolean };
+  config?: FakeConfig;
 }
 
 // Replaces ssh2 with a fake whose exec() hands out inert channels the tests
@@ -47,9 +53,9 @@ vi.mock("ssh2", async () => {
 
   class Client extends EventEmitter {
     execCalls: Array<{ command: string; channel: Channel }> = [];
-    config?: { hostVerifier?: (key: Buffer) => boolean };
+    config?: FakeConfig;
 
-    connect(config: { hostVerifier?: (key: Buffer) => boolean }): this {
+    connect(config: FakeConfig): this {
       clients.push(this);
       this.config = config;
       queueMicrotask(() => {
@@ -219,21 +225,15 @@ describe("host key verification", () => {
     // along — with the fingerprint alone the two look the same
     const { __hostKeys, __presentHostKey } = await ssh2Mock();
     __presentHostKey(__hostKeys.rsa);
-    const recorded: HostKey = {
-      type: "ssh-ed25519",
-      fingerprint: fingerprintOf(__hostKeys.ed25519),
-    };
     const seen: HostKey[] = [];
 
     const conn = await SshConnection.connect({
       host: "h.example",
       username: "deploy",
       password: "p",
-      // The policy of the desktop app in miniature: a key of a type on record
-      // has to match it, a type not on record is new
       verifyHostKey: (key) => {
         seen.push(key);
-        return key.type !== recorded.type || key.fingerprint === recorded.fingerprint;
+        return true;
       },
     });
 
@@ -266,6 +266,54 @@ describe("host key verification", () => {
     expect(rejection.hostKey).toEqual({ type: "ssh-ed25519", fingerprint });
     // Not folded into the generic "could not connect" wrapper
     expect(rejection.message).not.toContain("Host denied");
+  });
+
+  it("asks for the algorithms of a known key type first", async () => {
+    // What keeps the negotiated type from drifting: a server that has since
+    // gained a key of another type, and an ssh library that reorders the types
+    // it prefers, both still settle on the type that is already known
+    const { __clients } = await ssh2Mock();
+
+    await SshConnection.connect({
+      host: "h.example",
+      username: "deploy",
+      password: "p",
+      verifyHostKey: () => true,
+      knownHostKeyTypes: ["ssh-rsa"],
+    });
+
+    // An RSA key is presented under all three of these and names itself
+    // "ssh-rsa" in each case, so one known type moves the three. The rest stay
+    // on the list: a server that no longer has an RSA key still connects, and
+    // the verifier is what decides whether the key it does present is accepted
+    expect(__clients.at(-1)?.config?.algorithms?.serverHostKey).toEqual([
+      "rsa-sha2-512",
+      "rsa-sha2-256",
+      "ssh-rsa",
+      "ssh-ed25519",
+      "ecdsa-sha2-nistp256",
+      "ecdsa-sha2-nistp384",
+      "ecdsa-sha2-nistp521",
+    ]);
+  });
+
+  it("leaves the algorithms to ssh2 when no known type moves them", async () => {
+    // A server with nothing on record, and a type with no algorithm to ask for:
+    // naming one ssh2 does not implement makes it refuse the connection
+    // outright, which would lock the user out instead of reporting a key
+    const { __clients } = await ssh2Mock();
+
+    for (const knownHostKeyTypes of [undefined, [], ["ssh-not-an-algorithm"]]) {
+      await SshConnection.connect({
+        host: "h.example",
+        username: "deploy",
+        password: "p",
+        verifyHostKey: () => true,
+        knownHostKeyTypes,
+      });
+
+      expect(__clients.at(-1)?.config?.algorithms?.serverHostKey).toBeUndefined();
+    }
   });
 });
 

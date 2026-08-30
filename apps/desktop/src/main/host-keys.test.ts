@@ -66,12 +66,12 @@ describe("hostKeyVerifier", () => {
     expect(verify(OTHER_KEY)).toBe(false);
   });
 
-  it("accepts a key of a type that is not on record", () => {
-    // The server gained a key — a reinstall onto a newer distro, an admin
-    // adding one — or the ssh library reordered the types it prefers. Neither
-    // is a substitution, and reporting it as one costs the user every project
-    // of that server
-    expect(hostKeyVerifier({ hostKeys: [KEY] })(RSA_KEY)).toBe(true);
+  it("turns down a key of a type that is not on record", () => {
+    // Nothing on record can vouch for it, so accepting it would let anything
+    // answering at that address pass just by offering an unseen type. A server
+    // that gained a key never gets this far: the recorded types are asked for
+    // first, so the handshake still settles on the key that is on record
+    expect(hostKeyVerifier({ hostKeys: [KEY] })(RSA_KEY)).toBe(false);
   });
 
   it("keeps checking the types it does know", () => {

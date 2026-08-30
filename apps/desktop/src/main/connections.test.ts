@@ -82,6 +82,19 @@ describe("connect", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("asks for the recorded key types first", async () => {
+    // The half of the policy that lives at the connect site: a server that has
+    // gained a key of another type keeps answering with the recorded one, which
+    // is what lets the verifier turn down every type it has nothing on
+    sshConnect.mockResolvedValue({ hostKey: KEY });
+
+    await connect(server, "secret");
+
+    expect(sshConnect).toHaveBeenCalledWith(
+      expect.objectContaining({ knownHostKeyTypes: ["ssh-ed25519"] }),
+    );
+  });
+
   it("forgets a changed identity once the server proves its key again", async () => {
     // Kept in main so a window opening later still learns about it — which
     // means it also has to be dropped there, or the warning outlives its reason

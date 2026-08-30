@@ -20,6 +20,10 @@ export async function connect(
     password: server.auth === "password" ? password : undefined,
     privateKey: server.auth === "key" ? loadPrivateKey(server.keyPath!) : undefined,
     verifyHostKey: hostKeyVerifier(server),
+    // The recorded types are asked for first, so a server that has since gained
+    // a key of another type keeps answering with the one on record instead of
+    // meeting a verifier that has nothing to compare the new type against
+    knownHostKeyTypes: server.hostKeys?.map((k) => k.type),
   }).catch((err: unknown) => {
     // The silent status sweep cannot find a changed key on a password server —
     // it never connects to one without a password — so the operation that ran

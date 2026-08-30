@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { Client, type SFTPWrapper } from "ssh2";
+import { Client, type SFTPWrapper, type ServerHostKeyAlgorithm } from "ssh2";
 import { create as createTar } from "tar";
 import { t } from "./messages";
 
@@ -49,6 +49,48 @@ function hostKeyType(key: Buffer): string {
 }
 
 /**
+ * The host key algorithms a handshake may settle on, in the order ssh2 offers
+ * them by default. Spelled out here because the order is what has to be
+ * changed, and ssh2's own `algorithms.serverHostKey.prepend` cannot do it: it
+ * skips a name that is already on the list instead of moving it.
+ */
+const HOST_KEY_ALGORITHMS: ServerHostKeyAlgorithm[] = [
+  "ssh-ed25519",
+  "ecdsa-sha2-nistp256",
+  "ecdsa-sha2-nistp384",
+  "ecdsa-sha2-nistp521",
+  "rsa-sha2-512",
+  "rsa-sha2-256",
+  "ssh-rsa",
+];
+
+/**
+ * The type of the key an algorithm produces. The two names are the same except
+ * for RSA: the key travels as "ssh-rsa" whether the algorithm settled on is
+ * rsa-sha2-512, rsa-sha2-256 or ssh-rsa, so one recorded "ssh-rsa" is a server
+ * known by all three.
+ */
+function keyTypeOf(algorithm: ServerHostKeyAlgorithm): string {
+  return algorithm.startsWith("rsa-sha2-") ? "ssh-rsa" : algorithm;
+}
+
+/**
+ * The algorithms to ask for, with the ones that would bring a key type the
+ * caller already knows first. Nothing is left out: a server that no longer has
+ * a key of a known type still negotiates, and the verifier is what decides
+ * whether the key it does present is acceptable. undefined when the known types
+ * change nothing — ssh2 then offers its own defaults, and a version of it that
+ * knows more algorithms than this list stays free to use them.
+ */
+function preferredHostKeyAlgorithms(
+  knownTypes: string[],
+): ServerHostKeyAlgorithm[] | undefined {
+  const known = HOST_KEY_ALGORITHMS.filter((a) => knownTypes.includes(keyTypeOf(a)));
+  if (known.length === 0) return undefined;
+  return [...known, ...HOST_KEY_ALGORITHMS.filter((a) => !known.includes(a))];
+}
+
+/**
  * The server presented a host key its verifier did not accept: either the
  * server was rebuilt, or something else answers at that address. Carries a
  * `code` so callers can tell it apart from an ordinary connection failure.
@@ -92,6 +134,16 @@ export interface ConnectOptions {
    * false fails the connection with HostKeyRejectedError.
    */
   verifyHostKey: HostKeyVerifier;
+  /**
+   * The key types this server is already known by. They are asked for ahead of
+   * everything else the handshake could settle on — the rule OpenSSH follows
+   * for the types it has in `known_hosts` — so a server that has since gained a
+   * key of another type, or an ssh2 version that reorders the types it prefers,
+   * still answers with the key that was recorded. Nothing is ruled out: a
+   * server that no longer has a key of any of these types still negotiates, and
+   * the verifier is the one to say what happens then.
+   */
+  knownHostKeyTypes?: string[];
 }
 
 export interface ExecResult {
@@ -194,6 +246,11 @@ export class SshConnection {
             if (options.verifyHostKey(hostKey)) return true;
             rejected = new HostKeyRejectedError(options.host, hostKey);
             return false;
+          },
+          // The known types first, which is what keeps the type from drifting
+          // under the verifier. undefined leaves ssh2 with its own defaults
+          algorithms: {
+            serverHostKey: preferredHostKeyAlgorithms(options.knownHostKeyTypes ?? []),
           },
           // Пинг раз в 15 секунд держит соединение живым за NAT
           // и позволяет заметить обрыв простаивающего соединения

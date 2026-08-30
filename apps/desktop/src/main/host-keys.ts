@@ -10,13 +10,17 @@ type WithHostKeys = Pick<ServerRecord, "hostKeyFingerprint" | "hostKeys">;
  *
  * Trust on first use, per key type, the way `known_hosts` keeps host keys: the
  * first connection records the key the server presented, and every later
- * connection has to present the same key of that type. A key of a type not on
- * record is accepted and recorded next to the others — a server gains a key
- * when it is reinstalled onto a newer distro or an admin adds one, and which
- * type a handshake settles on also moves when the ssh library changes the order
- * it prefers. Neither is a server being replaced, and turning those into the
- * "answers differently than before" alarm would spend the one signal that means
- * exactly that.
+ * connection has to present the same key of that type. Nothing else passes —
+ * a key of a type not on record has nothing to be compared against, and
+ * accepting it would let anything answering at that address be taken for the
+ * server just by offering a type the record has never seen.
+ *
+ * The other half of the rule is at the connect site (connections.ts): the types
+ * on record are asked for first, so a server that has since gained a key of
+ * another type, or an ssh library that reorders the types it prefers, still
+ * answers with the recorded key. What is left for this to turn down is a server
+ * that no longer has the recorded key at all — which is what the "answers
+ * differently than before" alarm is for.
  *
  * A server added before host keys were checked has nothing on record — it
  * records its key on the next connection instead of forcing the user to add the
@@ -24,8 +28,10 @@ type WithHostKeys = Pick<ServerRecord, "hostKeyFingerprint" | "hostKeys">;
  */
 export function hostKeyVerifier(server: WithHostKeys): HostKeyVerifier {
   return (key: HostKey): boolean => {
-    const recorded = server.hostKeys?.find((k) => k.type === key.type);
-    if (recorded) return recorded.fingerprint === key.fingerprint;
+    const recorded = server.hostKeys;
+    if (recorded?.length) {
+      return recorded.some((k) => k.type === key.type && k.fingerprint === key.fingerprint);
+    }
     // A record from before types were kept: which type its fingerprint belongs
     // to is unknown, so nothing else can be told apart from a substitution next
     // to it — only that fingerprint itself passes, and matching it is what
