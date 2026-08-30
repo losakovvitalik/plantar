@@ -55,6 +55,35 @@ function callsTo(subcommand: string): ExecCall[] {
   );
 }
 
+/**
+ * Succeeds `git --version` and answers `remote get-url origin` with the given
+ * URL; every other command succeeds with empty output. Used for the calls that
+ * run inside a clone, where the destination host comes from the origin remote.
+ */
+function mockCloneOrigin(originUrl: string): void {
+  execFileMock.mockImplementation(
+    (_file: string, args: string[], _opts: unknown, cb: ExecCallback) => {
+      if (args[0] === "--version") {
+        cb(null, { stdout: "git version 2.39.3\n" }, "");
+        return;
+      }
+      if (args.includes("get-url")) {
+        cb(null, { stdout: `${originUrl}\n` }, "");
+        return;
+      }
+      cb(null, { stdout: "" }, "");
+    },
+  );
+}
+
+/** Environment of the first call running the given git subcommand */
+function envOf(subcommand: string): NodeJS.ProcessEnv | undefined {
+  const call = (execFileMock.mock.calls as ExecCall[]).find(([, args]) =>
+    args.includes(subcommand),
+  );
+  return call?.[2].env;
+}
+
 beforeEach(() => {
   execFileMock.mockReset();
   vi.resetModules();
@@ -77,7 +106,7 @@ describe("git auth token never leaks into thrown errors", () => {
     }
     // ...while the header still reaches git through the environment
     const [, , opts] = callsTo("ls-remote")[0];
-    expect(opts.env?.GIT_CONFIG_COUNT).toBe("1");
+    expect(opts.env?.GIT_CONFIG_COUNT).toBe("2");
     expect(opts.env?.GIT_CONFIG_KEY_0).toBe("http.extraHeader");
     expect(opts.env?.GIT_CONFIG_VALUE_0).toBe(`Authorization: Basic ${BASIC}`);
   });
@@ -142,5 +171,101 @@ describe("git version check for GIT_CONFIG_* token auth", () => {
     const thrown = await listRemoteBranches(URL, TOKEN).catch((e: Error) => e.message);
     expect(thrown).toContain("fatal: repository not found");
     expect(callsTo("ls-remote")).toHaveLength(1);
+  });
+});
+
+describe("the GitHub token reaches github.com and nothing else", () => {
+  // Repository URLs are pasted by the user or read off a server, so a host
+  // that merely looks like GitHub must be treated as a foreign one
+  const LOOKALIKES = [
+    "https://github.com.evil.example/acme/repo.git",
+    "https://notgithub.com/acme/repo.git",
+    "https://github.com@evil.example/acme/repo.git",
+    "https://evil.example/github.com/acme/repo.git",
+  ];
+
+  it("authenticates github.com and forbids redirects on the same call", async () => {
+    const { listRemoteBranches } = await importGit();
+    mockGitVersion("2.39.3");
+
+    await listRemoteBranches(URL, TOKEN);
+
+    const env = envOf("ls-remote");
+    expect(env?.GIT_CONFIG_COUNT).toBe("2");
+    expect(env?.GIT_CONFIG_KEY_0).toBe("http.extraHeader");
+    expect(env?.GIT_CONFIG_VALUE_0).toBe(`Authorization: Basic ${BASIC}`);
+    // Without this git could carry the header to wherever a 3xx points
+    expect(env?.GIT_CONFIG_KEY_1).toBe("http.followRedirects");
+    expect(env?.GIT_CONFIG_VALUE_1).toBe("false");
+  });
+
+  it("withholds the token from another host but still runs the command", async () => {
+    const { listRemoteBranches } = await importGit();
+    mockGitVersion("2.39.3");
+
+    // A public repository elsewhere keeps working — it just goes unauthenticated
+    const result = await listRemoteBranches("https://gitlab.internal/team/app.git", TOKEN);
+    expect(result.branches).toEqual(["main"]);
+
+    expect(envOf("ls-remote")).toBeUndefined();
+    for (const [, args, opts] of execFileMock.mock.calls as ExecCall[]) {
+      const env = JSON.stringify(opts.env ?? {});
+      expect(env).not.toContain(TOKEN);
+      expect(env).not.toContain(BASIC);
+      expect(env).not.toContain("http.extraHeader");
+      expect(args.join(" ")).not.toContain(TOKEN);
+    }
+  });
+
+  it.each(LOOKALIKES)("treats %s as a host of its own", async (url) => {
+    const { listRemoteBranches } = await importGit();
+    mockGitVersion("2.39.3");
+
+    await listRemoteBranches(url, TOKEN);
+    expect(envOf("ls-remote")).toBeUndefined();
+  });
+
+  it("withholds the token when the clone's origin is not on GitHub", async () => {
+    const { updateRepo } = await importGit();
+    mockCloneOrigin("https://gitlab.internal/team/app.git");
+
+    await updateRepo("/repos/app", "main", TOKEN);
+
+    // The host of a fetch is not in its arguments — it is read from the clone
+    const lookups = (execFileMock.mock.calls as ExecCall[]).filter(([, args]) =>
+      args.includes("get-url"),
+    );
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0][2].env).toBeUndefined();
+    expect(envOf("fetch")).toBeUndefined();
+  });
+
+  it("authenticates the fetch when the clone's origin is on GitHub", async () => {
+    const { updateRepo } = await importGit();
+    mockCloneOrigin(URL);
+
+    await updateRepo("/repos/app", "main", TOKEN);
+
+    expect(envOf("fetch")?.GIT_CONFIG_VALUE_0).toBe(`Authorization: Basic ${BASIC}`);
+    // Only the network call is authenticated; the local ones stay plain
+    expect(envOf("checkout")).toBeUndefined();
+    expect(envOf("reset")).toBeUndefined();
+  });
+
+  it("withholds the token when the clone has no readable origin", async () => {
+    const { updateRepo } = await importGit();
+    execFileMock.mockImplementation(
+      (_file: string, args: string[], _opts: unknown, cb: ExecCallback) => {
+        if (args.includes("get-url")) {
+          const stderr = "error: No such remote 'origin'";
+          cb(Object.assign(new Error("Command failed"), { code: 2, stderr }), "", stderr);
+          return;
+        }
+        cb(null, { stdout: "" }, "");
+      },
+    );
+
+    await updateRepo("/repos/app", "main", TOKEN);
+    expect(envOf("fetch")).toBeUndefined();
   });
 });
