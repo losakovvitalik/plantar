@@ -180,7 +180,7 @@ async function checkServer(
         // Keeps the fact for a window that opens later. The connection this
         // sweep made has already recorded it, so this call usually changes
         // nothing — the sweep must not depend on being the first to know
-        reportIdentityChanged(server.id, err.fingerprint);
+        reportIdentityChanged(server.id, err.hostKey);
         // Once per episode, and the episode ends where the question does: a
         // successful connection anywhere (clearIdentityChanged) re-arms the
         // warning, so a second change after a settle is said again even if no

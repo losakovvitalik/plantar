@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { HostKey } from "@plantar/ssh";
 import { type ServerRecord, readServers, writeServers } from "@plantar/storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IpcResult } from "../../shared/ipc";
@@ -12,9 +13,18 @@ import {
 } from "../server-identity";
 import { registerServersIpc } from "./servers";
 
-const KEY = "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const NEW_KEY = "SHA256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-const THIRD_KEY = "SHA256:ccccccccccccccccccccccccccccccccccccccccccc";
+const KEY: HostKey = {
+  type: "ssh-ed25519",
+  fingerprint: "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+};
+const NEW_KEY: HostKey = {
+  type: "ssh-ed25519",
+  fingerprint: "SHA256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+};
+const THIRD_KEY: HostKey = {
+  type: "ssh-ed25519",
+  fingerprint: "SHA256:ccccccccccccccccccccccccccccccccccccccccccc",
+};
 
 const server: ServerRecord = {
   id: "s1",
@@ -23,7 +33,7 @@ const server: ServerRecord = {
   port: 22,
   user: "root",
   auth: "key",
-  hostKeyFingerprint: KEY,
+  hostKeys: [KEY],
 };
 
 const { handlers } = vi.hoisted(() => ({ handlers: new Map<string, unknown>() }));
@@ -79,12 +89,15 @@ describe("servers:trustHostKey", () => {
   it("records the key the user was shown and settles the question", async () => {
     reportIdentityChanged(server.id, NEW_KEY);
 
-    await expect(invokeTrust({ serverId: server.id, fingerprint: NEW_KEY })).resolves.toEqual({
+    await expect(
+      invokeTrust({ serverId: server.id, fingerprint: NEW_KEY.fingerprint }),
+    ).resolves.toEqual({
       ok: true,
       data: undefined,
     });
 
-    expect(readServers()[0].hostKeyFingerprint).toBe(NEW_KEY);
+    // Recorded with the type of the key that was shown, not just its fingerprint
+    expect(readServers()[0].hostKeys).toEqual([NEW_KEY]);
     // The server is no longer in question — the sidebar leaves that state
     expect(identityChangedServers()).toEqual([]);
   });
@@ -95,25 +108,29 @@ describe("servers:trustHostKey", () => {
     reportIdentityChanged(server.id, NEW_KEY);
     reportIdentityChanged(server.id, THIRD_KEY);
 
-    await expect(invokeTrust({ serverId: server.id, fingerprint: NEW_KEY })).resolves.toEqual({
+    await expect(
+      invokeTrust({ serverId: server.id, fingerprint: NEW_KEY.fingerprint }),
+    ).resolves.toEqual({
       ok: false,
       error: t("hostKeyNoLongerPresented"),
       code: undefined,
     });
 
-    expect(readServers()[0].hostKeyFingerprint).toBe(KEY);
+    expect(readServers()[0].hostKeys).toEqual([KEY]);
     expect(identityChangedServers()).toEqual([server.id]);
   });
 
   it("turns down a server whose identity is not in question", async () => {
     // Settled by a connection that presented the recorded key while the
     // confirmation was open: nothing was shown, so nothing may be recorded
-    await expect(invokeTrust({ serverId: server.id, fingerprint: NEW_KEY })).resolves.toEqual({
+    await expect(
+      invokeTrust({ serverId: server.id, fingerprint: NEW_KEY.fingerprint }),
+    ).resolves.toEqual({
       ok: false,
       error: t("hostKeyNoLongerPresented"),
       code: undefined,
     });
 
-    expect(readServers()[0].hostKeyFingerprint).toBe(KEY);
+    expect(readServers()[0].hostKeys).toEqual([KEY]);
   });
 });

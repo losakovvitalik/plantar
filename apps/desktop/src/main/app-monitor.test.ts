@@ -9,8 +9,13 @@ const server: ServerRecord = {
   port: 22,
   user: "root",
   auth: "key",
-  hostKeyFingerprint: "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  hostKeys: [
+    { type: "ssh-ed25519", fingerprint: "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+  ],
 };
+
+/** The key the server answers with in place of the recorded one */
+const OTHER_KEY = { type: "ssh-ed25519", fingerprint: "SHA256:other" };
 
 const { notified, settings } = vi.hoisted(() => ({
   notified: [] as { title: string; body: string }[],
@@ -86,8 +91,8 @@ describe("the background monitor on a changed host key", () => {
     // in — and the fact reaching the monitor as old news is exactly the case
     // that once left the user with nothing said
     collect.mockImplementation(() => {
-      identity.reportIdentityChanged(server.id, "SHA256:other");
-      return Promise.reject(new ssh.HostKeyRejectedError(server.host, "SHA256:other"));
+      identity.reportIdentityChanged(server.id, OTHER_KEY);
+      return Promise.reject(new ssh.HostKeyRejectedError(server.host, OTHER_KEY));
     });
     monitor.startAppMonitor({ collectStatuses: collect, openFromBackground: () => {} });
 
@@ -122,8 +127,8 @@ describe("the background monitor on a changed host key", () => {
     vi.useFakeTimers();
     vi.spyOn(console, "error").mockImplementation(() => {});
     const collect = vi.fn().mockImplementation(() => {
-      identity.reportIdentityChanged(server.id, "SHA256:other");
-      return Promise.reject(new ssh.HostKeyRejectedError(server.host, "SHA256:other"));
+      identity.reportIdentityChanged(server.id, OTHER_KEY);
+      return Promise.reject(new ssh.HostKeyRejectedError(server.host, OTHER_KEY));
     });
     monitor.startAppMonitor({ collectStatuses: collect, openFromBackground: () => {} });
 
@@ -149,7 +154,7 @@ describe("the background monitor on a changed host key", () => {
     vi.useFakeTimers();
     const collect = vi
       .fn()
-      .mockRejectedValue(new ssh.HostKeyRejectedError(server.host, "SHA256:other"));
+      .mockRejectedValue(new ssh.HostKeyRejectedError(server.host, OTHER_KEY));
     monitor.startAppMonitor({ collectStatuses: collect, openFromBackground: () => {} });
 
     await vi.advanceTimersByTimeAsync(monitor.MONITOR_INTERVAL_MS);

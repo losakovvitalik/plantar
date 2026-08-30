@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { EventEmitter } from "node:events";
-import { describe, expect, it, vi } from "vitest";
-import { HostKeyRejectedError, SshConnection } from "./index";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { type HostKey, HostKeyRejectedError, SshConnection } from "./index";
 
 interface FakeChannel extends EventEmitter {
   stderr: EventEmitter;
@@ -17,7 +17,9 @@ interface FakeClient extends EventEmitter {
 
 // Replaces ssh2 with a fake whose exec() hands out inert channels the tests
 // drive by emitting events. __clients exposes created clients to the tests,
-// __hostKey is the key the fake server presents during the handshake.
+// __hostKeys are the keys the fake server holds and __presentHostKey picks the
+// one it presents during the handshake — a real server holds one key per type
+// and the handshake settles on one of them.
 vi.mock("ssh2", async () => {
   const { EventEmitter } = await import("node:events");
 
@@ -28,7 +30,20 @@ vi.mock("ssh2", async () => {
   }
 
   const clients: Client[] = [];
-  const hostKey = Buffer.from("ssh-ed25519 fake host key");
+  // A host key travels in the SSH wire format: the algorithm name as a
+  // length-prefixed string, then the key material. The type is read out of
+  // that first field, so the fake keys carry a real one
+  const wireKey = (type: string, material: string): Buffer => {
+    const name = Buffer.from(type);
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(name.length);
+    return Buffer.concat([length, name, Buffer.from(material)]);
+  };
+  const hostKeys = {
+    ed25519: wireKey("ssh-ed25519", "fake ed25519 host key"),
+    rsa: wireKey("ssh-rsa", "fake rsa host key"),
+  };
+  let presented = hostKeys.ed25519;
 
   class Client extends EventEmitter {
     execCalls: Array<{ command: string; channel: Channel }> = [];
@@ -41,7 +56,7 @@ vi.mock("ssh2", async () => {
         // Real ssh2 checks the host key during the key exchange — before
         // "ready" and before authentication; a turned-down key ends the
         // handshake with exactly this error
-        if (config.hostVerifier?.(hostKey) === false) {
+        if (config.hostVerifier?.(presented) === false) {
           this.emit("error", new Error("Host denied (verification failed)"));
           return;
         }
@@ -60,21 +75,42 @@ vi.mock("ssh2", async () => {
     end(): void {}
   }
 
-  return { Client, __clients: clients, __hostKey: hostKey };
+  return {
+    Client,
+    __clients: clients,
+    __hostKeys: hostKeys,
+    __presentHostKey: (key: Buffer) => {
+      presented = key;
+    },
+  };
 });
 
-function ssh2Mock(): Promise<{ __clients: FakeClient[]; __hostKey: Buffer }> {
-  return import("ssh2") as unknown as Promise<{
-    __clients: FakeClient[];
-    __hostKey: Buffer;
-  }>;
+interface Ssh2Mock {
+  __clients: FakeClient[];
+  __hostKeys: { ed25519: Buffer; rsa: Buffer };
+  __presentHostKey: (key: Buffer) => void;
 }
 
-/** The fingerprint of the fake server's key, computed the way OpenSSH does */
-async function hostFingerprint(): Promise<string> {
-  const { __hostKey } = await ssh2Mock();
-  return `SHA256:${createHash("sha256").update(__hostKey).digest("base64").replace(/=+$/, "")}`;
+function ssh2Mock(): Promise<Ssh2Mock> {
+  return import("ssh2") as unknown as Promise<Ssh2Mock>;
 }
+
+/** The fingerprint of a key, computed the way OpenSSH does */
+function fingerprintOf(key: Buffer): string {
+  return `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}`;
+}
+
+/** The key the fake server presents unless a test moves it */
+async function hostFingerprint(): Promise<string> {
+  const { __hostKeys } = await ssh2Mock();
+  return fingerprintOf(__hostKeys.ed25519);
+}
+
+// A test that made the server present another key must not leave it that way
+afterEach(async () => {
+  const { __hostKeys, __presentHostKey } = await ssh2Mock();
+  __presentHostKey(__hostKeys.ed25519);
+});
 
 async function connect(): Promise<{ conn: SshConnection; client: FakeClient }> {
   const { __clients } = await ssh2Mock();
@@ -158,30 +194,61 @@ describe("host key verification", () => {
     expect(typeof client.config?.hostVerifier).toBe("function");
   });
 
-  it("connects when the fingerprint matches and reports it on the connection", async () => {
+  it("connects when the key matches and reports it on the connection", async () => {
     const fingerprint = await hostFingerprint();
-    const seen: string[] = [];
+    const seen: HostKey[] = [];
     const conn = await SshConnection.connect({
       host: "h.example",
       username: "deploy",
       password: "p",
-      verifyHostKey: (fp) => {
-        seen.push(fp);
-        return fp === fingerprint;
+      verifyHostKey: (key) => {
+        seen.push(key);
+        return key.fingerprint === fingerprint;
       },
     });
-    // The verifier is asked with the OpenSSH form of the key the server sent
-    expect(seen).toEqual([fingerprint]);
-    expect(conn.hostKeyFingerprint).toBe(fingerprint);
+    // The verifier is asked with the type the key names and the OpenSSH form of
+    // the key the server sent
+    expect(seen).toEqual([{ type: "ssh-ed25519", fingerprint }]);
+    expect(conn.hostKey).toEqual({ type: "ssh-ed25519", fingerprint });
   });
 
-  it("fails with its own error when the fingerprint is not the expected one", async () => {
+  it("hands over the key the server switched to, with its type", async () => {
+    // A server holds a key of each type and which one the handshake settles on
+    // moves on its own: the server gains a key, or the ssh library reorders the
+    // types it prefers. Told apart from a substitution only by the type coming
+    // along — with the fingerprint alone the two look the same
+    const { __hostKeys, __presentHostKey } = await ssh2Mock();
+    __presentHostKey(__hostKeys.rsa);
+    const recorded: HostKey = {
+      type: "ssh-ed25519",
+      fingerprint: fingerprintOf(__hostKeys.ed25519),
+    };
+    const seen: HostKey[] = [];
+
+    const conn = await SshConnection.connect({
+      host: "h.example",
+      username: "deploy",
+      password: "p",
+      // The policy of the desktop app in miniature: a key of a type on record
+      // has to match it, a type not on record is new
+      verifyHostKey: (key) => {
+        seen.push(key);
+        return key.type !== recorded.type || key.fingerprint === recorded.fingerprint;
+      },
+    });
+
+    const rsaKey: HostKey = { type: "ssh-rsa", fingerprint: fingerprintOf(__hostKeys.rsa) };
+    expect(seen).toEqual([rsaKey]);
+    expect(conn.hostKey).toEqual(rsaKey);
+  });
+
+  it("fails with its own error when the key of a known type is another one", async () => {
     const fingerprint = await hostFingerprint();
     const pending = SshConnection.connect({
       host: "h.example",
       username: "deploy",
       password: "p",
-      verifyHostKey: (fp) => fp === "SHA256:the-key-this-server-used-to-have",
+      verifyHostKey: (key) => key.fingerprint === "SHA256:the-key-this-server-used-to-have",
     });
     const err = await pending.then(
       () => {
@@ -194,7 +261,9 @@ describe("host key verification", () => {
     // The code is what the UI keys off to tell this apart from a failed connect
     expect(rejection.code).toBe("host-key-rejected");
     expect(rejection.host).toBe("h.example");
-    expect(rejection.fingerprint).toBe(fingerprint);
+    // The key travels with the error: what is offered for confirmation later
+    // has to carry its type, and the refused handshake is where it is seen
+    expect(rejection.hostKey).toEqual({ type: "ssh-ed25519", fingerprint });
     // Not folded into the generic "could not connect" wrapper
     expect(rejection.message).not.toContain("Host denied");
   });

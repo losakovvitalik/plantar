@@ -234,10 +234,6 @@ const MESSAGES = {
     ru: "GitHub отклонил запрос (код {status}). {message}",
     en: "GitHub rejected the request (status {status}). {message}",
   },
-  actionsHostKeyMissing: {
-    ru: "Не удалось сохранить опознавательный ключ сервера, поэтому настройка остановлена: без него деплой при коммите отправлял бы файлы на любой сервер, который ответит по этому адресу. Обычно так бывает, когда на диске не осталось свободного места или папка данных Plantar недоступна для записи.",
-    en: "The server's identifying key could not be saved, so the setup was stopped: without it, deploy on commit would send files to any server that answers at this address. This usually happens when the disk has run out of free space or the Plantar data folder cannot be written to.",
-  },
   subdirMissing: {
     ru: "Папка «{subdir}» не найдена в репозитории.",
     en: "The folder “{subdir}” was not found in the repository.",

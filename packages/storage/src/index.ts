@@ -31,6 +31,7 @@ export {
 export {
   type DeployedCommit,
   type ExternalAppInfo,
+  type HostKeyRecord,
   type ProjectRecord,
   type ServerRecord,
   projectNames,

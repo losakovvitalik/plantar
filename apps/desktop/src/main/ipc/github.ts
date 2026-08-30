@@ -61,16 +61,15 @@ async function setupGithubActions(
   );
   // The host key goes into the secrets too: a CI deploy has nobody to ask and
   // no records of its own, so an unpinned run would upload the project to
-  // whatever answers at that address. Read inside the operation, before the
-  // keys are touched: the connection that records the key of a server without
-  // one has been made by then, and giving up here leaves authorized_keys as it
-  // was — the same ordering rule as the secrets key above.
+  // whatever answers at that address. What gets pinned is the key of this very
+  // connection — the CLI compares a single fingerprint, and this is the key the
+  // app has just checked the server by. Taken inside the operation, before the
+  // keys are touched: giving up here leaves authorized_keys as it was — the
+  // same ordering rule as the secrets key above.
   const hostKeyFingerprint = await withServer(server, password, async (conn) => {
-    const fingerprint = getServer(project.serverId).hostKeyFingerprint;
-    if (!fingerprint) throw new Error(t("actionsHostKeyMissing"));
     await removeKeysWithComment(conn, comment);
     await installPublicKey(conn, publicKey);
-    return fingerprint;
+    return conn.hostKey.fingerprint;
   });
 
   await putSecrets(token, repo, secretsKey, {

@@ -91,7 +91,10 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
     username: opts.user,
     password,
     privateKeyPath: opts.key,
-    verifyHostKey: (fingerprint) => {
+    // The pinned value is a bare fingerprint, so the key type is not part of
+    // the comparison: a CI run is given one key to expect and stops on anything
+    // else, which is what an explicit --host-key is for
+    verifyHostKey: ({ fingerprint }) => {
       if (expectedHostKey) return expectedHostKey === fingerprint;
       if (!warnedUnchecked) {
         warnedUnchecked = true;

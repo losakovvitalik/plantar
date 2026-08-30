@@ -110,9 +110,9 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
     record = { ...base, auth: "password" };
   }
 
-  // The host key is stored with the record: later connections check against it
-  // and stop when the server answers with a different one
-  const server = { ...record, hostKeyFingerprint: hostKey.fingerprint };
+  // The host key is stored with the record: later connections check a key of
+  // that type against it and stop when the server answers with a different one
+  const server = { ...record, hostKeys: hostKey.key ? [hostKey.key] : undefined };
   writeServers([...readServers(), server]);
   return server;
 }
@@ -221,19 +221,22 @@ export function registerServersIpc(): void {
   // The key such a server answers with, taken from the handshake that was
   // turned down — shown to the user, who alone can say whether it is expected
   handle("servers:presentedHostKey", (_e, serverId) =>
-    toResult(async () => presentedHostKey(serverId) ?? null),
+    toResult(async () => presentedHostKey(serverId)?.fingerprint ?? null),
   );
   // The user confirmed the server was reinstalled: its new key replaces the
-  // stored one, and the server keeps its record and its projects
+  // stored ones, and the server keeps its record and its projects
   handle("servers:trustHostKey", (_e, args) =>
     toResult(async () => {
       // Only the key the user was actually shown gets recorded. A confirmation
       // left open while the server moved on to yet another key — or while the
       // question was settled — must not pin anything
-      if (presentedHostKey(args.serverId) !== args.fingerprint) {
+      const presented = presentedHostKey(args.serverId);
+      if (presented?.fingerprint !== args.fingerprint) {
         throw new Error(t("hostKeyNoLongerPresented"));
       }
-      trustNewHostKey(args.serverId, args.fingerprint);
+      // Recorded from the handshake, not from the argument: the key type comes
+      // with it, and the fingerprint the window sent has just been matched
+      trustNewHostKey(args.serverId, presented);
       clearIdentityChanged(args.serverId);
     }),
   );
