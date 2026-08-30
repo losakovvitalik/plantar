@@ -18,4 +18,16 @@ describe("buildWorkflowYaml", () => {
     // The indentation is the template's own business — only the env line matters
     expect(yaml).toMatch(/^\s*PLANTAR_HOST_KEY: \$\{\{ secrets\.PLANTAR_HOST_KEY \}\}$/m);
   });
+
+  it("gives it the type of that key as well", () => {
+    // The fingerprint alone leaves the type to the ssh library, so a server
+    // that has since gained a key of a type it prefers more would answer the CI
+    // run with that one and fail the check. With the type the run asks for the
+    // pinned key's type first, the way the app does with a recorded server.
+    const yaml = buildWorkflowYaml("main", config);
+
+    expect(yaml).toMatch(
+      /^\s*PLANTAR_HOST_KEY_TYPE: \$\{\{ secrets\.PLANTAR_HOST_KEY_TYPE \}\}$/m,
+    );
+  });
 });

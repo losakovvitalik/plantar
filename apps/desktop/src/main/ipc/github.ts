@@ -62,14 +62,16 @@ async function setupGithubActions(
   // The host key goes into the secrets too: a CI deploy has nobody to ask and
   // no records of its own, so an unpinned run would upload the project to
   // whatever answers at that address. What gets pinned is the key of this very
-  // connection — the CLI compares a single fingerprint, and this is the key the
-  // app has just checked the server by. Taken inside the operation, before the
-  // keys are touched: giving up here leaves authorized_keys as it was — the
-  // same ordering rule as the secrets key above.
-  const hostKeyFingerprint = await withServer(server, password, async (conn) => {
+  // connection — the key the app has just checked the server by. Its type is
+  // pinned with it: this connection asked for the recorded type first, and a CI
+  // run given the fingerprint alone would let its ssh library pick the type,
+  // landing on another key of the same server the moment it holds one. Taken
+  // inside the operation, before the keys are touched: giving up here leaves
+  // authorized_keys as it was — the same ordering rule as the secrets key above.
+  const hostKey = await withServer(server, password, async (conn) => {
     await removeKeysWithComment(conn, comment);
     await installPublicKey(conn, publicKey);
-    return conn.hostKey.fingerprint;
+    return conn.hostKey;
   });
 
   await putSecrets(token, repo, secretsKey, {
@@ -77,7 +79,8 @@ async function setupGithubActions(
     PLANTAR_HOST: server.host,
     PLANTAR_PORT: String(server.port),
     PLANTAR_USER: server.user,
-    PLANTAR_HOST_KEY: hostKeyFingerprint,
+    PLANTAR_HOST_KEY: hostKey.fingerprint,
+    PLANTAR_HOST_KEY_TYPE: hostKey.type,
   });
 
   // plantar.json лежит в клоне untracked — без него CI не поймёт, как деплоить

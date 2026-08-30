@@ -81,6 +81,13 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
     console.error(t("hostKeyInvalid", { value: pinnedHostKey }));
     process.exit(1);
   }
+  // The type of the pinned key, when whoever pinned it knows one — the app
+  // writes it next to the fingerprint when it sets up deploy-on-commit. Asking
+  // for that type first is what keeps a server that has since gained a key of
+  // another type answering with the pinned one; without it the ssh library's
+  // own order decides, and the pinned key stops being the one presented.
+  // Nothing is ruled out: the verifier below still has the final say
+  const pinnedHostKeyType = process.env.PLANTAR_HOST_KEY_TYPE || undefined;
   // ssh2 runs the verifier again on every key exchange, and a long deploy
   // rekeys mid-run: the check stays on each of them, the notice is printed once
   // — repeated, it reads as if a second connection were being made
@@ -91,6 +98,7 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
     username: opts.user,
     password,
     privateKeyPath: opts.key,
+    knownHostKeyTypes: pinnedHostKeyType ? [pinnedHostKeyType] : undefined,
     // The pinned value is a bare fingerprint, so the key type is not part of
     // the comparison: a CI run is given one key to expect and stops on anything
     // else, which is what an explicit --host-key is for
