@@ -12,10 +12,10 @@ import {
 } from "./ui/dialog";
 
 interface Props {
-  /** null — диалог закрыт */
+  /** null — the dialog is closed */
   server: ServerRecord | null;
   onClose: () => void;
-  /** Вызывается после того, как новый ключ записан */
+  /** Called once the new key has been recorded */
   onTrusted: () => Promise<void> | void;
 }
 

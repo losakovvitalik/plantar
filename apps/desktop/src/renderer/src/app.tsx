@@ -221,7 +221,7 @@ export default function App() {
   // Сервер, на котором открыт поиск запущенных приложений («Найдено на сервере»)
   const [discoverFor, setDiscoverFor] = useState<ServerRecord | null>(null);
 
-  // Сервер, для которого открыто подтверждение записи нового ключа
+  // The server whose new-key confirmation is open
   const [trustHostKeyFor, setTrustHostKeyFor] = useState<ServerRecord | null>(
     null,
   );

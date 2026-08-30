@@ -2,7 +2,7 @@ import { useI18n } from "../i18n";
 import { Button } from "./ui/button";
 
 interface Props {
-  /** Открывает подтверждение записи нового ключа сервера */
+  /** Opens the confirmation that records the server's new key */
   onTrustHostKey: () => void;
 }
 

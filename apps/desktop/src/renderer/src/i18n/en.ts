@@ -429,7 +429,7 @@ export const en: Record<MessageKey, string> = {
   "trustHostKey.action": "The server was reinstalled",
   "trustHostKey.title": "Remember the new key of “{name}”?",
   "trustHostKey.description":
-    "Plantar will start connecting to this server again and treat it as the same one as before. The server and its projects stay in the list — nothing has to be set up again.",
+    "Plantar will start connecting to this server again and treat it as the same one as before. The server and its projects stay in the list. If deploy on commit is set up for this server's projects, set it up again: GitHub still holds the previous key, and a deploy from there would not go through.",
   "trustHostKey.warning":
     "Agree only if the server really was reinstalled — either you did it yourself, or your hosting provider said so. If nothing of the sort happened, someone else's server may be answering at this address, and you would be giving it access to your apps and data.",
   "trustHostKey.fingerprintLabel": "The key the server answers with now",

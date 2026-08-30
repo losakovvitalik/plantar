@@ -21,6 +21,8 @@ export function useAppStatuses(servers: ServerRecord[]) {
   const [statuses, setStatuses] = useState<Record<string, ServerAppStatuses>>({});
   const [refreshing, setRefreshing] = useState(false);
   const inFlight = useRef(false);
+  // A refresh asked for while a sweep runs, kept for after it
+  const pending = useRef(false);
   // Servers that answered with a key other than the stored one. Kept aside
   // because the sweep below cannot re-establish the fact for a password
   // server: it never connects to one, so it would report "needs password"
@@ -56,10 +58,8 @@ export function useAppStatuses(servers: ServerRecord[]) {
     [],
   );
 
-  const refresh = useCallback(async () => {
-    if (servers.length === 0 || inFlight.current) return;
-    inFlight.current = true;
-    setRefreshing(true);
+  /** One pass over the servers; refresh below owns the in-flight bookkeeping */
+  const sweep = useCallback(async () => {
     // Main owns which identities are in question, and an operation there can
     // settle the question between sweeps — the server presented the recorded
     // key again. This sweep never connects to a password server, so it cannot
@@ -121,9 +121,27 @@ export function useAppStatuses(servers: ServerRecord[]) {
         }
       }),
     );
+  }, [servers]);
+
+  const refresh = useCallback(async () => {
+    if (servers.length === 0) return;
+    // A refresh asked for while a sweep runs is repeated after it instead of
+    // being dropped: the caller may have just settled something the running
+    // sweep read before it happened — recording a server's new key does
+    // exactly that — and nothing else here would run it, there being no timer
+    if (inFlight.current) {
+      pending.current = true;
+      return;
+    }
+    inFlight.current = true;
+    setRefreshing(true);
+    do {
+      pending.current = false;
+      await sweep();
+    } while (pending.current);
     setRefreshing(false);
     inFlight.current = false;
-  }, [servers]);
+  }, [servers, sweep]);
 
   const cacheLoaded = useRef(false);
   useEffect(() => {
