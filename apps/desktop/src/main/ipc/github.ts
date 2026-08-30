@@ -65,9 +65,10 @@ async function setupGithubActions(
   // connection — the key the app has just checked the server by. Its type is
   // pinned with it: this connection asked for the recorded type first, and a CI
   // run given the fingerprint alone would let its ssh library pick the type,
-  // landing on another key of the same server the moment it holds one. Taken
-  // inside the operation, before the keys are touched: giving up here leaves
-  // authorized_keys as it was — the same ordering rule as the secrets key above.
+  // landing on another key of the same server the moment it holds one. Read off
+  // the connection the operation ran on rather than looked up in the records,
+  // so — unlike a lookup — it cannot come up empty: a connection that carried
+  // these commands was established by checking that very key.
   const hostKey = await withServer(server, password, async (conn) => {
     await removeKeysWithComment(conn, comment);
     await installPublicKey(conn, publicKey);

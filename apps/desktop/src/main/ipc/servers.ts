@@ -112,7 +112,10 @@ async function addServer(input: AddServerInput): Promise<ServerRecord> {
 
   // The host key is stored with the record: later connections check a key of
   // that type against it and stop when the server answers with a different one
-  const server = { ...record, hostKeys: hostKey.key ? [hostKey.key] : undefined };
+  // — there is always one to store, since every branch above completed at least
+  // one handshake through hostKey.verify, which settles the key before the
+  // connection it ran on resolves
+  const server = { ...record, hostKeys: [hostKey.key!] };
   writeServers([...readServers(), server]);
   return server;
 }
