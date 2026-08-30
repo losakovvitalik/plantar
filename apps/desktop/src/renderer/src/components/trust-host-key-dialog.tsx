@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ServerRecord } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
 import { Button } from "./ui/button";
@@ -35,6 +35,10 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The dialog stays mounted between openings, so a lookup can outlive the
+  // server it was asked about. Every lookup takes the token current when it
+  // starts and is dropped once that token has moved on
+  const requestToken = useRef(0);
 
   /**
    * Reads the key main holds for this server — from the handshake it turned
@@ -42,10 +46,13 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
    * Asked on opening and again after a refused confirmation: what is on screen
    * has to be the key the app would record, and a refusal means it no longer is.
    */
-  async function loadPresentedKey(id: string, token = { cancelled: false }): Promise<void> {
+  async function loadPresentedKey(id: string): Promise<void> {
+    const token = ++requestToken.current;
     setLoading(true);
     const result = await window.plantar.getPresentedHostKey(id);
-    if (token.cancelled) return;
+    // Closing the dialog moved the token on: this answer is about the server
+    // that was on screen then, and must not land in the one on screen now
+    if (token !== requestToken.current) return;
     setLoading(false);
     if (!result.ok) {
       setError(result.error);
@@ -66,10 +73,11 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
       setLoading(false);
       return;
     }
-    const token = { cancelled: false };
-    void loadPresentedKey(serverId, token);
+    void loadPresentedKey(serverId);
     return () => {
-      token.cancelled = true;
+      // Cancels whatever lookup is in flight, the effect's own and the re-read
+      // after a refused confirmation alike — both carry a token from here
+      requestToken.current += 1;
     };
   }, [serverId]);
 

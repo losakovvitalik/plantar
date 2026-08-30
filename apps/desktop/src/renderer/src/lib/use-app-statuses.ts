@@ -123,6 +123,14 @@ export function useAppStatuses(servers: ServerRecord[]) {
     );
   }, [servers]);
 
+  // The queued repeat below has to sweep the list as it stands when it runs.
+  // The refresh that queued it may be the one a changed `servers` list itself
+  // triggered, and the closure the loop started with would sweep the previous
+  // list and replace the whole map with it — leaving a server added meanwhile
+  // out of it and unchecked, with no timer to come back to it
+  const sweepRef = useRef(sweep);
+  sweepRef.current = sweep;
+
   const refresh = useCallback(async () => {
     if (servers.length === 0) return;
     // A refresh asked for while a sweep runs is repeated after it instead of
@@ -138,7 +146,7 @@ export function useAppStatuses(servers: ServerRecord[]) {
     try {
       do {
         pending.current = false;
-        await sweep();
+        await sweepRef.current();
       } while (pending.current);
     } finally {
       // A sweep that throws must not leave the flag held: every later refresh
@@ -147,7 +155,7 @@ export function useAppStatuses(servers: ServerRecord[]) {
       setRefreshing(false);
       inFlight.current = false;
     }
-  }, [servers, sweep]);
+  }, [servers]);
 
   const cacheLoaded = useRef(false);
   useEffect(() => {
