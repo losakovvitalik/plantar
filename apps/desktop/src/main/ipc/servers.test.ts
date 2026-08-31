@@ -98,8 +98,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const id of identityChangedServers()) clearIdentityChanged(id);
+  // Emptied before the drain below: draining a server still in question
+  // announces the settle, and a window a test left open would take that event
+  // into the send spy instead of nowhere
   windows.length = 0;
+  for (const id of identityChangedServers()) clearIdentityChanged(id);
   send.mockClear();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
