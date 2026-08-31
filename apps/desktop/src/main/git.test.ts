@@ -353,10 +353,11 @@ describe("the GitHub token reaches github.com and nothing else", () => {
 
     await updateRepo("/repos/app", "main", TOKEN);
 
-    // The host of a fetch is not in its arguments — it is read from the clone
+    // The host of a fetch is not in its arguments — it is read from the
+    // clone, once by the repoint step and once to decide auth
     const lookups = callsIncluding("get-url");
-    expect(lookups).toHaveLength(1);
-    expect(lookups[0][2].env).toBeUndefined();
+    expect(lookups).toHaveLength(2);
+    for (const [, , opts] of lookups) expect(opts.env).toBeUndefined();
     expect(callsIncluding("fetch")).toHaveLength(1);
     expect(envOf("fetch")).toBeUndefined();
   });
@@ -414,5 +415,51 @@ describe("the GitHub token reaches github.com and nothing else", () => {
 
     expect(callsTo("ls-remote")).toHaveLength(1);
     expect(envOf("ls-remote")).toBeUndefined();
+  });
+});
+
+describe("only an update rewrites the clone", () => {
+  it("leaves a stale www origin alone when listing commits", async () => {
+    const { listCommits } = await importGit();
+    mockCloneOrigin("https://www.github.com/acme/repo.git");
+
+    await listCommits("/repos/app", "main", TOKEN);
+
+    // Opening a project's commit list is a read; repointing the remote is
+    // updateRepo's job, so the clone's config stays untouched here
+    expect(callsIncluding("set-url")).toHaveLength(0);
+    // The stale host is still GitHub, so the best-effort fetch keeps its token
+    expect(envOf("fetch")?.GIT_CONFIG_VALUE_0).toBe(`Authorization: Basic ${BASIC}`);
+  });
+
+  it("keeps the fetch authenticated when the repoint itself fails", async () => {
+    const { updateRepo } = await importGit();
+    execFileMock.mockImplementation(
+      (_file: string, args: string[], _opts: unknown, cb: ExecCallback) => {
+        if (args[0] === "--version") {
+          cb(null, { stdout: "git version 2.39.3\n" }, "");
+          return;
+        }
+        if (args.includes("get-url")) {
+          cb(null, { stdout: "https://www.github.com/acme/repo.git\n" }, "");
+          return;
+        }
+        if (args.includes("set-url")) {
+          const stderr = "error: could not write config file .git/config";
+          cb(Object.assign(new Error("Command failed"), { code: 255, stderr }), "", stderr);
+          return;
+        }
+        cb(null, { stdout: "" }, "");
+      },
+    );
+
+    await updateRepo("/repos/app", "main", TOKEN);
+
+    // Whether to attach the token is a decision about the host; a failed
+    // config write must not strip it, or the fetch of a private repository
+    // would misreport an unrelated local problem as an authentication failure
+    expect(callsIncluding("set-url")).toHaveLength(1);
+    expect(callsIncluding("fetch")).toHaveLength(1);
+    expect(envOf("fetch")?.GIT_CONFIG_VALUE_0).toBe(`Authorization: Basic ${BASIC}`);
   });
 });
