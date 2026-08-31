@@ -430,6 +430,7 @@ export interface IpcEventMap {
   "logs:stream-end": { streamId: string };
   "deploy:open-project": { projectId: string };
   "server:identity-changed": { serverId: string };
+  "server:identity-settled": { serverId: string };
 }
 
 /**
@@ -713,5 +714,13 @@ export interface PlantarApi {
    *  a password server on its own and would learn nothing about it */
   onServerIdentityChanged: (
     callback: (event: IpcEventMap["server:identity-changed"]) => void,
+  ) => () => void;
+
+  /** The server presented the recorded key again — the question raised above is
+   *  settled. Sent because nothing in the window would find that out on its
+   *  own: the operation that settled it refreshes no status, and for a password
+   *  server the silent sweep never connects */
+  onServerIdentitySettled: (
+    callback: (event: IpcEventMap["server:identity-settled"]) => void,
   ) => () => void;
 }

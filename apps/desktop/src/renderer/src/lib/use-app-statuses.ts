@@ -157,6 +157,35 @@ export function useAppStatuses(servers: ServerRecord[]) {
     }
   }, [servers]);
 
+  // Held in a ref because the subscription below is set up once, on a mount
+  // that happens before the server list loads: a `refresh` captured then would
+  // stop at its empty-list guard for as long as the window lives
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+
+  // The inverse of the event above: main settled the question — the server
+  // presented the recorded key again. Nothing here would find that out on its
+  // own, because the operation that settled it (reading server info,
+  // discovering apps, browsing files) refreshes no status, and for a password
+  // server the sweep never connects at all
+  useEffect(
+    () =>
+      window.plantar.onServerIdentitySettled(({ serverId }) => {
+        // Says nothing about a server this window did not have on its list
+        if (!identityChanged.current.delete(serverId)) return;
+        setStatuses((prev) =>
+          prev[serverId]?.kind === "identityChanged"
+            ? { ...prev, [serverId]: { ...prev[serverId], kind: "checking" } }
+            : prev,
+        );
+        // What the server's real status is, the settle does not say — only that
+        // the warning no longer holds. The refresh is what ends the "checking"
+        // set just above; no timer here would
+        void refreshRef.current();
+      }),
+    [],
+  );
+
   const cacheLoaded = useRef(false);
   useEffect(() => {
     if (servers.length === 0) return;

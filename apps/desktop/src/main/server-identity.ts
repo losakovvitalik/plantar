@@ -63,10 +63,25 @@ export function shouldWarnIdentityChanged(serverId: string): boolean {
   return true;
 }
 
-/** The server presented the recorded key again — the question is settled */
+/**
+ * The server presented the recorded key again — the question is settled, and an
+ * open window is told so. The window cannot find that out on its own: its
+ * status sweep never connects to a password server, and the operations that do
+ * (reading server info, discovering apps, browsing files) refresh no status —
+ * the warning would outlive its reason until the next mount or deploy, while
+ * operations on that server visibly succeed.
+ *
+ * Only a server that actually leaves the list is announced. Every successful
+ * connection settles the question (connections.ts) and almost none of them are
+ * to a server that was in question, so an unconditional push would fire on
+ * every connect.
+ */
 export function clearIdentityChanged(serverId: string): void {
-  inQuestion.delete(serverId);
+  const wasInQuestion = inQuestion.delete(serverId);
   warned.delete(serverId);
+  if (!wasInQuestion) return;
+  const win = activeWindow();
+  if (win) sendToWindow(win, "server:identity-settled", { serverId });
 }
 
 /** Servers whose identity is in question — for a window that is only now opening */

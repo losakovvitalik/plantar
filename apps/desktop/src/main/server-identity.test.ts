@@ -81,6 +81,32 @@ describe("reportIdentityChanged", () => {
   });
 });
 
+describe("clearIdentityChanged", () => {
+  it("tells an open window the question is settled", () => {
+    // The window opens after the fact, so the only event the test can see is
+    // the settle one. Without it the warning stays on screen: the operation
+    // that settled the question refreshes no status, and for a password server
+    // the silent sweep never connects to find out
+    reportIdentityChanged("s1", KEY);
+    openWindow();
+
+    clearIdentityChanged("s1");
+
+    expect(send).toHaveBeenCalledWith("server:identity-settled", { serverId: "s1" });
+  });
+
+  it("says nothing about a server that was not in question", () => {
+    // Every successful connection settles the question (connections.ts) and
+    // almost none of them are to a server that was in question — an
+    // unconditional push would fire on every connect
+    openWindow();
+
+    clearIdentityChanged("s1");
+
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
 describe("presentedHostKey", () => {
   it("keeps the key the server answered with", () => {
     // The rejected handshake is the only place this key is seen: offering to
