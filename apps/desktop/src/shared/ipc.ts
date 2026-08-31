@@ -18,6 +18,7 @@ import type {
   SiteCheckStatus,
   TrafficStats,
 } from "@plantar/core";
+import type { HostKey } from "@plantar/ssh";
 import type {
   AppSettings,
   AppStatusEntry,
@@ -333,7 +334,7 @@ export interface IpcInvokeMap {
   "server:appStatuses": { args: { serverId: string }; result: AppStatusEntry };
   "server:appStatusesCache": { args: void; result: Record<string, AppStatusEntry> };
   "servers:identityChanged": { args: void; result: string[] };
-  "servers:presentedHostKey": { args: string; result: string | null };
+  "servers:presentedHostKey": { args: string; result: HostKey | null };
   "servers:trustHostKey": {
     args: { serverId: string; fingerprint: string };
     result: void;
@@ -563,8 +564,10 @@ export interface PlantarApi {
    *  onServerIdentityChanged event has nowhere to go then */
   getIdentityChangedServers: () => Promise<IpcResult<string[]>>;
   /** The key this server answers with while its identity is in question — shown
-   *  for confirmation; null once the question has been settled */
-  getPresentedHostKey: (serverId: string) => Promise<IpcResult<string | null>>;
+   *  for confirmation; null once the question has been settled. The type comes
+   *  along with the fingerprint: a control panel lists one fingerprint per key
+   *  type, and without the type there is no telling which line to compare with */
+  getPresentedHostKey: (serverId: string) => Promise<IpcResult<HostKey | null>>;
   /** Records the key the server answers with now in place of the stored one:
    *  the user confirmed the server was reinstalled on purpose. The record and
    *  its projects are left alone — removing the server was the only way out

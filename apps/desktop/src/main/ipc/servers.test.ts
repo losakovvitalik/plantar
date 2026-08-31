@@ -72,7 +72,7 @@ interface TrustArgs {
   fingerprint: string;
 }
 
-type Handler<A> = (event: unknown, args: A) => Promise<IpcResult<void>>;
+type Handler<A, R = void> = (event: unknown, args: A) => Promise<IpcResult<R>>;
 
 function invokeTrust(args: TrustArgs): Promise<IpcResult<void>> {
   const handler = handlers.get("servers:trustHostKey") as Handler<TrustArgs> | undefined;
@@ -84,6 +84,14 @@ function invokeRemove(id: string): Promise<IpcResult<void>> {
   const handler = handlers.get("servers:remove") as Handler<string> | undefined;
   if (!handler) throw new Error("servers:remove handler was not registered");
   return handler({}, id);
+}
+
+function invokePresented(serverId: string): Promise<IpcResult<HostKey | null>> {
+  const handler = handlers.get("servers:presentedHostKey") as
+    | Handler<string, HostKey | null>
+    | undefined;
+  if (!handler) throw new Error("servers:presentedHostKey handler was not registered");
+  return handler({}, serverId);
 }
 
 let tmpHome: string;
@@ -125,6 +133,32 @@ describe("servers:remove", () => {
 
     expect(identityChangedServers()).toEqual([]);
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("servers:presentedHostKey", () => {
+  it("hands the window the type along with the fingerprint", async () => {
+    // The type is what tells the user which line of the control panel — one per
+    // key type — the fingerprint on screen is supposed to match
+    reportIdentityChanged(server.id, NEW_KEY);
+
+    await expect(invokePresented(server.id)).resolves.toEqual({
+      ok: true,
+      data: NEW_KEY,
+    });
+  });
+
+  it("answers with nothing once the question is settled", async () => {
+    // A connection that succeeded settled the question while the confirmation
+    // was open: there is no key left to offer, and the dialog says so instead
+    // of showing the one it asked about
+    reportIdentityChanged(server.id, NEW_KEY);
+    clearIdentityChanged(server.id);
+
+    await expect(invokePresented(server.id)).resolves.toEqual({
+      ok: true,
+      data: null,
+    });
   });
 });
 

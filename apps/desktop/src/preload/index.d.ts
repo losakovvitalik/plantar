@@ -30,6 +30,7 @@ export type {
   SiteCheckStatus,
   TrafficStats,
 } from "@plantar/core";
+export type { HostKey } from "@plantar/ssh";
 export type {
   AppSettings,
   AppStatus,

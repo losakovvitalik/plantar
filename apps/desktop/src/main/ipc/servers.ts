@@ -225,9 +225,11 @@ export function registerServersIpc(): void {
     toResult(async () => identityChangedServers()),
   );
   // The key such a server answers with, taken from the handshake that was
-  // turned down — shown to the user, who alone can say whether it is expected
+  // turned down — shown to the user, who alone can say whether it is expected.
+  // Type and fingerprint travel together all the way to the window: the user is
+  // asked to find this key in a control panel that lists one per key type
   handle("servers:presentedHostKey", (_e, serverId) =>
-    toResult(async () => presentedHostKey(serverId)?.fingerprint ?? null),
+    toResult(async () => presentedHostKey(serverId) ?? null),
   );
   // The user confirmed the server was reinstalled: its new key replaces the
   // stored ones, and the server keeps its record and its projects
