@@ -378,7 +378,11 @@ describe("host key verification", () => {
     // handed to the caller is the type of the key the handshake settled on, and
     // it is what gets pinned for the next run. An ssh2 version offering an
     // algorithm HOST_KEY_ALGORITHMS does not name would have plantar report a
-    // type of its own making as one no known key type matches
+    // type of its own making as one no known key type matches. Checked by
+    // algorithm name, one level below the key types at stake, so a failure can
+    // just as well mean ssh2 added an algorithm of an already-covered type —
+    // nothing misreports then, and adding the name to HOST_KEY_ALGORITHMS is
+    // still the fix, so that algorithm too gets lifted to the front
     const { __clients } = await ssh2Mock();
 
     await SshConnection.connect({
