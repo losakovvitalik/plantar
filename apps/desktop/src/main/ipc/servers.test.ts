@@ -204,12 +204,16 @@ describe("servers:trustHostKey", () => {
 
   it("turns down a server whose identity is not in question", async () => {
     // Settled by a connection that presented the recorded key while the
-    // confirmation was open: nothing was shown, so nothing may be recorded
+    // confirmation was open: nothing was shown, so nothing may be recorded —
+    // and the refusal reads as good news, not as the moved-on-key warning
+    reportIdentityChanged(server.id, NEW_KEY);
+    clearIdentityChanged(server.id);
+
     await expect(
       invokeTrust({ serverId: server.id, fingerprint: NEW_KEY.fingerprint }),
     ).resolves.toEqual({
       ok: false,
-      error: t("hostKeyNoLongerPresented"),
+      error: t("hostKeyQuestionSettled"),
       code: undefined,
     });
 

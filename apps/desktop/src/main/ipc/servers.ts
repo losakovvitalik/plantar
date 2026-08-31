@@ -239,7 +239,13 @@ export function registerServersIpc(): void {
       // left open while the server moved on to yet another key — or while the
       // question was settled — must not pin anything
       const presented = presentedHostKey(args.serverId);
-      if (presented?.fingerprint !== args.fingerprint) {
+      if (presented === undefined) {
+        // Settled while the confirmation was open: the server answers with its
+        // recorded key again. There is no key above to re-examine, so this is
+        // told as good news, apart from the moved-on case below
+        throw new Error(t("hostKeyQuestionSettled"));
+      }
+      if (presented.fingerprint !== args.fingerprint) {
         throw new Error(t("hostKeyNoLongerPresented"));
       }
       // Recorded from the handshake, not from the argument: the key type comes
