@@ -157,9 +157,9 @@ export function useAppStatuses(servers: ServerRecord[]) {
     }
   }, [servers]);
 
-  // Held in a ref for the same reason as the sweep above: the subscription
-  // below is set up once, and a `refresh` captured then would sweep the server
-  // list as it was at that moment
+  // Held in a ref because the subscription below is set up once, on a mount
+  // that happens before the server list loads: a `refresh` captured then would
+  // stop at its empty-list guard for as long as the window lives
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
 
