@@ -179,13 +179,22 @@ const REDIRECT_STATUS = /requested URL returned error:\s*3\d\d/i;
  * (the pair authEnv sets). The moved-repository explanation below depends on
  * exactly this fact, so the mere presence of an extra env is no proxy for it:
  * an env added later for an unrelated reason would then turn every 3xx into
- * the wrong explanation.
+ * the wrong explanation. The declared pairs are scanned the way git reads
+ * them (GIT_CONFIG_COUNT), so the answer does not depend on where authEnv
+ * happens to put the pair.
  */
 function redirectsDisabled(env?: NodeJS.ProcessEnv): boolean {
-  return (
-    env?.GIT_CONFIG_KEY_1 === "http.followRedirects" &&
-    env?.GIT_CONFIG_VALUE_1 === "false"
-  );
+  if (!env) return false;
+  const count = Number(env.GIT_CONFIG_COUNT ?? 0);
+  for (let i = 0; i < count; i++) {
+    if (
+      env[`GIT_CONFIG_KEY_${i}`] === "http.followRedirects" &&
+      env[`GIT_CONFIG_VALUE_${i}`] === "false"
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function git(args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
