@@ -49,10 +49,13 @@ const server: ServerRecord = {
 };
 
 afterEach(() => {
-  vi.clearAllMocks();
   // The identity list is module state shared by every test here — drain it so
-  // no test depends on what the previous one left in it
+  // no test depends on what the previous one left in it. Drained before the
+  // spies are cleared: draining a server that was in question pushes the
+  // settle event, which would otherwise be left on the send spy for the next
+  // test to trip over
   for (const id of identityChangedServers()) clearIdentityChanged(id);
+  vi.clearAllMocks();
 });
 
 describe("connect", () => {
