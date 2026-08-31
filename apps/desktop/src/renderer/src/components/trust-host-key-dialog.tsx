@@ -40,6 +40,10 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
   // server it was asked about. Every lookup takes the token current when it
   // starts and is dropped once that token has moved on
   const requestToken = useRef(0);
+  // The key the box is showing, which is what the label and the hint speak
+  // about. A lookup in flight leaves the key of the previous answer in hand,
+  // and naming its type would point at a line the box is not showing
+  const shownKey = loading ? null : hostKey;
 
   /**
    * Reads the key main holds for this server — from the handshake it turned
@@ -121,14 +125,11 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
 
         <div className="flex flex-col gap-1.5">
           {/* A control panel lists a server's keys one per type, so the label
-              names the type of this one — that is the line to compare with. The
-              type follows the box: a lookup in flight leaves the key of the
-              previous answer in hand, and naming its type would point at a line
-              the box is not showing */}
+              names the type of this one — that is the line to compare with */}
           <span className="text-[13px] font-semibold">
-            {hostKey && !loading
+            {shownKey
               ? t("trustHostKey.fingerprintLabelTyped", {
-                  type: hostKeyTypeLabel(hostKey.type),
+                  type: hostKeyTypeLabel(shownKey.type),
                 })
               : t("trustHostKey.fingerprintLabel")}
           </span>
@@ -144,7 +145,7 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
           {/* The hint sends the user to the panel line of the type named above,
               so it is shown only while there is a type to name — with the box
               still loading, settled or empty there is nothing to compare */}
-          {hostKey && !loading && (
+          {shownKey && (
             <span className="text-[12.5px] leading-snug text-ink-soft">
               {t("trustHostKey.fingerprintHint")}
             </span>
