@@ -10,6 +10,22 @@ export interface ServerAppStatuses {
   checkedAt?: string;
 }
 
+/** The status-map entry a server holds while a pass (re-)checks it: the last
+ *  known status, so a change to the server list does not blink settled dots
+ *  into "checking" — only a server with no result yet starts there, and a
+ *  check that never resolved keeps showing as one still under way. A changed
+ *  identity wins over whatever is on screen: the warning must survive every
+ *  mount, deploy and refresh, and for a key server the check it would blink
+ *  for is a connection that will be refused. Exported for tests. */
+export function sweepEntry(
+  prev: ServerAppStatuses | undefined,
+  identityInQuestion: boolean,
+): ServerAppStatuses {
+  if (identityInQuestion)
+    return { ...prev, kind: "identityChanged", apps: prev?.apps ?? {} };
+  return prev ?? { kind: "checking", apps: {} };
+}
+
 /**
  * Статусы приложений на серверах для индикаторов в сайдбаре.
  * При первом списке серверов мгновенно показывает кэш прошлого сеанса,
@@ -29,10 +45,10 @@ export function useAppStatuses(servers: ServerRecord[]) {
   // and quietly drop the state on the next refresh
   const identityChanged = useRef(new Set<string>());
 
-  /** The kind a server gets while a check of it is under way. A server whose
-   *  identity is in question keeps saying so: "checking" would blink the
-   *  warning off the screen on every mount, deploy and refresh, and for a key
-   *  server the check it blinks for is a connection that will be refused */
+  /** The kind a cache-seeded server starts with while the session's first
+   *  check of it is under way. A server whose identity is in question says so
+   *  from the first paint: "checking" would hide the warning, and for a key
+   *  server the check it points at is a connection that will be refused */
   const sweepKind = (serverId: string) =>
     identityChanged.current.has(serverId)
       ? ("identityChanged" as const)
@@ -73,7 +89,7 @@ export function useAppStatuses(servers: ServerRecord[]) {
       Object.fromEntries(
         servers.map((s) => [
           s.id,
-          { ...prev[s.id], kind: sweepKind(s.id), apps: prev[s.id]?.apps ?? {} },
+          sweepEntry(prev[s.id], identityChanged.current.has(s.id)),
         ]),
       ),
     );
