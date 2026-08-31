@@ -81,6 +81,19 @@ function keyTypeOf(algorithm: ServerHostKeyAlgorithm): string {
 }
 
 /**
+ * The key types `knownHostKeyTypes` can name and have any effect: anything else
+ * asks for nothing and leaves the handshake to ssh2's own preference order, the
+ * very drift the option exists to remove. Exported so a caller taking the type
+ * from a person — a CI variable, a hand-written config — can say so before the
+ * drift turns up later as a key mismatch. Derived from the algorithms rather
+ * than written out again, so the two cannot fall out of step; the RSA
+ * algorithms all bring one "ssh-rsa" key, hence the deduplication.
+ */
+export const HOST_KEY_TYPES: readonly string[] = [
+  ...new Set(HOST_KEY_ALGORITHMS.map(keyTypeOf)),
+];
+
+/**
  * How to bend ssh2's own list of host key algorithms so the ones that would
  * bring a key type the caller already knows come first. Asked for as an
  * adjustment rather than as an exact list: an exact list would have to spell
