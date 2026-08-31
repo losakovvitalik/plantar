@@ -158,11 +158,16 @@ describe("a repository GitHub has moved", () => {
 
   it("leaves git's own message alone when the call carried no token", async () => {
     const { listRemoteBranches } = await importGit();
+    const { t } = await import("./i18n");
     failLikeExecFile(REDIRECTED);
 
     // Redirects are switched off only for an authenticated call, so a 3xx on
     // an unauthenticated one is not the failure this message describes
     const thrown = await listRemoteBranches(URL).catch((e: Error) => e.message);
+    // The explanation ends with git's own line, so that line is there either
+    // way: the absence of the explanation is what tells the two paths apart,
+    // and what keeps a proxy's 302 from being reported as a rename
+    expect(thrown).not.toContain(t("repoMoved", { message: "" }).trim());
     expect(thrown).toContain("The requested URL returned error: 301");
   });
 
