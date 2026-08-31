@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearIdentityChanged,
+  forgetIdentityQuestion,
   identityChangedServers,
   presentedHostKey,
   reportIdentityChanged,
@@ -104,6 +105,33 @@ describe("clearIdentityChanged", () => {
     clearIdentityChanged("s1");
 
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("forgetIdentityQuestion", () => {
+  it("drops the question without telling the window", () => {
+    // The record is being deleted, so the question is discarded, not answered.
+    // A settle would reach the window while it still holds the pre-removal
+    // list and blink every server on it into the checking state
+    reportIdentityChanged("s1", KEY);
+    openWindow();
+
+    forgetIdentityQuestion("s1");
+
+    expect(identityChangedServers()).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("re-arms the notification for a server asked about again", () => {
+    // Drains `warned` with the question, as clearing it does — nothing else
+    // ever would, and the id would sit on that list for the app's lifetime
+    reportIdentityChanged("s1", KEY);
+    shouldWarnIdentityChanged("s1");
+
+    forgetIdentityQuestion("s1");
+    reportIdentityChanged("s1", KEY);
+
+    expect(shouldWarnIdentityChanged("s1")).toBe(true);
   });
 });
 

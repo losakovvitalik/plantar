@@ -22,6 +22,7 @@ import { t } from "../i18n";
 import { getServer, projectConfig } from "../records";
 import {
   clearIdentityChanged,
+  forgetIdentityQuestion,
   identityChangedServers,
   presentedHostKey,
 } from "../server-identity";
@@ -153,8 +154,10 @@ export function registerServersIpc(): void {
       dropConnection(id);
       forgetServer(id);
       // Removing and adding the server again is the way out of a changed
-      // identity — the record is gone, so the question about it goes too
-      clearIdentityChanged(id);
+      // identity — the record is gone, so the question about it goes too.
+      // Discarded, not settled: the window is told nothing, because it still
+      // holds the list this call is about to change
+      forgetIdentityQuestion(id);
       writeServers(readServers().filter((s) => s.id !== id));
       writeProjects(readProjects().filter((p) => p.serverId !== id));
       // Убираем осиротевший снимок статусов приложений
