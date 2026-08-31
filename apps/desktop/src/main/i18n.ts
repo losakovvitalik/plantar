@@ -21,6 +21,10 @@ const MESSAGES = {
     ru: "Сервер отвечает уже не тем ключом, который был показан. Посмотрите ключ выше ещё раз, прежде чем соглашаться.",
     en: "The server no longer answers with the key that was shown. Look at the key above once more before agreeing.",
   },
+  hostKeyQuestionSettled: {
+    ru: "Сервер снова отвечает прежним ключом — запоминать нечего.",
+    en: "The server answers with its previous key again — there is nothing to remember.",
+  },
   passwordRequired: {
     ru: "Для этого сервера нужен пароль.",
     en: "This server requires a password.",
