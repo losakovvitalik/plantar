@@ -7,8 +7,14 @@ import {
   shouldWarnIdentityChanged,
 } from "./server-identity";
 
-const KEY = "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const OTHER_KEY = "SHA256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const KEY = {
+  type: "ssh-ed25519",
+  fingerprint: "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+};
+const OTHER_KEY = {
+  type: "ssh-ed25519",
+  fingerprint: "SHA256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+};
 
 const { send, windows } = vi.hoisted(() => ({
   send: vi.fn(),
@@ -81,7 +87,7 @@ describe("presentedHostKey", () => {
     // record it must not need a connection to a server the app is refusing
     reportIdentityChanged("s1", KEY);
 
-    expect(presentedHostKey("s1")).toBe(KEY);
+    expect(presentedHostKey("s1")).toEqual(KEY);
   });
 
   it("keeps the key of the latest attempt", () => {
@@ -91,7 +97,7 @@ describe("presentedHostKey", () => {
 
     reportIdentityChanged("s1", OTHER_KEY);
 
-    expect(presentedHostKey("s1")).toBe(OTHER_KEY);
+    expect(presentedHostKey("s1")).toEqual(OTHER_KEY);
   });
 
   it("has no key for a server whose identity is not in question", () => {

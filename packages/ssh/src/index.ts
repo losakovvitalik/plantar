@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { Client, type SFTPWrapper } from "ssh2";
+import {
+  type AlgorithmList,
+  Client,
+  type SFTPWrapper,
+  type ServerHostKeyAlgorithm,
+} from "ssh2";
 import { create as createTar } from "tar";
 import { t } from "./messages";
 
@@ -15,12 +20,87 @@ export function shellQuote(value: string): string {
 }
 
 /**
+ * A key a server identifies itself with. A server usually holds one key of each
+ * type, and which of them a handshake settles on is decided by what the server
+ * offers and by the order the client prefers — so a fingerprint says something
+ * about the server only next to the type it belongs to, the way `known_hosts`
+ * keeps the two together.
+ */
+export interface HostKey {
+  /** The algorithm the key names: "ssh-ed25519", "ssh-rsa", "ecdsa-sha2-nistp256" */
+  type: string;
+  /** OpenSSH "SHA256:<digest>" form — the string `ssh-keygen -lf` prints */
+  fingerprint: string;
+}
+
+/**
  * OpenSSH-style fingerprint of a host key: "SHA256:" followed by the base64 of
  * its digest without padding. Same string `ssh-keygen -lf` and the ssh client
  * print, so a value taken from either can be compared with this one.
  */
 function hostKeyFingerprint(key: Buffer): string {
   return `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}`;
+}
+
+/**
+ * The algorithm a host key names inside itself. A key travels in the SSH wire
+ * format — a length-prefixed string with the algorithm name, then the key
+ * material — and ssh2 reads that same field to check the key against the
+ * negotiated algorithm before handing it to the verifier, so a key that gets
+ * this far always carries a well-formed one.
+ */
+function hostKeyType(key: Buffer): string {
+  return key.toString("utf8", 4, 4 + key.readUInt32BE(0));
+}
+
+/**
+ * The host key algorithms whose key type this layer can ask for, in the order
+ * to prefer them. Not a copy of what ssh2 offers: which algorithms a handshake
+ * may settle on stays ssh2's to decide, and these names are only lifted to the
+ * front of that list (see preferredHostKeyAlgorithms). A recorded type no name
+ * here matches simply asks for nothing.
+ */
+const HOST_KEY_ALGORITHMS: ServerHostKeyAlgorithm[] = [
+  "ssh-ed25519",
+  "ecdsa-sha2-nistp256",
+  "ecdsa-sha2-nistp384",
+  "ecdsa-sha2-nistp521",
+  "rsa-sha2-512",
+  "rsa-sha2-256",
+  "ssh-rsa",
+];
+
+/**
+ * The type of the key an algorithm produces. The two names are the same except
+ * for RSA: the key travels as "ssh-rsa" whether the algorithm settled on is
+ * rsa-sha2-512, rsa-sha2-256 or ssh-rsa, so one recorded "ssh-rsa" is a server
+ * known by all three.
+ */
+function keyTypeOf(algorithm: ServerHostKeyAlgorithm): string {
+  return algorithm.startsWith("rsa-sha2-") ? "ssh-rsa" : algorithm;
+}
+
+/**
+ * How to bend ssh2's own list of host key algorithms so the ones that would
+ * bring a key type the caller already knows come first. Asked for as an
+ * adjustment rather than as an exact list: an exact list would have to spell
+ * out everything ssh2 offers, freezing a copy of a list that is the library's
+ * to change — a name it later drops would then fail every connection outright,
+ * and one it adds would be left out. `prepend` alone cannot reorder, since it
+ * skips a name already on the list, so the same names are removed first and
+ * unshifted after; everything else keeps its place behind them. Nothing is
+ * ruled out: a server that no longer has a key of a known type still
+ * negotiates, and the verifier is what decides whether the key it does present
+ * is acceptable. undefined when the known types change nothing.
+ */
+function preferredHostKeyAlgorithms(
+  knownTypes: string[],
+): AlgorithmList<ServerHostKeyAlgorithm> | undefined {
+  const known = HOST_KEY_ALGORITHMS.filter((a) => knownTypes.includes(keyTypeOf(a)));
+  if (known.length === 0) return undefined;
+  // ssh2 applies the keys in the order they are written here. `append` is empty
+  // and only present because its type declares all three of them
+  return { remove: known, prepend: known, append: [] };
 }
 
 /**
@@ -33,21 +113,23 @@ export class HostKeyRejectedError extends Error {
 
   constructor(
     readonly host: string,
-    readonly fingerprint: string,
+    readonly hostKey: HostKey,
   ) {
-    super(t("hostKeyRejected", { host, fingerprint }));
+    super(t("hostKeyRejected", { host, fingerprint: hostKey.fingerprint }));
     this.name = "HostKeyRejectedError";
   }
 }
 
 /**
- * Decides whether the host key the server presented is the expected one. The
- * fingerprint is the OpenSSH "SHA256:<digest>" form — the same string
- * `ssh-keygen -lf` and the ssh client print, so a value taken from either can
- * be compared with it as-is. The contract between the SSH layer, which only
- * asks, and the layer that owns the policy.
+ * Decides whether the host key the server presented is the expected one. Asked
+ * with the type of the key as well as its fingerprint: which type a handshake
+ * settles on changes without the server being replaced — it gains a key of
+ * another type, or the preference order of the ssh library moves under a
+ * version bump — and a policy that only ever sees fingerprints reads that as a
+ * different server. The contract between the SSH layer, which only asks, and
+ * the layer that owns the policy.
  */
-export type HostKeyVerifier = (fingerprint: string) => boolean;
+export type HostKeyVerifier = (key: HostKey) => boolean;
 
 export interface ConnectOptions {
   host: string;
@@ -65,6 +147,16 @@ export interface ConnectOptions {
    * false fails the connection with HostKeyRejectedError.
    */
   verifyHostKey: HostKeyVerifier;
+  /**
+   * The key types this server is already known by. They are asked for ahead of
+   * everything else the handshake could settle on — the rule OpenSSH follows
+   * for the types it has in `known_hosts` — so a server that has since gained a
+   * key of another type, or an ssh2 version that reorders the types it prefers,
+   * still answers with the key that was recorded. Nothing is ruled out: a
+   * server that no longer has a key of any of these types still negotiates, and
+   * the verifier is the one to say what happens then.
+   */
+  knownHostKeyTypes?: string[];
 }
 
 export interface ExecResult {
@@ -105,8 +197,8 @@ export class SshConnection {
   private constructor(
     private client: Client,
     readonly host: string,
-    /** Fingerprint of the host key this connection was established with */
-    readonly hostKeyFingerprint: string,
+    /** The host key this connection was established with */
+    readonly hostKey: HostKey,
   ) {}
 
   /** false после close() или разрыва — такое соединение нельзя переиспользовать */
@@ -119,7 +211,7 @@ export class SshConnection {
       const client = new Client();
       // Filled by hostVerifier below: the key exchange always runs before
       // "ready", so the empty value never reaches a constructed connection
-      let fingerprint = "";
+      let hostKey: HostKey = { type: "", fingerprint: "" };
       let rejected: HostKeyRejectedError | undefined;
       // A raw ssh2 error ("All configured authentication methods failed")
       // names neither the server nor the user — useless in a log with
@@ -144,7 +236,7 @@ export class SshConnection {
       };
       client
         .on("ready", () => {
-          const conn = new SshConnection(client, options.host, fingerprint);
+          const conn = new SshConnection(client, options.host, hostKey);
           client.on("close", () => {
             conn.closed = true;
           });
@@ -163,10 +255,15 @@ export class SshConnection {
             options.privateKey ??
             (options.privateKeyPath ? readFileSync(options.privateKeyPath) : undefined),
           hostVerifier: (key: Buffer) => {
-            fingerprint = hostKeyFingerprint(key);
-            if (options.verifyHostKey(fingerprint)) return true;
-            rejected = new HostKeyRejectedError(options.host, fingerprint);
+            hostKey = { type: hostKeyType(key), fingerprint: hostKeyFingerprint(key) };
+            if (options.verifyHostKey(hostKey)) return true;
+            rejected = new HostKeyRejectedError(options.host, hostKey);
             return false;
+          },
+          // The known types first, which is what keeps the type from drifting
+          // under the verifier. undefined leaves ssh2 with its own defaults
+          algorithms: {
+            serverHostKey: preferredHostKeyAlgorithms(options.knownHostKeyTypes ?? []),
           },
           // Пинг раз в 15 секунд держит соединение живым за NAT
           // и позволяет заметить обрыв простаивающего соединения

@@ -1,6 +1,6 @@
 import { type HostKeyVerifier, HostKeyRejectedError, SshConnection } from "@plantar/ssh";
 import type { ServerRecord } from "@plantar/storage";
-import { hostKeyVerifier, rememberHostKey } from "./host-keys";
+import { hostKeyRecorded, hostKeyVerifier, rememberHostKey } from "./host-keys";
 import { t } from "./i18n";
 import { clearIdentityChanged, reportIdentityChanged } from "./server-identity";
 import { loadPrivateKey } from "./ssh-setup";
@@ -19,13 +19,17 @@ export async function connect(
     username: server.user,
     password: server.auth === "password" ? password : undefined,
     privateKey: server.auth === "key" ? loadPrivateKey(server.keyPath!) : undefined,
-    verifyHostKey: hostKeyVerifier(server.hostKeyFingerprint),
+    verifyHostKey: hostKeyVerifier(server),
+    // The recorded types are asked for first, so a server that has since gained
+    // a key of another type keeps answering with the one on record instead of
+    // meeting a verifier that has nothing to compare the new type against
+    knownHostKeyTypes: server.hostKeys?.map((k) => k.type),
   }).catch((err: unknown) => {
     // The silent status sweep cannot find a changed key on a password server —
     // it never connects to one without a password — so the operation that ran
     // into the mismatch is what has to report it
     if (err instanceof HostKeyRejectedError) {
-      reportIdentityChanged(server.id, err.fingerprint);
+      reportIdentityChanged(server.id, err.hostKey);
     }
     throw err;
   });
@@ -33,11 +37,14 @@ export async function connect(
   // question is over, and neither the window nor the monitor should keep
   // warning about it
   clearIdentityChanged(server.id);
-  // Only a server without a recorded key has anything to record — skip the
-  // read of the store on every later connection
-  if (!server.hostKeyFingerprint) {
+  // Only a key the record does not hold yet has anything to record — skip the
+  // read of the store on every later connection. The read is spared once the
+  // record is typed: a record written by #135 (a bare fingerprint, no type) is
+  // never "already held", so it keeps going through rememberHostKey until the
+  // first match upgrades it
+  if (!hostKeyRecorded(server, conn.hostKey)) {
     try {
-      rememberHostKey(server.id, conn.hostKeyFingerprint);
+      rememberHostKey(server.id, conn.hostKey);
     } catch (err) {
       // Writes throw by the storage package's convention, and this one runs on
       // a connection that is already open: letting it out would lose the only

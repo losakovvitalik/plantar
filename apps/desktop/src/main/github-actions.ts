@@ -187,5 +187,6 @@ ${pmStep}      - run: npm install -g @plantar/cli
           PLANTAR_PORT: \${{ secrets.PLANTAR_PORT }}
           PLANTAR_USER: \${{ secrets.PLANTAR_USER }}
           PLANTAR_HOST_KEY: \${{ secrets.PLANTAR_HOST_KEY }}
+          PLANTAR_HOST_KEY_TYPE: \${{ secrets.PLANTAR_HOST_KEY_TYPE }}
 `;
 }

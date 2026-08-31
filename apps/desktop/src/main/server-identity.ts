@@ -1,3 +1,4 @@
+import type { HostKey } from "@plantar/ssh";
 import { sendToWindow } from "./ipc/util";
 import { activeWindow } from "./window";
 
@@ -18,7 +19,7 @@ import { activeWindow } from "./window";
  * own, restart or not, so after a restart the next connection to that server
  * establishes the fact again — one warning less, never one connection more.
  */
-const inQuestion = new Map<string, string>();
+const inQuestion = new Map<string, HostKey>();
 
 /** Servers the user has already been warned about by a system notification —
  *  once per episode. Lives next to inQuestion and is drained with it, so an
@@ -33,12 +34,12 @@ const warned = new Set<string>();
  * hearing about it again on every sweep, and one opening later asks for the
  * list anyway.
  */
-export function reportIdentityChanged(serverId: string, fingerprint: string): boolean {
+export function reportIdentityChanged(serverId: string, hostKey: HostKey): boolean {
   const known = inQuestion.has(serverId);
   // Always the key of the latest attempt, even when the fact itself is old
   // news: what the user is offered to record has to be what the server answers
   // with now, not the first key of the episode
-  inQuestion.set(serverId, fingerprint);
+  inQuestion.set(serverId, hostKey);
   if (known) return false;
   const win = activeWindow();
   if (win) sendToWindow(win, "server:identity-changed", { serverId });
@@ -79,6 +80,6 @@ export function identityChangedServers(): string[] {
  * settled, which is what stops a confirmation left open on screen from
  * recording a key the server no longer presents.
  */
-export function presentedHostKey(serverId: string): string | undefined {
+export function presentedHostKey(serverId: string): HostKey | undefined {
   return inQuestion.get(serverId);
 }

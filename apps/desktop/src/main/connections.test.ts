@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { connect } from "./connections";
 import { clearIdentityChanged, identityChangedServers } from "./server-identity";
 
-const KEY = "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const KEY = {
+  type: "ssh-ed25519",
+  fingerprint: "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+};
 
 const { send, sshConnect, rememberHostKey } = vi.hoisted(() => ({
   send: vi.fn(),
@@ -42,7 +45,7 @@ const server: ServerRecord = {
   port: 22,
   user: "root",
   auth: "password",
-  hostKeyFingerprint: KEY,
+  hostKeys: [KEY],
 };
 
 afterEach(() => {
@@ -72,11 +75,24 @@ describe("connect", () => {
   });
 
   it("says nothing about the identity when the connection succeeds", async () => {
-    sshConnect.mockResolvedValue({ hostKeyFingerprint: KEY });
+    sshConnect.mockResolvedValue({ hostKey: KEY });
 
     await connect(server, "secret");
 
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("asks for the recorded key types first", async () => {
+    // The half of the policy that lives at the connect site: a server that has
+    // gained a key of another type keeps answering with the recorded one, which
+    // is what lets the verifier turn down every type it has nothing on
+    sshConnect.mockResolvedValue({ hostKey: KEY });
+
+    await connect(server, "secret");
+
+    expect(sshConnect).toHaveBeenCalledWith(
+      expect.objectContaining({ knownHostKeyTypes: ["ssh-ed25519"] }),
+    );
   });
 
   it("forgets a changed identity once the server proves its key again", async () => {
@@ -86,7 +102,7 @@ describe("connect", () => {
     await expect(connect(server, "secret")).rejects.toBeInstanceOf(HostKeyRejectedError);
     expect(identityChangedServers()).toEqual(["s1"]);
 
-    sshConnect.mockResolvedValue({ hostKeyFingerprint: KEY });
+    sshConnect.mockResolvedValue({ hostKey: KEY });
     await connect(server, "secret");
 
     expect(identityChangedServers()).toEqual([]);
@@ -95,15 +111,15 @@ describe("connect", () => {
   it("keeps the connection when the host key cannot be recorded", async () => {
     // Storage writes throw (a full disk, a read-only home). Letting that out
     // would drop the only reference to a connection that is already open
-    sshConnect.mockResolvedValue({ hostKeyFingerprint: KEY });
+    sshConnect.mockResolvedValue({ hostKey: KEY });
     rememberHostKey.mockImplementationOnce(() => {
       throw new Error("ENOSPC: no space left on device");
     });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const conn = await connect({ ...server, hostKeyFingerprint: undefined }, "secret");
+    const conn = await connect({ ...server, hostKeys: undefined }, "secret");
 
-    expect(conn).toEqual({ hostKeyFingerprint: KEY });
+    expect(conn).toEqual({ hostKey: KEY });
     expect(logged).toHaveBeenCalled();
     logged.mockRestore();
   });

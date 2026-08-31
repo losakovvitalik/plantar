@@ -1,5 +1,16 @@
 import { readJsonList, writeJsonList } from "./json-store";
 
+/** A key a server identifies itself with: the algorithm it names
+ *  ("ssh-ed25519", "ssh-rsa", …) and its OpenSSH "SHA256:…" fingerprint.
+ *  Twin of `HostKey` in @plantar/ssh: values cross between the two on
+ *  structural typing alone (this package deliberately keeps no dependency on
+ *  @plantar/ssh), so a field added to one has to be added to the other by
+ *  hand — nothing here will fail to compile if it is not. */
+export interface HostKeyRecord {
+  type: string;
+  fingerprint: string;
+}
+
 export interface ServerRecord {
   id: string;
   name: string;
@@ -9,10 +20,15 @@ export interface ServerRecord {
   /** password-серверы не хранят секрет — пароль запрашивается при каждом подключении */
   auth: "key" | "password";
   keyPath?: string;
-  /** The host key the server identifies itself with, recorded on the first
-   *  connection and required to stay the same afterwards. Servers added before
-   *  host keys were checked have none — the next connection records theirs. */
+  /** A host key recorded before key types were kept with them: a fingerprint
+   *  whose type is unknown. Still required to match, and the connection that
+   *  matches it replaces it with a typed entry in hostKeys. */
   hostKeyFingerprint?: string;
+  /** The host keys the server has identified itself with, at most one per type
+   *  — in practice one: the app refuses a key whose type is not here, so the
+   *  first key recorded is the only one, and a second entry can appear only if
+   *  that policy is relaxed later. A key of a type here has to match it. */
+  hostKeys?: HostKeyRecord[];
 }
 
 /** Коммит, задеплоенный в последний раз (для git-проектов) */

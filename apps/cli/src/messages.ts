@@ -27,8 +27,8 @@ const MESSAGES = {
     en: "The value of --host-key (or PLANTAR_HOST_KEY) does not look like a fingerprint: “{value}”. The expected form is SHA256:… — the line `ssh-keygen -lf` prints, and the one plantar itself prints when connecting without --host-key. The server key was not checked, no connection was made.",
   },
   hostKeyUnchecked: {
-    ru: "Ключ сервера не проверяется: укажите --host-key {fingerprint} (или PLANTAR_HOST_KEY), чтобы убедиться, что отвечает именно этот сервер.",
-    en: "The server key is not being checked: pass --host-key {fingerprint} (or PLANTAR_HOST_KEY) to make sure it is this very server that answers.",
+    ru: "Ключ сервера не проверяется: укажите --host-key {fingerprint} (или PLANTAR_HOST_KEY) и переменную PLANTAR_HOST_KEY_TYPE={type}, чтобы убедиться, что отвечает именно этот сервер.",
+    en: "The server key is not being checked: pass --host-key {fingerprint} (or PLANTAR_HOST_KEY) and the PLANTAR_HOST_KEY_TYPE={type} variable to make sure it is this very server that answers.",
   },
   connected: { ru: "Подключено к {user}@{host}.", en: "Connected to {user}@{host}." },
   disconnected: { ru: "Отключено.", en: "Disconnected." },
