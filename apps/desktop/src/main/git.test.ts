@@ -142,7 +142,7 @@ describe("a repository GitHub has moved", () => {
   // repository that was renamed or handed over to another owner
   const REDIRECTED = `fatal: unable to access '${URL}/': The requested URL returned error: 301`;
 
-  it("explains the move instead of reporting a bare status code", async () => {
+  it("explains the move and keeps git's own line after it", async () => {
     const { listRemoteBranches } = await importGit();
     // The dictionary answers in the language of the process, so the expected
     // text is taken from it rather than written out here
@@ -150,8 +150,10 @@ describe("a repository GitHub has moved", () => {
     failLikeExecFile(REDIRECTED);
 
     const thrown = await listRemoteBranches(URL, TOKEN).catch((e: Error) => e.message);
-    expect(thrown).toContain(t("repoMoved"));
-    expect(thrown).not.toContain("301");
+    // The explanation leads, and git's message stays below it: a 3xx that is
+    // not a move at all (a proxy answering 302) would otherwise leave nothing
+    // to go on
+    expect(thrown).toContain(t("repoMoved", { message: REDIRECTED }));
   });
 
   it("leaves git's own message alone when the call carried no token", async () => {
@@ -249,6 +251,17 @@ describe("the GitHub token reaches github.com and nothing else", () => {
     // every request with a redirect, and this call may not follow one
     expect(envOf("ls-remote")?.GIT_CONFIG_VALUE_0).toBe(`Authorization: Basic ${BASIC}`);
     expect(callsTo("ls-remote")[0][1]).toContain(URL);
+  });
+
+  it("clones a www.github.com link from the apex host", async () => {
+    const { cloneRepo } = await importGit();
+    mockGitVersion("2.39.3");
+
+    await cloneRepo("https://www.github.com/acme/repo.git", "main", "/repos/app", TOKEN);
+
+    // The clone stores its target as origin, so this is also what keeps every
+    // later fetch off the redirecting host
+    expect(callsTo("clone")[0][1]).toContain(URL);
   });
 
   it("points an existing clone away from the redirecting www host", async () => {

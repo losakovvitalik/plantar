@@ -42,6 +42,10 @@ export function isGithubUrl(url: string): boolean {
  * switched off (see authEnv), so a link pasted with `www.` would fail on a
  * redirect git is not allowed to follow. Send git to `github.com` instead —
  * the same repository, with no redirect in the way.
+ *
+ * The guard is isGithubUrl, so the rewrite fires only while GITHUB_HOSTS still
+ * lists `www.github.com`: dropping the host from that set turns this function
+ * into a no-op, which makes it a decision to take here as well.
  */
 function canonicalRepoUrl(url: string): string {
   if (!isGithubUrl(url)) return url;
@@ -173,8 +177,13 @@ async function git(args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
       .replace(/Basic\s+[A-Za-z0-9+/=]+/g, "Basic ***");
     // Only an authenticated call runs with redirects off, so only there does a
     // repository that GitHub has moved (renamed or handed to another owner)
-    // come back as a bare status code. Say what happened instead.
-    if (env && REDIRECT_STATUS.test(message)) throw new Error(t("repoMoved"));
+    // come back as a bare status code. Explain it, and keep git's own line
+    // after the explanation: a 3xx that is something else (a proxy, a captive
+    // portal) would otherwise be reported as a move with no trace of what
+    // actually answered. The line kept is the scrubbed one, and this branch is
+    // reached only for a URL isGithubUrl accepted, which carries no
+    // credentials of its own.
+    if (env && REDIRECT_STATUS.test(message)) throw new Error(t("repoMoved", { message }));
     throw new Error(message);
   }
 }

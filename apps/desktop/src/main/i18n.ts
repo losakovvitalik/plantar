@@ -175,8 +175,8 @@ const MESSAGES = {
     en: "The installed git (version {version}) is too old to access private repositories. Update git to version 2.31 or newer.",
   },
   repoMoved: {
-    ru: "Похоже, репозиторий переехал на новый адрес: его переименовали или передали другому владельцу. Прежняя ссылка больше не работает — посмотрите новый адрес репозитория на GitHub и добавьте проект заново с этой ссылкой.",
-    en: "The repository appears to have moved to a new address: it was renamed or handed over to another owner. The old link no longer works — look up the repository's new address on GitHub and add the project again with that link.",
+    ru: "Похоже, репозиторий переехал на новый адрес: его переименовали или передали другому владельцу. Прежняя ссылка больше не работает — посмотрите новый адрес репозитория на GitHub и укажите эту ссылку.\n{message}",
+    en: "The repository appears to have moved to a new address: it was renamed or handed over to another owner. The old link no longer works — look up the repository's new address on GitHub and use that link.\n{message}",
   },
   lsRemoteFailed: {
     ru: "Не удалось получить ветки репозитория:\n{message}",
