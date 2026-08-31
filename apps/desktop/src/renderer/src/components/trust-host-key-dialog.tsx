@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { ServerRecord } from "../../../preload/index.d";
+import type { HostKey, ServerRecord } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
+import { hostKeyTypeLabel } from "../lib/host-key-type";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -27,7 +28,7 @@ interface Props {
  */
 export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
   const { t } = useI18n();
-  const [fingerprint, setFingerprint] = useState<string | null>(null);
+  const [hostKey, setHostKey] = useState<HostKey | null>(null);
   // The lookup came back without a key: the server presents the recorded one
   // again. Kept apart from a lookup that failed, which says nothing at all
   // about which key the server presents
@@ -58,13 +59,13 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
       setError(result.error);
       return;
     }
-    setFingerprint(result.data);
+    setHostKey(result.data);
     setSettled(result.data === null);
   }
 
   const serverId = server?.id;
   useEffect(() => {
-    setFingerprint(null);
+    setHostKey(null);
     setSettled(false);
     setError(null);
     if (!serverId) {
@@ -87,10 +88,10 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
   }
 
   async function trust() {
-    if (!server || !fingerprint) return;
+    if (!server || !hostKey) return;
     setBusy(true);
     setError(null);
-    const result = await window.plantar.trustServerHostKey(server.id, fingerprint);
+    const result = await window.plantar.trustServerHostKey(server.id, hostKey.fingerprint);
     setBusy(false);
     if (!result.ok) {
       setError(result.error);
@@ -119,20 +120,32 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
         </p>
 
         <div className="flex flex-col gap-1.5">
+          {/* A control panel lists a server's keys one per type, so the label
+              names the type of this one — that is the line to compare with */}
           <span className="text-[13px] font-semibold">
-            {t("trustHostKey.fingerprintLabel")}
+            {hostKey
+              ? t("trustHostKey.fingerprintLabelTyped", {
+                  type: hostKeyTypeLabel(hostKey.type),
+                })
+              : t("trustHostKey.fingerprintLabel")}
           </span>
           {/* The key the server presents; nothing is recorded until it is here
-              to be read, so the confirmation is never blind */}
+              to be read, so the confirmation is never blind. The type stays out
+              of the box: what is selected here is meant to be the fingerprint */}
           <code className="rounded-lg bg-ink/5 px-3 py-2 text-[12.5px] break-all select-all">
             {/* A lookup that failed must not claim the previous key is back */}
             {loading
               ? t("trustHostKey.loading")
-              : (fingerprint ?? (settled ? t("trustHostKey.settled") : "—"))}
+              : (hostKey?.fingerprint ?? (settled ? t("trustHostKey.settled") : "—"))}
           </code>
-          <span className="text-[12.5px] leading-snug text-ink-soft">
-            {t("trustHostKey.fingerprintHint")}
-          </span>
+          {/* The hint sends the user to the panel line of the type named above,
+              so it is shown only while there is a type to name — with the box
+              still loading, settled or empty there is nothing to compare */}
+          {hostKey && (
+            <span className="text-[12.5px] leading-snug text-ink-soft">
+              {t("trustHostKey.fingerprintHint")}
+            </span>
+          )}
         </div>
 
         {error && (
@@ -147,7 +160,7 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
           </Button>
           {/* Nothing to confirm while the box shows no key: during the re-read
               after a refusal the one held here is the key just turned down */}
-          <Button onClick={() => void trust()} disabled={busy || loading || !fingerprint}>
+          <Button onClick={() => void trust()} disabled={busy || loading || !hostKey}>
             {busy ? t("trustHostKey.saving") : t("trustHostKey.confirm")}
           </Button>
         </DialogFooter>

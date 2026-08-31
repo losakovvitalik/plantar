@@ -67,6 +67,17 @@ function invokeTrust(args: TrustArgs): Promise<IpcResult<void>> {
   return handler({}, args);
 }
 
+type PresentedHandler = (
+  event: unknown,
+  serverId: string,
+) => Promise<IpcResult<HostKey | null>>;
+
+function invokePresented(serverId: string): Promise<IpcResult<HostKey | null>> {
+  const handler = handlers.get("servers:presentedHostKey") as PresentedHandler | undefined;
+  if (!handler) throw new Error("servers:presentedHostKey handler was not registered");
+  return handler({}, serverId);
+}
+
 let tmpHome: string;
 
 // Point every OS-specific dataDir() variant into a fresh temp home
@@ -83,6 +94,26 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   rmSync(tmpHome, { recursive: true, force: true });
+});
+
+describe("servers:presentedHostKey", () => {
+  it("hands the window the type along with the fingerprint", async () => {
+    // The type is what tells the user which line of the control panel — one per
+    // key type — the fingerprint on screen is supposed to match
+    reportIdentityChanged(server.id, NEW_KEY);
+
+    await expect(invokePresented(server.id)).resolves.toEqual({
+      ok: true,
+      data: NEW_KEY,
+    });
+  });
+
+  it("answers with nothing once the question is settled", async () => {
+    await expect(invokePresented(server.id)).resolves.toEqual({
+      ok: true,
+      data: null,
+    });
+  });
 });
 
 describe("servers:trustHostKey", () => {

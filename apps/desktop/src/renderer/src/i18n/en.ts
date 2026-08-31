@@ -433,8 +433,9 @@ export const en: Record<MessageKey, string> = {
   "trustHostKey.warning":
     "Agree only if the server really was reinstalled — either you did it yourself, or your hosting provider said so. If nothing of the sort happened, someone else's server may be answering at this address, and you would be giving it access to your apps and data.",
   "trustHostKey.fingerprintLabel": "The key the server answers with now",
+  "trustHostKey.fingerprintLabelTyped": "The {type} key the server answers with now",
   "trustHostKey.fingerprintHint":
-    "Your hosting provider usually shows the same line in the server control panel. If the values match, this is your server. If there is no such line there, ask your hosting provider to confirm that the server was reinstalled.",
+    "Your hosting provider usually shows the server keys in the control panel — one line per key type. Compare it with the line of the type named above: lines of other types will not match, and that is normal. If the values match, this is your server. If the panel has no line of that type, ask your hosting provider to confirm that the server was reinstalled.",
   "trustHostKey.loading": "Looking up the key…",
   "trustHostKey.settled":
     "The server answers with its previous key again — there is nothing to remember.",
