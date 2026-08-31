@@ -64,6 +64,20 @@ export function shouldWarnIdentityChanged(serverId: string): boolean {
 }
 
 /**
+ * Drops the question about this server without answering it — for the record
+ * that is being deleted, where there is nothing to announce. A settle tells the
+ * window the server presented its recorded key; a server that is going away
+ * presented nothing, and the event would reach the renderer before the removal
+ * call returns, while it still holds the pre-removal list: every remaining
+ * server would blink into the checking state and the deleted one would be asked
+ * for its app statuses.
+ */
+export function forgetIdentityQuestion(serverId: string): void {
+  inQuestion.delete(serverId);
+  warned.delete(serverId);
+}
+
+/**
  * The server presented the recorded key again — the question is settled, and an
  * open window is told so. The window cannot find that out on its own: its
  * status sweep never connects to a password server, and the operations that do
@@ -77,8 +91,8 @@ export function shouldWarnIdentityChanged(serverId: string): boolean {
  * every connect.
  */
 export function clearIdentityChanged(serverId: string): void {
-  const wasInQuestion = inQuestion.delete(serverId);
-  warned.delete(serverId);
+  const wasInQuestion = inQuestion.has(serverId);
+  forgetIdentityQuestion(serverId);
   if (!wasInQuestion) return;
   const win = activeWindow();
   if (win) sendToWindow(win, "server:identity-settled", { serverId });
