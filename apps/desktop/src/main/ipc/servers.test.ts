@@ -130,7 +130,11 @@ describe("servers:remove", () => {
 
 describe("servers:trustHostKey", () => {
   it("records the key the user was shown and settles the question", async () => {
+    // The window opens after the fact, so the only event it can see is the
+    // settle one. Without it the warning stays on screen next to a server that
+    // is trusted again: confirming the key refreshes no status
     reportIdentityChanged(server.id, NEW_KEY);
+    openWindow();
 
     await expect(
       invokeTrust({ serverId: server.id, fingerprint: NEW_KEY.fingerprint }),
@@ -143,6 +147,7 @@ describe("servers:trustHostKey", () => {
     expect(readServers()[0].hostKeys).toEqual([NEW_KEY]);
     // The server is no longer in question — the sidebar leaves that state
     expect(identityChangedServers()).toEqual([]);
+    expect(send).toHaveBeenCalledWith("server:identity-settled", { serverId: server.id });
   });
 
   it("turns down a key the server no longer answers with", async () => {
