@@ -90,7 +90,13 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
   // Trimmed because surrounding space is the one mistake the report below
   // cannot show: every other kind is visible in the value it prints
   const pinnedHostKeyType = process.env.PLANTAR_HOST_KEY_TYPE?.trim() || undefined;
-  if (pinnedHostKeyType !== undefined && !HOST_KEY_TYPES.includes(pinnedHostKeyType)) {
+  // Only a type the SSH layer can ask for is passed on: one it cannot moves
+  // nothing there anyway, and passing it would read as ignoring the report
+  const knownHostKeyType =
+    pinnedHostKeyType !== undefined && HOST_KEY_TYPES.includes(pinnedHostKeyType)
+      ? pinnedHostKeyType
+      : undefined;
+  if (pinnedHostKeyType !== undefined && knownHostKeyType === undefined) {
     // Reported and carried on, unlike a mistyped fingerprint: that one dooms
     // the run whatever happens next, while a type nobody can ask for costs only
     // the ordering — the run still succeeds whenever the server presents the
@@ -114,7 +120,7 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
     username: opts.user,
     password,
     privateKeyPath: opts.key,
-    knownHostKeyTypes: pinnedHostKeyType ? [pinnedHostKeyType] : undefined,
+    knownHostKeyTypes: knownHostKeyType ? [knownHostKeyType] : undefined,
     // The pinned value is a bare fingerprint, so the key type is not part of
     // the comparison: a CI run is given one key to expect and stops on anything
     // else, which is what an explicit --host-key is for

@@ -27,8 +27,8 @@ const MESSAGES = {
     en: "The value of --host-key (or PLANTAR_HOST_KEY) does not look like a fingerprint: “{value}”. The expected form is SHA256:… — the line `ssh-keygen -lf` prints, and the one plantar itself prints when connecting without --host-key. The server key was not checked, no connection was made.",
   },
   hostKeyTypeUnknown: {
-    ru: "Значение PLANTAR_HOST_KEY_TYPE не называет ни один известный тип ключа: «{value}». Этот тип не будет запрошен у сервера — запуск продолжится так, как если бы переменной не было вовсе. Если у сервера есть ключи нескольких типов, он может предъявить не тот, и подключение прервётся так же, как при смене ключа сервера. Ожидается одно из: {types}.",
-    en: "The value of PLANTAR_HOST_KEY_TYPE names no known key type: “{value}”. That type will not be asked of the server — the run goes on as if the variable were unset. If the server holds keys of several types it may present a different one, and the connection then stops just as it would on a changed server key. One of these is expected: {types}.",
+    ru: "Значение PLANTAR_HOST_KEY_TYPE не называет ни один известный тип ключа: «{value}». Этот тип не будет запрошен у сервера — запуск продолжится так, как если бы переменной не было вовсе. Если ключ закреплён через PLANTAR_HOST_KEY, а у сервера есть ключи нескольких типов, он может предъявить не тот, и подключение прервётся так же, как при смене ключа сервера. Ожидается одно из: {types}.",
+    en: "The value of PLANTAR_HOST_KEY_TYPE names no known key type: “{value}”. That type will not be asked of the server — the run goes on as if the variable were unset. When a key is pinned with PLANTAR_HOST_KEY and the server holds keys of several types, it may present a different one, and the connection then stops just as it would on a changed server key. One of these is expected: {types}.",
   },
   hostKeyUnchecked: {
     ru: "Ключ сервера не проверяется: укажите --host-key {fingerprint} (или PLANTAR_HOST_KEY) и переменную PLANTAR_HOST_KEY_TYPE={type}, чтобы убедиться, что отвечает именно этот сервер.",

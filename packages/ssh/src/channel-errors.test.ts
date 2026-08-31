@@ -372,6 +372,26 @@ describe("host key verification", () => {
       );
     }
   });
+
+  it("can ask for the key type of every algorithm ssh2 offers", async () => {
+    // The other direction of the same guard, and the one a user feels: the type
+    // handed to the caller is the type of the key the handshake settled on, and
+    // it is what gets pinned for the next run. An ssh2 version offering an
+    // algorithm HOST_KEY_ALGORITHMS does not name would have plantar report a
+    // type of its own making as one no known key type matches
+    const { __clients } = await ssh2Mock();
+
+    await SshConnection.connect({
+      host: "h.example",
+      username: "deploy",
+      password: "p",
+      verifyHostKey: () => true,
+      knownHostKeyTypes: [...HOST_KEY_TYPES],
+    });
+
+    const requested = __clients.at(-1)?.config?.algorithms?.serverHostKey;
+    expect(requested?.prepend).toEqual(expect.arrayContaining([...DEFAULT_SERVER_HOST_KEY]));
+  });
 });
 
 describe("exec channel errors", () => {
