@@ -165,6 +165,43 @@ describe("a repository GitHub has moved", () => {
     const thrown = await listRemoteBranches(URL).catch((e: Error) => e.message);
     expect(thrown).toContain("The requested URL returned error: 301");
   });
+
+  it("explains the move on a deploy, where the fetch is the authenticated call", async () => {
+    const { updateRepo } = await importGit();
+    const { t } = await import("./i18n");
+    // The path a deploy takes: no URL among the arguments, so the host is read
+    // off the clone's origin and the fetch is the call that carries the token
+    execFileMock.mockImplementation(
+      (_file: string, args: string[], _opts: unknown, cb: ExecCallback) => {
+        if (args[0] === "--version") {
+          cb(null, { stdout: "git version 2.39.3\n" }, "");
+          return;
+        }
+        if (args.includes("get-url")) {
+          cb(null, { stdout: `${URL}\n` }, "");
+          return;
+        }
+        if (args.includes("fetch")) {
+          const err = Object.assign(new Error("Command failed"), {
+            code: 128,
+            stderr: REDIRECTED,
+          });
+          cb(err, "", REDIRECTED);
+          return;
+        }
+        cb(null, { stdout: "" }, "");
+      },
+    );
+
+    const thrown = await updateRepo("/repos/app", "main", TOKEN).catch(
+      (e: Error) => e.message,
+    );
+    // What a failed deploy actually shows: the explanation inside the update
+    // error, instead of a bare status code
+    expect(thrown).toBe(
+      t("updateFailed", { message: t("repoMoved", { message: REDIRECTED }) }),
+    );
+  });
 });
 
 describe("git version check for GIT_CONFIG_* token auth", () => {
