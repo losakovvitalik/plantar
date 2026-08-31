@@ -8,6 +8,10 @@ const execFileAsync = promisify(execFile);
 /** Строки git-вывода бывают большими (история, файлы) — поднимаем лимит буфера */
 const GIT_OPTS = { maxBuffer: 32 * 1024 * 1024 } as const;
 
+/** The hosts that are GitHub itself. `www.github.com` is the same origin; it
+ *  serves nothing of its own, only a redirect (see canonicalRepoUrl). */
+const GITHUB_HOSTS = new Set(["github.com", "www.github.com"]);
+
 /**
  * The single notion of "this URL points at GitHub" in the app. The host is
  * parsed out of the URL instead of being matched as text, so lookalikes never
@@ -26,10 +30,25 @@ export function isGithubUrl(url: string): boolean {
   try {
     const { protocol, hostname, username, password } = new URL(url);
     if (username || password) return false;
-    return protocol === "https:" && hostname === "github.com";
+    return protocol === "https:" && GITHUB_HOSTS.has(hostname);
   } catch {
     return false; // not even a URL — certainly not GitHub
   }
+}
+
+/**
+ * `www.github.com` is GitHub, but it hosts nothing: every git request there is
+ * answered with a 301 to the apex host. Authenticated calls run with redirects
+ * switched off (see authEnv), so a link pasted with `www.` would fail on a
+ * redirect git is not allowed to follow. Send git to `github.com` instead —
+ * the same repository, with no redirect in the way.
+ */
+function canonicalRepoUrl(url: string): string {
+  if (!isGithubUrl(url)) return url;
+  const parsed = new URL(url);
+  if (parsed.hostname !== "www.github.com") return url;
+  parsed.hostname = "github.com";
+  return parsed.toString();
 }
 
 /**
@@ -68,8 +87,15 @@ async function cloneAuthEnv(
 ): Promise<NodeJS.ProcessEnv | undefined> {
   if (!token) return undefined;
   try {
-    const url = await git(["-C", dir, "remote", "get-url", "origin"]);
-    return authEnv(url.trim(), token);
+    const url = (await git(["-C", dir, "remote", "get-url", "origin"])).trim();
+    const canonical = canonicalRepoUrl(url);
+    // A clone made from a `www.github.com` link talks to a host that answers
+    // only with a redirect, and the authenticated fetch may not follow it.
+    // Repoint the remote once so every later call reaches GitHub directly.
+    if (canonical !== url) {
+      await git(["-C", dir, "remote", "set-url", "origin", canonical]);
+    }
+    return authEnv(canonical, token);
   } catch {
     return undefined;
   }
@@ -120,6 +146,14 @@ async function assertEnvAuthSupported(): Promise<void> {
   if (tooOld) throw new Error(t("gitTooOldForTokenAuth", { version: tooOld }));
 }
 
+/**
+ * A refused redirect, as git reports it: `fatal: unable to access '<url>': The
+ * requested URL returned error: 301`. The status code is only ever in the text
+ * — execFile hands back git's own exit code, which is the same for every
+ * network failure.
+ */
+const REDIRECT_STATUS = /requested URL returned error:\s*3\d\d/i;
+
 async function git(args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
   if (env) await assertEnvAuthSupported();
   try {
@@ -134,8 +168,14 @@ async function git(args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
     // Defense in depth: even if a future call site puts the auth header back
     // on the command line, never let its base64 token reach a thrown message
     // (execFile quotes the full argv into e.message when stderr is empty).
-    const message = (e.stderr || e.message).trim();
-    throw new Error(message.replace(/Basic\s+[A-Za-z0-9+/=]+/g, "Basic ***"));
+    const message = (e.stderr || e.message)
+      .trim()
+      .replace(/Basic\s+[A-Za-z0-9+/=]+/g, "Basic ***");
+    // Only an authenticated call runs with redirects off, so only there does a
+    // repository that GitHub has moved (renamed or handed to another owner)
+    // come back as a bare status code. Say what happened instead.
+    if (env && REDIRECT_STATUS.test(message)) throw new Error(t("repoMoved"));
+    throw new Error(message);
   }
 }
 
@@ -145,10 +185,11 @@ export async function listRemoteBranches(
   token?: string,
 ): Promise<RemoteBranches> {
   assertValidRepoUrl(url);
+  const target = canonicalRepoUrl(url);
   let stdout: string;
   try {
     // --symref выводит симссылку HEAD (дефолтная ветка) + все refs; --heads её бы скрыл
-    stdout = await git(["ls-remote", "--symref", "--", url], authEnv(url, token));
+    stdout = await git(["ls-remote", "--symref", "--", target], authEnv(target, token));
   } catch (err) {
     throw new Error(t("lsRemoteFailed", { message: (err as Error).message }));
   }
@@ -180,13 +221,16 @@ export async function cloneRepo(
   token?: string,
 ): Promise<void> {
   assertValidRepoUrl(url);
+  // The clone stores this URL as its origin, so canonicalising it here is also
+  // what keeps every later fetch away from the redirecting host.
+  const target = canonicalRepoUrl(url);
   const branchArgs: string[] = [];
   if (branch) {
     assertValidBranch(branch);
     branchArgs.push("--branch", branch);
   }
   try {
-    await git(["clone", ...branchArgs, "--", url, dir], authEnv(url, token));
+    await git(["clone", ...branchArgs, "--", target, dir], authEnv(target, token));
   } catch (err) {
     throw new Error(t("cloneFailed", { message: (err as Error).message }));
   }

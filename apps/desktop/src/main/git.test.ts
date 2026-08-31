@@ -137,6 +137,34 @@ describe("git auth token never leaks into thrown errors", () => {
   });
 });
 
+describe("a repository GitHub has moved", () => {
+  // What git prints when it is refused the redirect GitHub answers with for a
+  // repository that was renamed or handed over to another owner
+  const REDIRECTED = `fatal: unable to access '${URL}/': The requested URL returned error: 301`;
+
+  it("explains the move instead of reporting a bare status code", async () => {
+    const { listRemoteBranches } = await importGit();
+    // The dictionary answers in the language of the process, so the expected
+    // text is taken from it rather than written out here
+    const { t } = await import("./i18n");
+    failLikeExecFile(REDIRECTED);
+
+    const thrown = await listRemoteBranches(URL, TOKEN).catch((e: Error) => e.message);
+    expect(thrown).toContain(t("repoMoved"));
+    expect(thrown).not.toContain("301");
+  });
+
+  it("leaves git's own message alone when the call carried no token", async () => {
+    const { listRemoteBranches } = await importGit();
+    failLikeExecFile(REDIRECTED);
+
+    // Redirects are switched off only for an authenticated call, so a 3xx on
+    // an unauthenticated one is not the failure this message describes
+    const thrown = await listRemoteBranches(URL).catch((e: Error) => e.message);
+    expect(thrown).toContain("The requested URL returned error: 301");
+  });
+});
+
 describe("git version check for GIT_CONFIG_* token auth", () => {
   it("rejects with a clear error when git is older than 2.31", async () => {
     const { listRemoteBranches } = await importGit();
@@ -186,6 +214,7 @@ describe("the GitHub token reaches github.com and nothing else", () => {
   // that merely looks like GitHub must be treated as a foreign one
   const LOOKALIKES = [
     "https://github.com.evil.example/acme/repo.git",
+    "https://www.github.com.evil.example/acme/repo.git",
     "https://notgithub.com/acme/repo.git",
     "https://github.com@evil.example/acme/repo.git",
     "https://evil.example/github.com/acme/repo.git",
@@ -208,6 +237,30 @@ describe("the GitHub token reaches github.com and nothing else", () => {
     // Without this git could carry the header to wherever a 3xx points
     expect(env?.GIT_CONFIG_KEY_1).toBe("http.followRedirects");
     expect(env?.GIT_CONFIG_VALUE_1).toBe("false");
+  });
+
+  it("authenticates a www.github.com link and sends git to the apex host", async () => {
+    const { listRemoteBranches } = await importGit();
+    mockGitVersion("2.39.3");
+
+    await listRemoteBranches("https://www.github.com/acme/repo.git", TOKEN);
+
+    // www.github.com is GitHub, so the token belongs there — but it answers
+    // every request with a redirect, and this call may not follow one
+    expect(envOf("ls-remote")?.GIT_CONFIG_VALUE_0).toBe(`Authorization: Basic ${BASIC}`);
+    expect(callsTo("ls-remote")[0][1]).toContain(URL);
+  });
+
+  it("points an existing clone away from the redirecting www host", async () => {
+    const { updateRepo } = await importGit();
+    mockCloneOrigin("https://www.github.com/acme/repo.git");
+
+    await updateRepo("/repos/app", "main", TOKEN);
+
+    const repointed = callsIncluding("set-url");
+    expect(repointed).toHaveLength(1);
+    expect(repointed[0][1]).toContain(URL);
+    expect(envOf("fetch")?.GIT_CONFIG_VALUE_0).toBe(`Authorization: Basic ${BASIC}`);
   });
 
   it("withholds the token from another host but still runs the command", async () => {
