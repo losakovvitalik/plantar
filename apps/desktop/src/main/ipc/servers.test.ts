@@ -36,11 +36,17 @@ const server: ServerRecord = {
   hostKeys: [KEY],
 };
 
-const { handlers } = vi.hoisted(() => ({ handlers: new Map<string, unknown>() }));
+const { handlers, send, windows } = vi.hoisted(() => ({
+  handlers: new Map<string, unknown>(),
+  send: vi.fn(),
+  windows: [] as { isDestroyed: () => boolean; webContents: { send: unknown } }[],
+}));
 
 // Only the registry is faked: the handler under test writes through the real
 // host-key store and reads the real list of identities in question, so the
-// check between them is exercised and not stubbed out
+// check between them is exercised and not stubbed out. The window list stays
+// empty unless a test opens one, and then the real activeWindow()/sendToWindow
+// pair runs — so the test sees the events the renderer subscribes to
 vi.mock("electron", () => ({
   ipcMain: {
     handle: (channel: string, fn: unknown) => {
@@ -49,22 +55,35 @@ vi.mock("electron", () => ({
   },
   app: { getPath: () => "" },
   dialog: { showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }) },
-  BrowserWindow: { getFocusedWindow: () => null, getAllWindows: () => [] },
+  BrowserWindow: {
+    getFocusedWindow: () => windows[0] ?? null,
+    getAllWindows: () => windows,
+  },
 }));
 
 registerServersIpc();
+
+const openWindow = (): void => {
+  windows.push({ isDestroyed: () => false, webContents: { send } });
+};
 
 interface TrustArgs {
   serverId: string;
   fingerprint: string;
 }
 
-type Handler = (event: unknown, args: TrustArgs) => Promise<IpcResult<void>>;
+type Handler<A> = (event: unknown, args: A) => Promise<IpcResult<void>>;
 
 function invokeTrust(args: TrustArgs): Promise<IpcResult<void>> {
-  const handler = handlers.get("servers:trustHostKey") as Handler | undefined;
+  const handler = handlers.get("servers:trustHostKey") as Handler<TrustArgs> | undefined;
   if (!handler) throw new Error("servers:trustHostKey handler was not registered");
   return handler({}, args);
+}
+
+function invokeRemove(id: string): Promise<IpcResult<void>> {
+  const handler = handlers.get("servers:remove") as Handler<string> | undefined;
+  if (!handler) throw new Error("servers:remove handler was not registered");
+  return handler({}, id);
 }
 
 let tmpHome: string;
@@ -80,9 +99,30 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const id of identityChangedServers()) clearIdentityChanged(id);
+  windows.length = 0;
+  send.mockClear();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   rmSync(tmpHome, { recursive: true, force: true });
+});
+
+describe("servers:remove", () => {
+  it("drops the identity question without announcing it as settled", async () => {
+    // The question is discarded with the record, not answered. A settle would
+    // reach the renderer before this call resolves, while it still holds the
+    // pre-removal list: every remaining server would blink into the checking
+    // state and the deleted one would be asked for its app statuses
+    reportIdentityChanged(server.id, NEW_KEY);
+    openWindow();
+
+    await expect(invokeRemove(server.id)).resolves.toEqual({
+      ok: true,
+      data: undefined,
+    });
+
+    expect(identityChangedServers()).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+  });
 });
 
 describe("servers:trustHostKey", () => {
