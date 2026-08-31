@@ -1,6 +1,6 @@
 import path from "node:path";
 import { Command } from "commander";
-import { SshConnection } from "@plantar/ssh";
+import { HOST_KEY_TYPES, SshConnection } from "@plantar/ssh";
 import { loadProjectConfig } from "@plantar/config";
 import {
   deployProject,
@@ -86,8 +86,30 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
   // for that type first is what keeps a server that has since gained a key of
   // another type answering with the pinned one; without it the ssh library's
   // own order decides, and the pinned key stops being the one presented.
-  // Nothing is ruled out: the verifier below still has the final say
-  const pinnedHostKeyType = process.env.PLANTAR_HOST_KEY_TYPE || undefined;
+  // Nothing is ruled out: the verifier below still has the final say.
+  // Trimmed because surrounding space is the one mistake the report below
+  // cannot show: every other kind is visible in the value it prints
+  const pinnedHostKeyType = process.env.PLANTAR_HOST_KEY_TYPE?.trim() || undefined;
+  // Only a type the SSH layer can ask for is passed on: one it cannot moves
+  // nothing there anyway, and passing it would read as ignoring the report
+  const knownHostKeyType =
+    pinnedHostKeyType !== undefined && HOST_KEY_TYPES.includes(pinnedHostKeyType)
+      ? pinnedHostKeyType
+      : undefined;
+  if (pinnedHostKeyType !== undefined && knownHostKeyType === undefined) {
+    // Reported and carried on, unlike a mistyped fingerprint: that one dooms
+    // the run whatever happens next, while a type nobody can ask for costs only
+    // the ordering — the run still succeeds whenever the server presents the
+    // pinned key, and stopping would turn a typo in a repository secret into a
+    // broken deploy. What it must not do is fail later as a key mismatch, which
+    // in CI reads as a server replaced by someone, with nothing saying why
+    console.warn(
+      t("hostKeyTypeUnknown", {
+        value: pinnedHostKeyType,
+        types: HOST_KEY_TYPES.join(", "),
+      }),
+    );
+  }
   // ssh2 runs the verifier again on every key exchange, and a long deploy
   // rekeys mid-run: the check stays on each of them, the notice is printed once
   // — repeated, it reads as if a second connection were being made
@@ -98,7 +120,7 @@ async function connect(opts: ConnectionOpts): Promise<SshConnection> {
     username: opts.user,
     password,
     privateKeyPath: opts.key,
-    knownHostKeyTypes: pinnedHostKeyType ? [pinnedHostKeyType] : undefined,
+    knownHostKeyTypes: knownHostKeyType ? [knownHostKeyType] : undefined,
     // The pinned value is a bare fingerprint, so the key type is not part of
     // the comparison: a CI run is given one key to expect and stops on anything
     // else, which is what an explicit --host-key is for

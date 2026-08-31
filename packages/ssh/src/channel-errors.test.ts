@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import type { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type HostKey, HostKeyRejectedError, SshConnection } from "./index";
+import {
+  HOST_KEY_TYPES,
+  type HostKey,
+  HostKeyRejectedError,
+  SshConnection,
+} from "./index";
 
 // ssh2's own algorithm-list builder and its defaults, reached through the
 // modules it keeps them in. The code under test asks for an adjustment of that
@@ -340,6 +345,56 @@ describe("host key verification", () => {
 
       expect(__clients.at(-1)?.config?.algorithms?.serverHostKey).toBeUndefined();
     }
+  });
+
+  it("asks for every key type it publishes as askable", async () => {
+    // HOST_KEY_TYPES is what a caller checks a hand-written type against, and
+    // it may only hold names that really do move the handshake: a name that
+    // stopped matching an algorithm would pass that check and still ask for
+    // nothing — the drift the type was pinned against, back with no report
+    const { __clients } = await ssh2Mock();
+
+    for (const type of HOST_KEY_TYPES) {
+      await SshConnection.connect({
+        host: "h.example",
+        username: "deploy",
+        password: "p",
+        verifyHostKey: () => true,
+        knownHostKeyTypes: [type],
+      });
+
+      const requested = __clients.at(-1)?.config?.algorithms?.serverHostKey;
+      expect(requested, type).toBeDefined();
+      // The algorithms asked for first are the ones bringing a key of that
+      // type, so the name is not merely recognised — it reorders the handshake
+      expect(offeredAlgorithms(requested).slice(0, requested?.prepend.length)).toEqual(
+        requested?.prepend,
+      );
+    }
+  });
+
+  it("can ask for the key type of every algorithm ssh2 offers", async () => {
+    // The other direction of the same guard, and the one a user feels: the type
+    // handed to the caller is the type of the key the handshake settled on, and
+    // it is what gets pinned for the next run. An ssh2 version offering an
+    // algorithm HOST_KEY_ALGORITHMS does not name would have plantar report a
+    // type of its own making as one no known key type matches. Checked by
+    // algorithm name, one level below the key types at stake, so a failure can
+    // just as well mean ssh2 added an algorithm of an already-covered type —
+    // nothing misreports then, and adding the name to HOST_KEY_ALGORITHMS is
+    // still the fix, so that algorithm too gets lifted to the front
+    const { __clients } = await ssh2Mock();
+
+    await SshConnection.connect({
+      host: "h.example",
+      username: "deploy",
+      password: "p",
+      verifyHostKey: () => true,
+      knownHostKeyTypes: [...HOST_KEY_TYPES],
+    });
+
+    const requested = __clients.at(-1)?.config?.algorithms?.serverHostKey;
+    expect(requested?.prepend).toEqual(expect.arrayContaining([...DEFAULT_SERVER_HOST_KEY]));
   });
 });
 
