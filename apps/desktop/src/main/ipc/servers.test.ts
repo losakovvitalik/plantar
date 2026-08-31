@@ -109,6 +109,12 @@ describe("servers:presentedHostKey", () => {
   });
 
   it("answers with nothing once the question is settled", async () => {
+    // A connection that succeeded settled the question while the confirmation
+    // was open: there is no key left to offer, and the dialog says so instead
+    // of showing the one it asked about
+    reportIdentityChanged(server.id, NEW_KEY);
+    clearIdentityChanged(server.id);
+
     await expect(invokePresented(server.id)).resolves.toEqual({
       ok: true,
       data: null,

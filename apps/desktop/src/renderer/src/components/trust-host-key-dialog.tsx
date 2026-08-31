@@ -121,9 +121,12 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
 
         <div className="flex flex-col gap-1.5">
           {/* A control panel lists a server's keys one per type, so the label
-              names the type of this one — that is the line to compare with */}
+              names the type of this one — that is the line to compare with. The
+              type follows the box: a lookup in flight leaves the key of the
+              previous answer in hand, and naming its type would point at a line
+              the box is not showing */}
           <span className="text-[13px] font-semibold">
-            {hostKey
+            {hostKey && !loading
               ? t("trustHostKey.fingerprintLabelTyped", {
                   type: hostKeyTypeLabel(hostKey.type),
                 })
@@ -141,7 +144,7 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
           {/* The hint sends the user to the panel line of the type named above,
               so it is shown only while there is a type to name — with the box
               still loading, settled or empty there is nothing to compare */}
-          {hostKey && (
+          {hostKey && !loading && (
             <span className="text-[12.5px] leading-snug text-ink-soft">
               {t("trustHostKey.fingerprintHint")}
             </span>

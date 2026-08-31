@@ -15,6 +15,10 @@
  * The CLI deliberately does the opposite and prints the wire name, because
  * there the value is meant to be copied into PLANTAR_HOST_KEY_TYPE verbatim.
  * Here it is a label to recognise, not a value to copy.
+ *
+ * The names live here and not in ru.ts/en.ts on purpose: they are protocol
+ * identifiers to be matched against a control panel letter for letter, not text
+ * to translate — a translated one would match nothing the user can see.
  */
 export function hostKeyTypeLabel(type: string): string {
   if (type === "ssh-ed25519") return "ED25519";
