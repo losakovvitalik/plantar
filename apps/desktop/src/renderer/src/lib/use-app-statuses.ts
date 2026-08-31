@@ -62,14 +62,7 @@ export function useAppStatuses(servers: ServerRecord[]) {
         identityChanged.current.add(serverId);
         // Last check's data stays, as the interface promises for non-ok kinds —
         // wiping it here would blink the project dots away when the event lands
-        setStatuses((prev) => ({
-          ...prev,
-          [serverId]: {
-            ...prev[serverId],
-            kind: "identityChanged",
-            apps: prev[serverId]?.apps ?? {},
-          },
-        }));
+        setStatuses((prev) => ({ ...prev, [serverId]: sweepEntry(prev[serverId], true) }));
       }),
     [],
   );
