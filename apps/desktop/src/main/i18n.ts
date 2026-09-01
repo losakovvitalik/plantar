@@ -186,8 +186,8 @@ const MESSAGES = {
     en: "The repository appears to have moved to a new address: it was renamed or handed over to another owner. The old link no longer works — look up the repository's new address on GitHub and use that link.\n{message}",
   },
   repoRedirectedByGitConfig: {
-    ru: "Запрос ушёл не на GitHub, а на другой адрес — так настроен git на этом компьютере. Данные аккаунта GitHub на посторонний адрес не отправляются, поэтому приватный репозиторий выглядит как несуществующий. Проверьте настройки git.\n{message}",
-    en: "The request went to a different address instead of GitHub — that is how git is set up on this computer. GitHub account data is not sent to an outside address, so a private repository looks as if it does not exist. Check the git settings.\n{message}",
+    ru: "Запрос ушёл не на GitHub, а на другой адрес — так настроен git на этом компьютере. Данные аккаунта GitHub на посторонний адрес не отправляются, поэтому приватный репозиторий выглядит как несуществующий. Проверьте настройки git — они хранятся в файле ~/.gitconfig.\n{message}",
+    en: "The request went to a different address instead of GitHub — that is how git is set up on this computer. GitHub account data is not sent to an outside address, so a private repository looks as if it does not exist. Check the git settings — they live in the file ~/.gitconfig.\n{message}",
   },
   lsRemoteFailed: {
     ru: "Не удалось получить ветки репозитория:\n{message}",

@@ -108,7 +108,18 @@ function authEnv(url: string, token?: string): NodeJS.ProcessEnv | undefined {
  *   the answer is not a web address at all, which is the common SSH rewrite
  *   (`[url "git@github.com:"] insteadOf = https://github.com/`): git switches
  *   to the user's own key and the call keeps working, so there is nothing to
- *   explain and a working setup must not be accused of anything.
+ *   explain and a working setup must not be accused of anything. A third
+ *   shape lands here as well — a web address still on github.com that
+ *   isGithubUrl refused for another reason. Credentials written into the
+ *   substituted URL are the harmless half: the user put them there, and the
+ *   call may well succeed with them. The other half is a config that keeps
+ *   the host and drops the protocol (`[url "http://github.com/"] insteadOf =
+ *   https://github.com/`) — the token is withheld on the protocol check
+ *   while `web && !github` is false, so nothing is said and the private
+ *   repository comes back as missing: the #169 symptom through a clumsy
+ *   config rather than an adversarial one. `elsewhere` is the wrong answer
+ *   for it, because the request did not go to a different address; saying
+ *   something true about it needs a string of its own, which is issue #172.
  *
  * Both non-`github` answers withhold the token — an unanswered question is
  * not a yes. Telling them apart only ever decides what is said about a
