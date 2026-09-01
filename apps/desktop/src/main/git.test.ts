@@ -525,6 +525,9 @@ describe("a git config that sends github.com somewhere else", () => {
 
     await listRemoteBranches(URL, TOKEN);
 
+    // Asked where the URL leads, and kept the token because of the answer —
+    // not because the question went unasked
+    expect(probeCalls()).toHaveLength(1);
     expect(envOf("ls-remote")?.GIT_CONFIG_VALUE_0).toBe(`Authorization: Basic ${BASIC}`);
   });
 

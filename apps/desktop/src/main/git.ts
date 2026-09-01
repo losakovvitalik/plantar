@@ -68,11 +68,13 @@ function canonicalRepoUrl(url: string): string {
  * host may receive it. Redirects are switched off on the same call so git
  * cannot carry the header to another host on its own either.
  *
- * What is judged is the URL handed in, so it has to be the one git will
- * really dial — `url.<base>.insteadOf` in the user's git config rewrites a
- * URL after the app has parsed it. Both callers already hand in a URL that
- * has been through that rewriting: githubTarget resolves it (see there),
- * cloneAuthEnv reads it back out of the clone with `remote get-url`.
+ * What is judged is the URL handed in, and `url.<base>.insteadOf` in the
+ * user's git config can still substitute another prefix for it at connect
+ * time — a rewriting this function never sees. Covering it is the caller's
+ * part, and the two callers do that differently: githubTarget hands in the
+ * app's own, unsubstituted URL and gates the token on a separate dialsGithub
+ * lookup (see there), while cloneAuthEnv hands in an already-substituted URL,
+ * because `remote get-url` expands the substitution as it prints.
  */
 function authEnv(url: string, token?: string): NodeJS.ProcessEnv | undefined {
   if (!token || !isGithubUrl(url)) return undefined;
