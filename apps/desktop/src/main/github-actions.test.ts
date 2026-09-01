@@ -35,13 +35,10 @@ describe("buildWorkflowYaml", () => {
 describe("hasDeployWorkflow", () => {
   const fetchMock = vi.fn();
 
-  // url is the address the answer came from — the requested one unless fetch
-  // followed a redirect to get there
-  function stubAnswer(status: number, body = "{}", url?: string): void {
+  function stubAnswer(status: number, body = "{}"): void {
     fetchMock.mockResolvedValue({
       ok: status >= 200 && status < 300,
       status,
-      url,
       text: () => Promise.resolve(body),
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -78,22 +75,22 @@ describe("hasDeployWorkflow", () => {
     ).resolves.toBe(false);
   });
 
-  it("follows a renamed repository to its new address", async () => {
+  it("leaves fetch to follow the redirect a renamed repository answers with", async () => {
     // A renamed or handed-over repository answers the recorded address with a
-    // 301 to the new one, and fetch follows that by default — so what arrives
-    // here is the answer from the new address, at a URL other than the one
-    // asked for. It is the same repository, whose secrets still hold the
-    // server's host key, so the marker belongs there: the redirect must not be
-    // read as "no evidence"
-    stubAnswer(
-      200,
-      "{}",
-      "https://api.github.com/repos/acme/store/contents/.github/workflows/plantar-deploy.yml?ref=main",
-    );
+    // 301 to the new one, and the file is found at that new address — the right
+    // answer, since it is the same repository, whose secrets still hold the
+    // server's host key. Following the 301 is fetch's own default, so all this
+    // code decides is not to override it: a request built with
+    // redirect: "manual" (or "error") would read the 301 as "no evidence" and
+    // lose the warning for exactly those repositories
+    stubAnswer(200);
 
     await expect(
       hasDeployWorkflow("gh-token", "https://github.com/acme/shop", "main"),
     ).resolves.toBe(true);
+
+    const init = fetchMock.mock.calls[0][1] as { redirect?: string };
+    expect(init.redirect).toBeUndefined();
   });
 
   it("answers no when the request never arrives", async () => {
