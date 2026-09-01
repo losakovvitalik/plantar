@@ -87,10 +87,14 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
     void loadPresentedKey(serverId);
     // Read on opening rather than taken from the window's state: the marker is
     // written when deploy on commit is set up, which no list refresh follows.
-    // The note is advisory — a failed read leaves it out rather than blocking
-    // the confirmation on it
+    // The read also gives the marker to the server's setups made before the
+    // app recorded one, by looking for the deploy workflow in their
+    // repositories — this is the one moment their absence would cost the user
+    // the warning. The note stays advisory: it names whatever the answer
+    // carries, and a read that failed leaves it out rather than blocking the
+    // confirmation on GitHub being reachable
     let cancelled = false;
-    void window.plantar.listProjects().then((result) => {
+    void window.plantar.backfillDeployOnCommit(serverId).then((result) => {
       if (cancelled || !result.ok) return;
       setDeployOnCommitProjects(deployOnCommitProjectNames(result.data, serverId));
     });

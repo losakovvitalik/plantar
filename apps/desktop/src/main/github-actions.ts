@@ -131,6 +131,36 @@ export async function commitFiles(
 }
 
 /**
+ * Whether the repository holds the deploy workflow on that branch. This is the
+ * evidence a deploy on commit set up before the app recorded a marker for it
+ * left behind: a completed setup commits the file (see `setupGithubActions`).
+ * Anything other than "the file is there" answers no — a repository without it
+ * replies 404, one that moved or was deleted 301/404, and a request that never
+ * arrives says nothing either. Failures are answered rather than surfaced: the
+ * caller writes the marker on a yes and leaves the record alone otherwise, so
+ * a repo URL gone stale cannot turn into an error in the flow that asks.
+ */
+export async function hasDeployWorkflow(
+  token: string,
+  repoUrl: string,
+  branch: string,
+): Promise<boolean> {
+  try {
+    const { owner, repo } = parseGithubRepo(repoUrl);
+    // The setup commits the workflow to the project's branch, which is not
+    // necessarily the default one — the contents API has to be told which
+    await api<unknown>(
+      token,
+      "GET",
+      `/repos/${owner}/${repo}/contents/${WORKFLOW_PATH}?ref=${encodeURIComponent(branch)}`,
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Текст workflow-файла: на push в ветку проекта ставит @plantar/cli из npm
  * и деплоит через `plantar deploy`, ключ и адрес сервера — из Secrets.
  */
