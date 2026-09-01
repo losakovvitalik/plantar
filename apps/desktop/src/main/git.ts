@@ -89,12 +89,12 @@ function authEnv(url: string, token?: string): NodeJS.ProcessEnv | undefined {
 }
 
 /**
- * The host git will really dial for `url`, which is not always the host in
- * `url`: `url.<base>.insteadOf` in the user's git config substitutes one
- * prefix for another after the app has parsed the URL, so a config making
- * `https://evil.example/` the stand-in for `https://github.com/` turns a URL
- * that reads as GitHub into a request to somewhere else. `--get-url` prints
- * the substituted URL and talks to no one.
+ * Whether the URL git substitutes for `url` still reads as GitHub —
+ * something `url` itself does not say. `url.<base>.insteadOf` in the user's
+ * git config substitutes one prefix for another after the app has parsed the
+ * URL, so a config making `https://evil.example/` the stand-in for
+ * `https://github.com/` turns a URL that reads as GitHub into a request to
+ * somewhere else. `--get-url` prints the substituted URL and talks to no one.
  *
  * An answer that cannot be obtained or cannot be parsed is "not GitHub": the
  * question exists only to decide whether to part with the token, and an
@@ -120,8 +120,9 @@ async function dialsGithub(url: string): Promise<boolean> {
  * — git applies the substitution itself, and handing back the app's own URL
  * is what keeps a clone's origin as the user pasted it. Only the decision to
  * attach the token is made on the substituted URL, and only in the direction
- * of withholding it: a config that steers github.com elsewhere costs the call
- * its token, never the other way round.
+ * of withholding it: the lookup can take the token away, never hand one out.
+ * What it answers is the config as the probe found it — the call it guards is
+ * a second git process, reading that config again for itself.
  *
  * The extra git call is spent only once a token is in hand for a URL that
  * already reads as GitHub — the private-repository paths, which are about to
