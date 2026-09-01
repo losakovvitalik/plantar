@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { loadProjectConfig } from "@plantar/config";
+import { readProjects, writeProjects } from "@plantar/storage";
 import { withServer } from "../connections";
 import { assertValidBranch } from "../git";
 import {
@@ -95,6 +96,14 @@ async function setupGithubActions(
       { path: configPath, content: readFileSync(path.join(dir, "plantar.json"), "utf8") },
     ],
     "ci: deploy with Plantar on push",
+  );
+
+  // The record is the only local trace that deploy on commit exists. The trust
+  // dialog reads it to name the projects whose GitHub copy of the host key is
+  // left behind when a reinstalled server's new key gets trusted. Written last:
+  // a setup that failed halfway left no working deploy on commit to warn about
+  writeProjects(
+    readProjects().map((p) => (p.id === project.id ? { ...p, deployOnCommit: true } : p)),
   );
 
   return {
