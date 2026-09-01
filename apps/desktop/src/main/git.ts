@@ -108,14 +108,19 @@ async function cloneAuthEnv(
   if (!token) return undefined;
   try {
     const url = (await git(["-C", dir, "remote", "get-url", "origin"])).trim();
-    const { target, env } = githubTarget(url, token);
-    // A clone made from a `www.github.com` link talks to a host that answers
-    // only with a redirect, and the authenticated fetch may not follow it.
-    // Repoint the remote once so every later call reaches GitHub directly.
-    if (target !== url) {
-      await git(["-C", dir, "remote", "set-url", "origin", target]);
-    }
-    return env;
+    // The URL never reaches git here (the fetch names the remote, and git
+    // resolves it from the clone's config), so unlike the call sites that
+    // hand git a URL there is no canonical form to pair the env with —
+    // authEnv alone answers the one question this helper asks: is the host
+    // GitHub? `www.github.com` is (see GITHUB_HOSTS), stale remote or not.
+    // On a stale `www.` remote the token comes with a catch, though: authEnv
+    // also pins http.followRedirects=false, and `www.` answers only with a
+    // 301, so an authenticated read — the best-effort fetch in listCommits —
+    // degrades to the clone's local history until the next update repoints
+    // the remote. If that degradation ever matters, keep reads read-only via
+    // a per-invocation override:
+    // `git -C <dir> -c remote.origin.url=<canonical> fetch --prune origin`.
+    return authEnv(url, token);
   } catch {
     return undefined;
   }
@@ -285,6 +290,32 @@ export async function cloneRepo(
   }
 }
 
+/**
+ * A clone made from a `www.github.com` link (before cloneRepo started
+ * canonicalising its target) stores a remote that answers every request with
+ * a redirect an authenticated call may not follow. Repoint it at the apex
+ * host once, so every later call reaches GitHub directly. An update is the
+ * one moment the app deliberately rewrites the clone, which is why this runs
+ * from updateRepo and nowhere else — read-shaped calls (listCommits,
+ * cloneAuthEnv) must leave the clone untouched.
+ *
+ * Best effort: whether the token is attached is a decision about the host
+ * (cloneAuthEnv), and it must not hinge on whether this write succeeded, so
+ * a failure here only skips the repoint and the update's own git calls
+ * report whatever is actually wrong with the clone.
+ */
+async function repointToCanonicalOrigin(dir: string): Promise<void> {
+  try {
+    const url = (await git(["-C", dir, "remote", "get-url", "origin"])).trim();
+    const target = canonicalRepoUrl(url);
+    if (target !== url) {
+      await git(["-C", dir, "remote", "set-url", "origin", target]);
+    }
+  } catch {
+    /* no readable origin, or the config write failed — see the docblock */
+  }
+}
+
 /** Обновляет клон до свежего состояния ветки на удалённом репозитории */
 export async function updateRepo(
   dir: string,
@@ -293,6 +324,7 @@ export async function updateRepo(
 ): Promise<void> {
   assertValidBranch(branch);
   try {
+    await repointToCanonicalOrigin(dir);
     await git(["-C", dir, "fetch", "--prune", "origin"], await cloneAuthEnv(dir, token));
     // -B создаёт/сбрасывает локальную ветку на origin/<branch>. -f нужен, когда в ветке
     // появился файл, лежащий в клоне как untracked (plantar.json после настройки
