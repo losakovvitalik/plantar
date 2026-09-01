@@ -153,10 +153,13 @@ export async function hasDeployWorkflow(
   try {
     const { owner, repo } = parseGithubRepo(repoUrl);
     // The setup commits the workflow to the project's branch, which is not
-    // necessarily the default one — the contents API has to be told which
+    // necessarily the default one — the contents API has to be told which.
+    // HEAD because the status line carries the whole answer: a GET would
+    // download the file's base64 body for `api()` to parse into a value
+    // nothing here reads
     await api<unknown>(
       token,
-      "GET",
+      "HEAD",
       `/repos/${owner}/${repo}/contents/${WORKFLOW_PATH}?ref=${encodeURIComponent(branch)}`,
     );
     return true;
