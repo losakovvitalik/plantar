@@ -92,6 +92,13 @@ export interface ProjectRecord {
    *  в исходной папке приложения, версии — по git-истории на сервере.
    *  Пометка снимается только при явном переносе под управление Plantar. */
   external?: ExternalAppInfo;
+  /** Deploy on commit is set up: the GitHub repository holds its own copy of
+   *  the server's host key, which does not follow the record when a
+   *  reinstalled server's new key is trusted — the app reads this marker to
+   *  name the projects that must be set up again. Recorded when the setup
+   *  completes; absent on records written before the field existed, which
+   *  reads as not set up. */
+  deployOnCommit?: boolean;
 }
 
 export const readServers = () => readJsonList<ServerRecord>("servers.json");

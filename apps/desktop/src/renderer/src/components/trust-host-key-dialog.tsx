@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { HostKey, ServerRecord } from "../../../preload/index.d";
 import { useI18n } from "../i18n";
+import { deployOnCommitProjectNames } from "../lib/deploy-on-commit";
 import { hostKeyTypeLabel } from "../lib/host-key-type";
 import { Button } from "./ui/button";
 import {
@@ -36,6 +37,10 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Names of this server's projects with deploy on commit set up: GitHub keeps
+  // its own copy of the host key for them, which confirming here leaves on the
+  // previous one — the dialog names exactly these as needing setting up again
+  const [deployOnCommitProjects, setDeployOnCommitProjects] = useState<string[]>([]);
   // The dialog stays mounted between openings, so a lookup can outlive the
   // server it was asked about. Every lookup takes the token current when it
   // starts and is dropped once that token has moved on
@@ -72,6 +77,7 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
     setHostKey(null);
     setSettled(false);
     setError(null);
+    setDeployOnCommitProjects([]);
     if (!serverId) {
       // Closed while a lookup was in flight: its answer is dropped, so the
       // loading state is dropped here instead of outliving the dialog
@@ -79,7 +85,17 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
       return;
     }
     void loadPresentedKey(serverId);
+    // Read on opening rather than taken from the window's state: the marker is
+    // written when deploy on commit is set up, which no list refresh follows.
+    // The note is advisory — a failed read leaves it out rather than blocking
+    // the confirmation on it
+    let cancelled = false;
+    void window.plantar.listProjects().then((result) => {
+      if (cancelled || !result.ok) return;
+      setDeployOnCommitProjects(deployOnCommitProjectNames(result.data, serverId));
+    });
     return () => {
+      cancelled = true;
       // Cancels whatever lookup is in flight, the effect's own and the re-read
       // after a refused confirmation alike — both carry a token from here
       requestToken.current += 1;
@@ -118,6 +134,18 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
           </DialogTitle>
           <DialogDescription>{t("trustHostKey.description")}</DialogDescription>
         </DialogHeader>
+
+        {/* Shown only when this server actually has such projects — for anyone
+            else the sentence about setting deploy on commit up again is noise —
+            and only while there is a new key to confirm: with the question
+            settled or still loading, nothing here would break those deploys */}
+        {shownKey && deployOnCommitProjects.length > 0 && (
+          <p className="rounded-lg border border-line bg-muted px-3 py-2 text-[12.5px] leading-relaxed text-ink-soft">
+            {t("trustHostKey.deployOnCommitNote", {
+              projects: deployOnCommitProjects.join(", "),
+            })}
+          </p>
+        )}
 
         <p className="rounded-xl bg-amber-bg px-4 py-3 text-[13px] leading-relaxed text-ink">
           {t("trustHostKey.warning")}
