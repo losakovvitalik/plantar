@@ -93,14 +93,24 @@ const ROW_LINE_TOP =
 const ROW_LINE_BOTTOM =
   "after:absolute after:inset-x-0 after:-bottom-[1px] after:h-0.5 after:rounded-full after:bg-sprout";
 
-/** Статус приложения проекта из снимка сервера; нет данных — неизвестен */
-function projectDotKind(
+/** The project's status from the server's snapshot; no data — unknown, unless
+ *  the check that would provide it is still on its way (see below).
+ *  Exported for tests. */
+export function projectDotKind(
   server: ServerAppStatuses | undefined,
   projectId: string,
+  refreshing: boolean,
 ): AppStatus | "unknown" | "checking" {
   if (!server) return "checking";
   const status = server.apps[projectId];
   if (status) return status;
+  // A fresh "ok" result lists every project of its server, so a project
+  // missing from an "ok" entry during a refresh was added after the kept
+  // snapshot and its first check is still pending — "checking", not
+  // "unknown". Only for "ok": a non-ok entry keeps no per-project data at
+  // all, and pulsing its projects on every sweep would be the very blink
+  // the kept statuses exist to avoid (#160)
+  if (server.kind === "ok" && refreshing) return "checking";
   return server.kind === "checking" ? "checking" : "unknown";
 }
 
@@ -408,7 +418,7 @@ export function Sidebar({
               {!isCollapsed &&
                 serverProjects.map((project, projectIndex) => {
                   const active = selection?.kind === "project" && selection.id === project.id;
-                  const dot = projectDotKind(status, project.id);
+                  const dot = projectDotKind(status, project.id, refreshingStatuses);
                   const deploying = activeDeploys[project.id];
                   const projectLine =
                     dropTarget?.kind === "project" && dropTarget.serverId === server.id
