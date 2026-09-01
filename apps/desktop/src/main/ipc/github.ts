@@ -136,7 +136,7 @@ async function setupGithubActions(
  * means only one of those projects can have a working deploy on commit at all,
  * so this names one project too many rather than warning about nothing.
  */
-async function backfillDeployOnCommit(serverId: string): Promise<ProjectRecord[]> {
+async function backfillDeployOnCommitFromGithub(serverId: string): Promise<ProjectRecord[]> {
   const token = getToken();
   // Nothing to check the repositories with: the dialog still warns about the
   // projects that carry the marker already
@@ -188,6 +188,6 @@ export function registerGithubIpc(): void {
   // Marks the server's setups made before the marker existed and answers with
   // the projects — what the trust-host-key dialog reads its warning from
   handle("github:backfillDeployOnCommit", (_e, serverId) =>
-    toResult(() => backfillDeployOnCommit(serverId)),
+    toResult(() => backfillDeployOnCommitFromGithub(serverId)),
   );
 }

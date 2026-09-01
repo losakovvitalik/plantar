@@ -522,7 +522,7 @@ export interface PlantarApi {
    *  a setup made by an older version reads as never made otherwise. Only
    *  positive evidence writes: no GitHub login or a repository that has no
    *  workflow file or does not answer leaves the records alone */
-  backfillDeployOnCommit: (serverId: string) => Promise<IpcResult<ProjectRecord[]>>;
+  backfillDeployOnCommitFromGithub: (serverId: string) => Promise<IpcResult<ProjectRecord[]>>;
 
   listHistory: (projectId: string) => Promise<IpcResult<DeployRecord[]>>;
   readDeployLog: (logFile: string) => Promise<IpcResult<string>>;

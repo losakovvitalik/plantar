@@ -103,7 +103,7 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
     // the warning. This answer has the last word once it lands, and one that
     // never came or failed leaves the local names standing rather than taking
     // the note away or blocking the confirmation on GitHub being reachable
-    void window.plantar.backfillDeployOnCommit(serverId).then((result) => {
+    void window.plantar.backfillDeployOnCommitFromGithub(serverId).then((result) => {
       if (cancelled || !result.ok) return;
       backfilled = true;
       setDeployOnCommitProjects(deployOnCommitProjectNames(result.data, serverId));
