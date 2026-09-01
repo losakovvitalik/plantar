@@ -521,7 +521,7 @@ export interface PlantarApi {
    *  projects as they stand afterwards. Asked where the marker is read from —
    *  a setup made by an older version reads as never made otherwise. Only
    *  positive evidence writes: no GitHub login or a repository that has no
-   *  workflow file, moved or does not answer leaves the records alone */
+   *  workflow file or does not answer leaves the records alone */
   backfillDeployOnCommit: (serverId: string) => Promise<IpcResult<ProjectRecord[]>>;
 
   listHistory: (projectId: string) => Promise<IpcResult<DeployRecord[]>>;

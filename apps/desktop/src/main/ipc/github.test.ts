@@ -196,8 +196,31 @@ describe("github:backfillDeployOnCommit", () => {
     expect(result.ok && result.data[0].deployOnCommit).toBe(true);
   });
 
+  it("marks only the project whose repository answered yes", async () => {
+    // The repositories are asked all at once, so every answer has to find its
+    // way back to the project it was asked about: the dialog names the marked
+    // projects, and one named by mistake sends the user to set up a deploy on
+    // commit it never had — over the workflow file of the one that has it
+    const other: ProjectRecord = {
+      ...project,
+      id: "p2",
+      name: "blog",
+      repoUrl: "https://github.com/acme/blog",
+    };
+    writeProjects([project, other]);
+    hasDeployWorkflow.mockImplementation((_token: string, repoUrl: string) =>
+      Promise.resolve(repoUrl === other.repoUrl),
+    );
+
+    await expect(invokeBackfill(server.id)).resolves.toMatchObject({ ok: true });
+
+    const projects = readProjects();
+    expect(projects.find((p) => p.id === project.id)?.deployOnCommit).toBeUndefined();
+    expect(projects.find((p) => p.id === other.id)?.deployOnCommit).toBe(true);
+  });
+
   it("leaves the record untouched when the repository holds no evidence", async () => {
-    // No workflow file, or a repository that moved away or does not answer:
+    // No workflow file, a repository that is gone or one that does not answer:
     // the same write-only-on-success bias the setup itself has
     hasDeployWorkflow.mockResolvedValue(false);
 

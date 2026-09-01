@@ -35,10 +35,13 @@ describe("buildWorkflowYaml", () => {
 describe("hasDeployWorkflow", () => {
   const fetchMock = vi.fn();
 
-  function stubAnswer(status: number, body = "{}"): void {
+  // url is the address the answer came from — the requested one unless fetch
+  // followed a redirect to get there
+  function stubAnswer(status: number, body = "{}", url?: string): void {
     fetchMock.mockResolvedValue({
       ok: status >= 200 && status < 300,
       status,
+      url,
       text: () => Promise.resolve(body),
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -66,7 +69,8 @@ describe("hasDeployWorkflow", () => {
 
   it("answers no when the repository does not hold the file", async () => {
     // No evidence that deploy on commit was ever set up for this project — the
-    // caller leaves its record exactly as it is
+    // caller leaves its record exactly as it is. A repository that was deleted,
+    // or that this token cannot see, answers the same way
     stubAnswer(404, '{"message":"Not Found"}');
 
     await expect(
@@ -74,15 +78,22 @@ describe("hasDeployWorkflow", () => {
     ).resolves.toBe(false);
   });
 
-  it("answers no when the repository has moved away from the recorded address", async () => {
-    // A renamed or handed-over repository answers the old address with a
-    // redirect. That says nothing about deploy on commit, and it must not turn
-    // into an error either: the flow that asks is the reinstall confirmation
-    stubAnswer(301, '{"message":"Moved Permanently"}');
+  it("follows a renamed repository to its new address", async () => {
+    // A renamed or handed-over repository answers the recorded address with a
+    // 301 to the new one, and fetch follows that by default — so what arrives
+    // here is the answer from the new address, at a URL other than the one
+    // asked for. It is the same repository, whose secrets still hold the
+    // server's host key, so the marker belongs there: the redirect must not be
+    // read as "no evidence"
+    stubAnswer(
+      200,
+      "{}",
+      "https://api.github.com/repos/acme/store/contents/.github/workflows/plantar-deploy.yml?ref=main",
+    );
 
     await expect(
       hasDeployWorkflow("gh-token", "https://github.com/acme/shop", "main"),
-    ).resolves.toBe(false);
+    ).resolves.toBe(true);
   });
 
   it("answers no when the request never arrives", async () => {

@@ -125,8 +125,16 @@ async function setupGithubActions(
  * The evidence is the workflow file a completed setup commits to the project's
  * branch. Keeping the bias the marker's write-last placement in
  * `setupGithubActions` has, only positive evidence writes: no GitHub login, a
- * repository without the file, one that moved or answers not at all — the
- * record is left as it is, and the marker is never cleared.
+ * repository without the file, one that answers not at all — the record is left
+ * as it is, and the marker is never cleared.
+ *
+ * That evidence belongs to the repository while the marker belongs to the
+ * project, and the two cannot be separated: the workflow lives at one fixed
+ * path, so two projects of the same repository and branch (a monorepo split by
+ * subdir) both read as set up and both get marked. The stale host key is in
+ * that repository's secrets either way, and one workflow file per repository
+ * means only one of those projects can have a working deploy on commit at all,
+ * so this names one project too many rather than warning about nothing.
  */
 async function backfillDeployOnCommit(serverId: string): Promise<ProjectRecord[]> {
   const token = getToken();
@@ -141,10 +149,17 @@ async function backfillDeployOnCommit(serverId: string): Promise<ProjectRecord[]
       p.branch &&
       !p.deployOnCommit,
   );
-  const marked = new Set<string>();
-  for (const p of candidates) {
-    if (await hasDeployWorkflow(token, p.repoUrl!, p.branch!)) marked.add(p.id);
-  }
+  // Asked all at once: the checks are independent, and none of them carries a
+  // timeout of its own — one address that swallows the request would otherwise
+  // hold back the checks after it, and with them the note the dialog is about
+  // to show. A check answers rather than throws, so nothing here can reject
+  const answers = await Promise.all(
+    candidates.map(async (p) => ({
+      id: p.id,
+      found: await hasDeployWorkflow(token, p.repoUrl!, p.branch!),
+    })),
+  );
+  const marked = new Set(answers.filter((a) => a.found).map((a) => a.id));
   if (marked.size === 0) return readProjects();
   // Read again instead of writing back the list the candidates came from: the
   // checks above went to the network, and whatever happened to the records
