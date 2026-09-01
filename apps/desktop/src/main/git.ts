@@ -96,16 +96,54 @@ function authEnv(url: string, token?: string): NodeJS.ProcessEnv | undefined {
  * `https://github.com/` turns a URL that reads as GitHub into a request to
  * somewhere else. `--get-url` prints the substituted URL and talks to no one.
  *
- * An answer that cannot be obtained or cannot be parsed is "not GitHub": the
- * question exists only to decide whether to part with the token, and an
- * unanswered question is not a yes.
+ * Three answers, because the two that withhold the token do not mean the same
+ * thing to the person waiting on the call:
+ *
+ * - `github` — the token may travel.
+ * - `elsewhere` — the substitution names another web address, the corporate
+ *   mirror case: unauthenticated, that address answers a private repository
+ *   as a missing one, so the withholding is worth explaining (see
+ *   explainWithheldToken).
+ * - `unknown` — the question could not be answered (an unreadable config), or
+ *   the answer is not a web address at all, which is the common SSH rewrite
+ *   (`[url "git@github.com:"] insteadOf = https://github.com/`): git switches
+ *   to the user's own key and the call keeps working, so there is nothing to
+ *   explain and a working setup must not be accused of anything.
+ *
+ * Both non-`github` answers withhold the token — an unanswered question is
+ * not a yes. Telling them apart only ever decides what is said about a
+ * failure, never who gets the credential.
  */
-async function dialsGithub(url: string): Promise<boolean> {
+async function dialsGithub(url: string): Promise<"github" | "elsewhere" | "unknown"> {
+  let dialled: string;
   try {
-    return isGithubUrl((await git(["ls-remote", "--get-url", "--", url])).trim());
+    dialled = (await git(["ls-remote", "--get-url", "--", url])).trim();
   } catch {
-    return false;
+    return "unknown";
   }
+  if (isGithubUrl(dialled)) return "github";
+  try {
+    const { protocol, hostname } = new URL(dialled);
+    const web = protocol === "https:" || protocol === "http:";
+    return web && !GITHUB_HOSTS.has(hostname) ? "elsewhere" : "unknown";
+  } catch {
+    return "unknown"; // scp-style address (git@host:path) — no URL to read
+  }
+}
+
+/**
+ * git's own failure, with the reason the sign-in went unused in front of it
+ * when a config aimed the request at another address. The alternative is what
+ * #169 describes: the far end's bare "not found", with nothing pointing at
+ * the config that caused it.
+ *
+ * Only a failure is annotated. The same config in front of a public
+ * repository succeeds, and so does an SSH rewrite on the user's own key —
+ * neither has anything to explain, and `redirected` is not set for the SSH
+ * one in the first place (see dialsGithub).
+ */
+function explainWithheldToken(redirected: boolean | undefined, message: string): string {
+  return redirected ? t("repoRedirectedByGitConfig", { message }) : message;
 }
 
 /**
@@ -127,15 +165,22 @@ async function dialsGithub(url: string): Promise<boolean> {
  * The extra git call is spent only once a token is in hand for a URL that
  * already reads as GitHub — the private-repository paths, which are about to
  * spend a network round trip anyway. A public repository asks git nothing.
+ *
+ * `redirected` travels out with the pair because the token is withheld here
+ * while the failure surfaces at the call site, and the two call sites report
+ * their failures differently. It is a note for that report, not a second
+ * decision: nothing branches on it before the call runs.
  */
 async function githubTarget(
   url: string,
   token?: string,
-): Promise<{ target: string; env?: NodeJS.ProcessEnv }> {
+): Promise<{ target: string; env?: NodeJS.ProcessEnv; redirected?: boolean }> {
   const target = canonicalRepoUrl(url);
   const env = authEnv(target, token);
-  if (env && !(await dialsGithub(target))) return { target };
-  return { target, env };
+  if (!env) return { target };
+  const dialled = await dialsGithub(target);
+  if (dialled === "github") return { target, env };
+  return { target, redirected: dialled === "elsewhere" };
 }
 
 /**
@@ -281,13 +326,14 @@ export async function listRemoteBranches(
   token?: string,
 ): Promise<RemoteBranches> {
   assertValidRepoUrl(url);
-  const { target, env } = await githubTarget(url, token);
+  const { target, env, redirected } = await githubTarget(url, token);
   let stdout: string;
   try {
     // --symref выводит симссылку HEAD (дефолтная ветка) + все refs; --heads её бы скрыл
     stdout = await git(["ls-remote", "--symref", "--", target], env);
   } catch (err) {
-    throw new Error(t("lsRemoteFailed", { message: (err as Error).message }));
+    const message = explainWithheldToken(redirected, (err as Error).message);
+    throw new Error(t("lsRemoteFailed", { message }));
   }
 
   const branches: string[] = [];
@@ -319,7 +365,7 @@ export async function cloneRepo(
   assertValidRepoUrl(url);
   // The clone stores this URL as its origin, so canonicalising it here is also
   // what keeps every later fetch away from the redirecting host.
-  const { target, env } = await githubTarget(url, token);
+  const { target, env, redirected } = await githubTarget(url, token);
   const branchArgs: string[] = [];
   if (branch) {
     assertValidBranch(branch);
@@ -328,7 +374,8 @@ export async function cloneRepo(
   try {
     await git(["clone", ...branchArgs, "--", target, dir], env);
   } catch (err) {
-    throw new Error(t("cloneFailed", { message: (err as Error).message }));
+    const message = explainWithheldToken(redirected, (err as Error).message);
+    throw new Error(t("cloneFailed", { message }));
   }
 }
 
