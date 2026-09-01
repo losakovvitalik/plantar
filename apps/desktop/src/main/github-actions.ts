@@ -143,7 +143,11 @@ export async function commitFiles(
  * answer, since it is the same repository and its secrets still hold the
  * server's host key. Failures are answered rather than surfaced: the caller
  * writes the marker on a yes and leaves the record alone otherwise, so a repo
- * URL gone stale cannot turn into an error in the flow that asks.
+ * URL gone stale cannot turn into an error in the flow that asks. One no is
+ * wrong rather than true: `projects:setBranch` repoints the record without
+ * touching the workflow the repository already holds, so a setup made on
+ * another branch is asked about the branch it was moved to, answers 404 and
+ * stays unmarked while its secrets still hold the server's host key.
  */
 export async function hasDeployWorkflow(
   token: string,
