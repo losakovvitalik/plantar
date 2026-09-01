@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { loadProjectConfig } from "@plantar/config";
-import { readProjects, writeProjects } from "@plantar/storage";
+import { type ProjectRecord, readProjects, writeProjects } from "@plantar/storage";
 import { withServer } from "../connections";
 import { assertValidBranch } from "../git";
 import {
@@ -16,6 +16,7 @@ import {
   buildWorkflowYaml,
   commitFiles,
   fetchSecretsPublicKey,
+  hasDeployWorkflow,
   parseGithubRepo,
   putSecrets,
 } from "../github-actions";
@@ -112,6 +113,64 @@ async function setupGithubActions(
   };
 }
 
+/**
+ * Gives the server's git projects the deploy-on-commit marker they earned
+ * before the app started recording it, and answers with the projects as they
+ * stand afterwards. Asked by the trust-host-key dialog, which is about to name
+ * the marked projects: without this, a deploy on commit set up by an older
+ * version reads as never set up, and the very users the warning was built for
+ * would trust a reinstalled server's new key with no hint that their
+ * push-triggered deploys keep checking against the previous one.
+ *
+ * The evidence is the workflow file a completed setup commits to the project's
+ * branch. Keeping the bias the marker's write-last placement in
+ * `setupGithubActions` has, only positive evidence writes: no GitHub login, a
+ * repository without the file, one that answers not at all — the record is left
+ * as it is, and the marker is never cleared.
+ *
+ * That evidence belongs to the repository while the marker belongs to the
+ * project, and the two cannot be separated: the workflow lives at one fixed
+ * path, so two projects of the same repository and branch (a monorepo split by
+ * subdir) both read as set up and both get marked. The stale host key is in
+ * that repository's secrets either way, and one workflow file per repository
+ * means only one of those projects can have a working deploy on commit at all,
+ * so this names one project too many rather than warning about nothing.
+ */
+async function backfillDeployOnCommitFromGithub(serverId: string): Promise<ProjectRecord[]> {
+  const token = getToken();
+  // Nothing to check the repositories with: the dialog still warns about the
+  // projects that carry the marker already
+  if (!token) return readProjects();
+  const candidates = readProjects().filter(
+    (p) =>
+      p.serverId === serverId &&
+      p.source === "git" &&
+      p.repoUrl &&
+      p.branch &&
+      !p.deployOnCommit,
+  );
+  // Asked all at once: the checks are independent, and none of them carries a
+  // timeout of its own — one address that swallows the request would otherwise
+  // hold back the checks after it, and with them the note the dialog is about
+  // to show. A check answers rather than throws, so nothing here can reject
+  const answers = await Promise.all(
+    candidates.map(async (p) => ({
+      id: p.id,
+      found: await hasDeployWorkflow(token, p.repoUrl!, p.branch!),
+    })),
+  );
+  const marked = new Set(answers.filter((a) => a.found).map((a) => a.id));
+  if (marked.size === 0) return readProjects();
+  // Read again instead of writing back the list the candidates came from: the
+  // checks above went to the network, and whatever happened to the records
+  // meanwhile is in the file rather than in that snapshot
+  const projects = readProjects().map((p) =>
+    marked.has(p.id) ? { ...p, deployOnCommit: true } : p,
+  );
+  writeProjects(projects);
+  return projects;
+}
+
 export function registerGithubIpc(): void {
   // GitHub Device Flow: вход без backend, токен шифруется safeStorage
   handle("github:account", () => toResult(async () => getAccount()));
@@ -125,5 +184,10 @@ export function registerGithubIpc(): void {
   // Автонастройка деплоя при коммите: deploy-ключ → Secrets, workflow → в ветку
   handle("github:setupActions", (_e, args) =>
     toResult(() => setupGithubActions(args.projectId, args.password)),
+  );
+  // Marks the server's setups made before the marker existed and answers with
+  // the projects — what the trust-host-key dialog reads its warning from
+  handle("github:backfillDeployOnCommit", (_e, serverId) =>
+    toResult(() => backfillDeployOnCommitFromGithub(serverId)),
   );
 }

@@ -96,8 +96,9 @@ export interface ProjectRecord {
    *  the server's host key, which does not follow the record when a
    *  reinstalled server's new key is trusted — the app reads this marker to
    *  name the projects that must be set up again. Recorded when the setup
-   *  completes; absent on records written before the field existed, which
-   *  reads as not set up. */
+   *  completes; a record written before the field existed gets it backfilled
+   *  from the deploy workflow the setup left in the repository. Absent means
+   *  no evidence of a setup was found, which reads as not set up. */
   deployOnCommit?: boolean;
 }
 

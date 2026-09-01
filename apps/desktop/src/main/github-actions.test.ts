@@ -1,6 +1,6 @@
 import { parseProjectConfig } from "@plantar/config";
-import { describe, expect, it, vi } from "vitest";
-import { buildWorkflowYaml } from "./github-actions";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildWorkflowYaml, hasDeployWorkflow } from "./github-actions";
 
 // The module under test imports libsodium to seal the repository secrets, and
 // its ESM entry does not resolve under vitest. Nothing here encrypts anything.
@@ -29,5 +29,90 @@ describe("buildWorkflowYaml", () => {
     expect(yaml).toMatch(
       /^\s*PLANTAR_HOST_KEY_TYPE: \$\{\{ secrets\.PLANTAR_HOST_KEY_TYPE \}\}$/m,
     );
+  });
+});
+
+describe("hasDeployWorkflow", () => {
+  const fetchMock = vi.fn();
+
+  function stubAnswer(status: number, body = "{}"): void {
+    fetchMock.mockResolvedValue({
+      ok: status >= 200 && status < 300,
+      status,
+      text: () => Promise.resolve(body),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+  }
+
+  afterEach(() => {
+    fetchMock.mockReset();
+    vi.unstubAllGlobals();
+  });
+
+  it("looks for the workflow file on the project's branch", async () => {
+    // The setup commits the workflow to the branch the project deploys from,
+    // which is not necessarily the default one: asked without the ref, GitHub
+    // would answer about the default branch and miss the evidence there
+    stubAnswer(200);
+
+    await expect(
+      hasDeployWorkflow("gh-token", "https://github.com/acme/shop", "release"),
+    ).resolves.toBe(true);
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "https://api.github.com/repos/acme/shop/contents/.github/workflows/plantar-deploy.yml?ref=release",
+    );
+  });
+
+  it("answers no when the repository does not hold the file", async () => {
+    // No evidence that deploy on commit was ever set up for this project — the
+    // caller leaves its record exactly as it is. A repository that was deleted,
+    // or that this token cannot see, answers the same way
+    stubAnswer(404, '{"message":"Not Found"}');
+
+    await expect(
+      hasDeployWorkflow("gh-token", "https://github.com/acme/shop", "main"),
+    ).resolves.toBe(false);
+  });
+
+  it("leaves fetch to follow the redirect a renamed repository answers with", async () => {
+    // A renamed or handed-over repository answers the recorded address with a
+    // 301 to the new one, and the file is found at that new address — the right
+    // answer, since it is the same repository, whose secrets still hold the
+    // server's host key. Following the 301 is fetch's own default, so all this
+    // code decides is not to override it: a request built with
+    // redirect: "manual" (or "error") would read the 301 as "no evidence" and
+    // lose the warning for exactly those repositories
+    stubAnswer(200);
+
+    await expect(
+      hasDeployWorkflow("gh-token", "https://github.com/acme/shop", "main"),
+    ).resolves.toBe(true);
+
+    const init = fetchMock.mock.calls[0][1] as { redirect?: string };
+    expect(init.redirect).toBeUndefined();
+  });
+
+  it("answers no when the request never arrives", async () => {
+    // Offline, or GitHub unreachable: still no evidence, still no error out of
+    // here — the check is bookkeeping the user did not ask for
+    fetchMock.mockRejectedValue(new Error("getaddrinfo ENOTFOUND api.github.com"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      hasDeployWorkflow("gh-token", "https://github.com/acme/shop", "main"),
+    ).resolves.toBe(false);
+  });
+
+  it("answers no for a repository that is not on GitHub", async () => {
+    // Deploy on commit only ever worked with github.com, so such a project
+    // never had it — and nothing is asked of the network to find that out
+    stubAnswer(200);
+
+    await expect(
+      hasDeployWorkflow("gh-token", "https://gitlab.com/acme/shop", "main"),
+    ).resolves.toBe(false);
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

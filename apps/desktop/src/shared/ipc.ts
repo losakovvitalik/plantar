@@ -304,6 +304,7 @@ export interface IpcInvokeMap {
     args: { projectId: string; password?: string };
     result: SetupActionsResult;
   };
+  "github:backfillDeployOnCommit": { args: string; result: ProjectRecord[] };
 
   "history:list": { args: string; result: DeployRecord[] };
   "history:readLog": { args: string; result: string };
@@ -515,6 +516,13 @@ export interface PlantarApi {
     projectId: string,
     password?: string,
   ) => Promise<IpcResult<SetupActionsResult>>;
+  /** Marks the server's git projects whose repository still holds the deploy
+   *  workflow but whose record predates the marker, and answers with the
+   *  projects as they stand afterwards. Asked where the marker is read from —
+   *  a setup made by an older version reads as never made otherwise. Only
+   *  positive evidence writes: no GitHub login or a repository that has no
+   *  workflow file or does not answer leaves the records alone */
+  backfillDeployOnCommitFromGithub: (serverId: string) => Promise<IpcResult<ProjectRecord[]>>;
 
   listHistory: (projectId: string) => Promise<IpcResult<DeployRecord[]>>;
   readDeployLog: (logFile: string) => Promise<IpcResult<string>>;

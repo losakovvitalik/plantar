@@ -22,12 +22,15 @@ const server: ServerRecord = {
   hostKeys: [{ type: "ssh-ed25519", fingerprint: "SHA256:recorded" }],
 };
 
-const { handlers, commitFiles, fetchSecretsPublicKey, putSecrets } = vi.hoisted(() => ({
-  handlers: new Map<string, unknown>(),
-  commitFiles: vi.fn(),
-  fetchSecretsPublicKey: vi.fn(),
-  putSecrets: vi.fn(),
-}));
+const { handlers, commitFiles, fetchSecretsPublicKey, getToken, hasDeployWorkflow, putSecrets } =
+  vi.hoisted(() => ({
+    handlers: new Map<string, unknown>(),
+    commitFiles: vi.fn(),
+    fetchSecretsPublicKey: vi.fn(),
+    getToken: vi.fn(),
+    hasDeployWorkflow: vi.fn(),
+    putSecrets: vi.fn(),
+  }));
 
 vi.mock("electron", () => ({
   ipcMain: {
@@ -47,7 +50,7 @@ vi.mock("libsodium-wrappers", () => ({ default: { ready: Promise.resolve() } }))
 // trust-host-key dialog would actually read
 vi.mock("../github", () => ({
   getAccount: () => ({ login: "acme", canWriteWorkflows: true }),
-  getToken: () => "gh-token",
+  getToken,
   pollDeviceLogin: vi.fn(),
   signOut: vi.fn(),
   startDeviceLogin: vi.fn(),
@@ -74,6 +77,7 @@ vi.mock("../github-actions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../github-actions")>()),
   commitFiles,
   fetchSecretsPublicKey,
+  hasDeployWorkflow,
   putSecrets,
 }));
 
@@ -90,6 +94,14 @@ function invokeSetup(args: SetupArgs): Promise<IpcResult<SetupActionsResult>> {
     | undefined;
   if (!handler) throw new Error("github:setupActions handler was not registered");
   return handler({}, args);
+}
+
+function invokeBackfill(serverId: string): Promise<IpcResult<ProjectRecord[]>> {
+  const handler = handlers.get("github:backfillDeployOnCommit") as
+    | ((event: unknown, serverId: string) => Promise<IpcResult<ProjectRecord[]>>)
+    | undefined;
+  if (!handler) throw new Error("github:backfillDeployOnCommit handler was not registered");
+  return handler({}, serverId);
 }
 
 let tmpHome: string;
@@ -122,6 +134,7 @@ beforeEach(() => {
   writeServers([server]);
   writeProjects([project]);
 
+  getToken.mockReturnValue("gh-token");
   fetchSecretsPublicKey.mockResolvedValue({ key_id: "1", key: "a".repeat(43) + "=" });
   putSecrets.mockResolvedValue(undefined);
   commitFiles.mockResolvedValue({ changed: true });
@@ -133,6 +146,8 @@ afterEach(() => {
   fetchSecretsPublicKey.mockReset();
   putSecrets.mockReset();
   commitFiles.mockReset();
+  getToken.mockReset();
+  hasDeployWorkflow.mockReset();
   rmSync(tmpHome, { recursive: true, force: true });
 });
 
@@ -160,5 +175,81 @@ describe("github:setupActions", () => {
     });
 
     expect(readProjects()[0].deployOnCommit).toBeUndefined();
+  });
+});
+
+describe("github:backfillDeployOnCommit", () => {
+  it("marks a setup made before the marker existed when its workflow is still there", async () => {
+    // The record predates the marker, so nothing local says deploy on commit
+    // exists — the workflow file the setup committed to the project's branch
+    // does. With the marker written, the trust dialog names this project
+    // instead of letting the user trust a new key with no warning at all
+    hasDeployWorkflow.mockResolvedValue(true);
+
+    const result = await invokeBackfill(server.id);
+
+    expect(hasDeployWorkflow).toHaveBeenCalledWith("gh-token", project.repoUrl, project.branch);
+    expect(result).toMatchObject({ ok: true });
+    expect(readProjects()[0].deployOnCommit).toBe(true);
+    // The answer carries the records as they now stand: the dialog reads its
+    // warning from this list rather than asking for the projects again
+    expect(result.ok && result.data[0].deployOnCommit).toBe(true);
+  });
+
+  it("marks only the project whose repository answered yes", async () => {
+    // The repositories are asked all at once, so every answer has to find its
+    // way back to the project it was asked about: the dialog names the marked
+    // projects, and one named by mistake sends the user to set up a deploy on
+    // commit it never had — over the workflow file of the one that has it
+    const other: ProjectRecord = {
+      ...project,
+      id: "p2",
+      name: "blog",
+      repoUrl: "https://github.com/acme/blog",
+    };
+    writeProjects([project, other]);
+    hasDeployWorkflow.mockImplementation((_token: string, repoUrl: string) =>
+      Promise.resolve(repoUrl === other.repoUrl),
+    );
+
+    await expect(invokeBackfill(server.id)).resolves.toMatchObject({ ok: true });
+
+    const projects = readProjects();
+    expect(projects.find((p) => p.id === project.id)?.deployOnCommit).toBeUndefined();
+    expect(projects.find((p) => p.id === other.id)?.deployOnCommit).toBe(true);
+  });
+
+  it("leaves the record untouched when the repository holds no evidence", async () => {
+    // No workflow file, a repository that is gone or one that does not answer:
+    // the same write-only-on-success bias the setup itself has
+    hasDeployWorkflow.mockResolvedValue(false);
+
+    await expect(invokeBackfill(server.id)).resolves.toMatchObject({ ok: true });
+
+    expect(readProjects()[0].deployOnCommit).toBeUndefined();
+  });
+
+  it("leaves the records untouched when there is no GitHub login", async () => {
+    // Nothing to ask GitHub with, so nothing is asked and nothing is written —
+    // the dialog still opens and still warns about the markers already there
+    getToken.mockReturnValue(null);
+
+    await expect(invokeBackfill(server.id)).resolves.toMatchObject({ ok: true });
+
+    expect(hasDeployWorkflow).not.toHaveBeenCalled();
+    expect(readProjects()[0].deployOnCommit).toBeUndefined();
+  });
+
+  it("never clears the marker of an already marked project", async () => {
+    // A marked project is not checked at all: the marker means the repository
+    // was given the server's key, and a workflow file since deleted by hand
+    // does not take that key back out of the repository secrets
+    writeProjects([{ ...project, deployOnCommit: true }]);
+    hasDeployWorkflow.mockResolvedValue(false);
+
+    await expect(invokeBackfill(server.id)).resolves.toMatchObject({ ok: true });
+
+    expect(hasDeployWorkflow).not.toHaveBeenCalled();
+    expect(readProjects()[0].deployOnCommit).toBe(true);
   });
 });

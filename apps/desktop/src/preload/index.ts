@@ -62,6 +62,8 @@ const api: PlantarApi = {
   githubSignOut: () => invoke("github:signOut"),
   setupGithubActions: (projectId, password) =>
     invoke("github:setupActions", { projectId, password }),
+  backfillDeployOnCommitFromGithub: (serverId) =>
+    invoke("github:backfillDeployOnCommit", serverId),
 
   listHistory: (projectId) => invoke("history:list", projectId),
   readDeployLog: (logFile) => invoke("history:readLog", logFile),

@@ -5,9 +5,12 @@ import type { ProjectRecord } from "../../../preload/index.d";
  * the trust-host-key dialog warns about: their repository on GitHub keeps its
  * own copy of the server's host key, so trusting a reinstalled server's new
  * key leaves their push-triggered deploys checking against the previous one.
- * Records written before the marker existed carry no marker and are left out —
- * nothing says they have deploy on commit, and the warning used to be shown to
- * everyone precisely because this could not be told apart.
+ * A record written before the marker existed carries none, so the marker is
+ * backfilled from the deploy workflow left in the repository
+ * (`backfillDeployOnCommitFromGithub`) and the names are read from that answer
+ * as well — a record still without the marker has no evidence of deploy on
+ * commit behind it, and the warning used to be shown to everyone precisely
+ * because this could not be told apart.
  */
 export function deployOnCommitProjectNames(
   projects: ProjectRecord[],
