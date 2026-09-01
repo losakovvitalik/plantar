@@ -18,10 +18,30 @@ async function importGit() {
   return await import("./git");
 }
 
+/**
+ * Before an authenticated call the module asks git what URL it would really
+ * dial (`ls-remote --get-url <url>`, which expands `url.<base>.insteadOf` and
+ * contacts nobody). It is a local lookup, not the operation under test, so
+ * the URL it was asked about is what identifies it — and unless a test says
+ * otherwise the answer is that URL back, the shape of a config that rewrites
+ * nothing.
+ */
+function insteadOfProbeUrl(args: string[]): string | undefined {
+  return args.includes("--get-url") ? args[args.length - 1] : undefined;
+}
+
 /** Rejects like Node's execFile: e.message quotes the full command line */
 function failLikeExecFile(stderr: string): void {
   execFileMock.mockImplementation(
     (file: string, args: string[], _opts: unknown, cb: ExecCallback) => {
+      // The probe answers even here: a git that cannot say where a URL leads
+      // withholds the token, which would take these tests off the auth path
+      // they are about rather than telling them anything about failures.
+      const probed = insteadOfProbeUrl(args);
+      if (probed) {
+        cb(null, { stdout: `${probed}\n` }, "");
+        return;
+      }
       const err = Object.assign(
         new Error(`Command failed: ${file} ${args.join(" ")}`),
         { code: 128, stderr, stdout: "" },
@@ -44,21 +64,39 @@ function mockGitVersion(version: string): void {
         cb(null, { stdout: `git version ${version}\n` }, "");
         return;
       }
+      const probed = insteadOfProbeUrl(args);
+      if (probed) {
+        cb(null, { stdout: `${probed}\n` }, "");
+        return;
+      }
       cb(null, { stdout: "ref: refs/heads/main\tHEAD\nabc123\trefs/heads/main\n" }, "");
     },
   );
 }
 
+/**
+ * The calls that ran a git subcommand, never counting the insteadOf probe:
+ * it shares the `ls-remote` name with the real listing but is a separate,
+ * local-only lookup, so a count or an env that included it would describe
+ * something other than the call the test is about.
+ */
 function callsTo(subcommand: string): ExecCall[] {
   return (execFileMock.mock.calls as ExecCall[]).filter(
-    ([, args]) => args[0] === subcommand,
+    ([, args]) => args[0] === subcommand && !insteadOfProbeUrl(args),
   );
 }
 
 /** Same, for a subcommand that is not args[0] because `-C <dir>` comes first */
 function callsIncluding(arg: string): ExecCall[] {
+  return (execFileMock.mock.calls as ExecCall[]).filter(
+    ([, args]) => args.includes(arg) && !insteadOfProbeUrl(args),
+  );
+}
+
+/** The insteadOf probes that ran, which the two helpers above look past */
+function probeCalls(): ExecCall[] {
   return (execFileMock.mock.calls as ExecCall[]).filter(([, args]) =>
-    args.includes(arg),
+    insteadOfProbeUrl(args),
   );
 }
 
@@ -85,8 +123,8 @@ function mockCloneOrigin(originUrl: string): void {
 
 /** Environment of the first call running the given git subcommand */
 function envOf(subcommand: string): NodeJS.ProcessEnv | undefined {
-  const call = (execFileMock.mock.calls as ExecCall[]).find(([, args]) =>
-    args.includes(subcommand),
+  const call = (execFileMock.mock.calls as ExecCall[]).find(
+    ([, args]) => args.includes(subcommand) && !insteadOfProbeUrl(args),
   );
   return call?.[2].env;
 }
@@ -415,6 +453,121 @@ describe("the GitHub token reaches github.com and nothing else", () => {
 
     expect(callsTo("ls-remote")).toHaveLength(1);
     expect(envOf("ls-remote")).toBeUndefined();
+  });
+});
+
+describe("a git config that sends github.com somewhere else", () => {
+  const ELSEWHERE = "https://evil.example/acme/repo.git";
+
+  /**
+   * `~/.gitconfig` carrying
+   *
+   *     [url "https://evil.example/"]
+   *         insteadOf = https://github.com/
+   *
+   * leaves the URL the app parses untouched and swaps the host underneath it
+   * at connect time. Nothing about the string says so — only git does, when
+   * asked. This is the same string, deliberately rewritten by config, and not
+   * the lookalike case above, where the two parsers read one string apart.
+   */
+  function mockInsteadOf(rewritten: string): void {
+    execFileMock.mockImplementation(
+      (_file: string, args: string[], _opts: unknown, cb: ExecCallback) => {
+        if (args[0] === "--version") {
+          cb(null, { stdout: "git version 2.39.3\n" }, "");
+          return;
+        }
+        if (insteadOfProbeUrl(args)) {
+          cb(null, { stdout: `${rewritten}\n` }, "");
+          return;
+        }
+        cb(null, { stdout: "ref: refs/heads/main\tHEAD\nabc123\trefs/heads/main\n" }, "");
+      },
+    );
+  }
+
+  it("withholds the token when the branch listing would land off GitHub", async () => {
+    const { listRemoteBranches } = await importGit();
+    mockInsteadOf(ELSEWHERE);
+
+    const result = await listRemoteBranches(URL, TOKEN);
+
+    // The listing still runs, and still names github.com — git is the one
+    // applying the substitution, so the URL handed to it stays the app's own
+    expect(result.branches).toEqual(["main"]);
+    expect(callsTo("ls-remote")).toHaveLength(1);
+    expect(callsTo("ls-remote")[0][1]).toContain(URL);
+    // ...but the credential does not travel to whatever answers over there
+    expect(envOf("ls-remote")).toBeUndefined();
+    for (const [, args, opts] of execFileMock.mock.calls as ExecCall[]) {
+      const env = JSON.stringify(opts.env ?? {});
+      expect(env).not.toContain(TOKEN);
+      expect(env).not.toContain(BASIC);
+      expect(args.join(" ")).not.toContain(TOKEN);
+    }
+  });
+
+  it("withholds the token when a clone would land off GitHub", async () => {
+    const { cloneRepo } = await importGit();
+    mockInsteadOf(ELSEWHERE);
+
+    await cloneRepo(URL, "main", "/repos/app", TOKEN);
+
+    expect(callsTo("clone")).toHaveLength(1);
+    expect(envOf("clone")).toBeUndefined();
+  });
+
+  it("keeps the token when the config rewrites this URL to another GitHub form", async () => {
+    const { listRemoteBranches } = await importGit();
+    // A substitution is not suspicious in itself — plenty of configs shorten
+    // GitHub URLs. What matters is only where the result points.
+    mockInsteadOf("https://github.com/acme/repo.git");
+
+    await listRemoteBranches(URL, TOKEN);
+
+    // Asked where the URL leads, and kept the token because of the answer —
+    // not because the question went unasked
+    expect(probeCalls()).toHaveLength(1);
+    expect(envOf("ls-remote")?.GIT_CONFIG_VALUE_0).toBe(`Authorization: Basic ${BASIC}`);
+  });
+
+  it("withholds the token when git cannot say where the URL leads", async () => {
+    const { listRemoteBranches } = await importGit();
+    execFileMock.mockImplementation(
+      (_file: string, args: string[], _opts: unknown, cb: ExecCallback) => {
+        if (args[0] === "--version") {
+          cb(null, { stdout: "git version 2.39.3\n" }, "");
+          return;
+        }
+        if (insteadOfProbeUrl(args)) {
+          const stderr = "fatal: bad config line 1 in file /Users/x/.gitconfig";
+          cb(Object.assign(new Error("Command failed"), { code: 128, stderr }), "", stderr);
+          return;
+        }
+        cb(null, { stdout: "ref: refs/heads/main\tHEAD\nabc123\trefs/heads/main\n" }, "");
+      },
+    );
+
+    const result = await listRemoteBranches(URL, TOKEN);
+
+    // An unanswered question is not a yes: the listing goes out unauthenticated
+    // rather than on the assumption that the URL was never rewritten
+    expect(result.branches).toEqual(["main"]);
+    expect(callsTo("ls-remote")).toHaveLength(1);
+    expect(envOf("ls-remote")).toBeUndefined();
+  });
+
+  it("asks git nothing when there is no token to protect", async () => {
+    const { listRemoteBranches } = await importGit();
+    mockInsteadOf(ELSEWHERE);
+
+    // A public repository listing carries no credential, so where the URL
+    // leads changes nothing — and the lookup is not worth a process
+    await listRemoteBranches(URL);
+    await listRemoteBranches("https://gitlab.internal/team/app.git", TOKEN);
+
+    expect(probeCalls()).toHaveLength(0);
+    expect(callsTo("ls-remote")).toHaveLength(2);
   });
 });
 

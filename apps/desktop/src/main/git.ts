@@ -67,6 +67,14 @@ function canonicalRepoUrl(url: string): string {
  * repository URLs are pasted by the user or read off a server, and no other
  * host may receive it. Redirects are switched off on the same call so git
  * cannot carry the header to another host on its own either.
+ *
+ * What is judged is the URL handed in, and `url.<base>.insteadOf` in the
+ * user's git config can still substitute another prefix for it at connect
+ * time — a rewriting this function never sees. Covering it is the caller's
+ * part, and the two callers do that differently: githubTarget hands in the
+ * app's own, unsubstituted URL and gates the token on a separate dialsGithub
+ * lookup (see there), while cloneAuthEnv hands in an already-substituted URL,
+ * because `remote get-url` expands the substitution as it prints.
  */
 function authEnv(url: string, token?: string): NodeJS.ProcessEnv | undefined {
   if (!token || !isGithubUrl(url)) return undefined;
@@ -81,19 +89,53 @@ function authEnv(url: string, token?: string): NodeJS.ProcessEnv | undefined {
 }
 
 /**
+ * Whether the URL git substitutes for `url` still reads as GitHub —
+ * something `url` itself does not say. `url.<base>.insteadOf` in the user's
+ * git config substitutes one prefix for another after the app has parsed the
+ * URL, so a config making `https://evil.example/` the stand-in for
+ * `https://github.com/` turns a URL that reads as GitHub into a request to
+ * somewhere else. `--get-url` prints the substituted URL and talks to no one.
+ *
+ * An answer that cannot be obtained or cannot be parsed is "not GitHub": the
+ * question exists only to decide whether to part with the token, and an
+ * unanswered question is not a yes.
+ */
+async function dialsGithub(url: string): Promise<boolean> {
+  try {
+    return isGithubUrl((await git(["ls-remote", "--get-url", "--", url])).trim());
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The one entry point for aiming git at a repository URL: canonicalises the
  * URL and builds the auth env for the canonical form, as an inseparable pair.
  * Hand git `target` and `env` together. A call site pairing canonicalRepoUrl
  * with authEnv by hand could build the env yet give git the raw URL — sending
  * the header to the redirecting `www.` host, where the refused redirect would
  * then be misreported as a moved repository.
+ *
+ * `target` stays the URL the app resolved, not the substituted one git prints
+ * — git applies the substitution itself, and handing back the app's own URL
+ * is what keeps a clone's origin as the user pasted it. Only the decision to
+ * attach the token is made on the substituted URL, and only in the direction
+ * of withholding it: the lookup can take the token away, never hand one out.
+ * What it answers is the config as the probe found it — the call it guards is
+ * a second git process, reading that config again for itself.
+ *
+ * The extra git call is spent only once a token is in hand for a URL that
+ * already reads as GitHub — the private-repository paths, which are about to
+ * spend a network round trip anyway. A public repository asks git nothing.
  */
-function githubTarget(
+async function githubTarget(
   url: string,
   token?: string,
-): { target: string; env?: NodeJS.ProcessEnv } {
+): Promise<{ target: string; env?: NodeJS.ProcessEnv }> {
   const target = canonicalRepoUrl(url);
-  return { target, env: authEnv(target, token) };
+  const env = authEnv(target, token);
+  if (env && !(await dialsGithub(target))) return { target };
+  return { target, env };
 }
 
 /**
@@ -239,7 +281,7 @@ export async function listRemoteBranches(
   token?: string,
 ): Promise<RemoteBranches> {
   assertValidRepoUrl(url);
-  const { target, env } = githubTarget(url, token);
+  const { target, env } = await githubTarget(url, token);
   let stdout: string;
   try {
     // --symref выводит симссылку HEAD (дефолтная ветка) + все refs; --heads её бы скрыл
@@ -277,7 +319,7 @@ export async function cloneRepo(
   assertValidRepoUrl(url);
   // The clone stores this URL as its origin, so canonicalising it here is also
   // what keeps every later fetch away from the redirecting host.
-  const { target, env } = githubTarget(url, token);
+  const { target, env } = await githubTarget(url, token);
   const branchArgs: string[] = [];
   if (branch) {
     assertValidBranch(branch);
