@@ -6,10 +6,11 @@ import type { ProjectRecord } from "../../../preload/index.d";
  * own copy of the server's host key, so trusting a reinstalled server's new
  * key leaves their push-triggered deploys checking against the previous one.
  * A record written before the marker existed carries none, so the marker is
- * backfilled from the deploy workflow left in the repository before the names
- * are read here (`backfillDeployOnCommit`) — anything still without it has no
- * evidence of deploy on commit behind it, and the warning used to be shown to
- * everyone precisely because this could not be told apart.
+ * backfilled from the deploy workflow left in the repository
+ * (`backfillDeployOnCommit`) and the names are read from that answer as well —
+ * a record still without the marker has no evidence of deploy on commit behind
+ * it, and the warning used to be shown to everyone precisely because this
+ * could not be told apart.
  */
 export function deployOnCommitProjectNames(
   projects: ProjectRecord[],

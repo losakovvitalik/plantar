@@ -33,9 +33,9 @@ describe("deployOnCommitProjectNames", () => {
   });
 
   it("treats a record left without the marker as not set up", () => {
-    // An old record carries no field at all — same as an explicit absence. The
-    // backfill has run by the time the names are read, so a record still
-    // unmarked has no deploy workflow in its repository either
+    // An old record carries no field at all — same as an explicit absence.
+    // Once the backfill has answered, a record still unmarked has no deploy
+    // workflow in its repository either
     const old = { id: "p1", serverId: "s1", name: "legacy", path: "/tmp/p" };
 
     expect(deployOnCommitProjectNames([old], "s1")).toEqual([]);

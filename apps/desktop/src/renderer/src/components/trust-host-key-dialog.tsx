@@ -85,17 +85,27 @@ export function TrustHostKeyDialog({ server, onClose, onTrusted }: Props) {
       return;
     }
     void loadPresentedKey(serverId);
-    // Read on opening rather than taken from the window's state: the marker is
-    // written when deploy on commit is set up, which no list refresh follows.
-    // The read also gives the marker to the server's setups made before the
+    let cancelled = false;
+    // The markers on disk are read on opening rather than taken from the
+    // window's state: one is written when deploy on commit is set up, which no
+    // list refresh follows. This read stays local, so what the app already
+    // knows is on screen at once — the confirm button goes live as soon as the
+    // key does, and no marker waits behind GitHub answering about some other
+    // project
+    let backfilled = false;
+    void window.plantar.listProjects().then((result) => {
+      if (cancelled || backfilled || !result.ok) return;
+      setDeployOnCommitProjects(deployOnCommitProjectNames(result.data, serverId));
+    });
+    // The same projects, plus the marker given to the setups made before the
     // app recorded one, by looking for the deploy workflow in their
     // repositories — this is the one moment their absence would cost the user
-    // the warning. The note stays advisory: it names whatever the answer
-    // carries, and a read that failed leaves it out rather than blocking the
-    // confirmation on GitHub being reachable
-    let cancelled = false;
+    // the warning. This answer has the last word once it lands, and one that
+    // never came or failed leaves the local names standing rather than taking
+    // the note away or blocking the confirmation on GitHub being reachable
     void window.plantar.backfillDeployOnCommit(serverId).then((result) => {
       if (cancelled || !result.ok) return;
+      backfilled = true;
       setDeployOnCommitProjects(deployOnCommitProjectNames(result.data, serverId));
     });
     return () => {
