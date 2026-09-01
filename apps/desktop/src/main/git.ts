@@ -113,6 +113,13 @@ async function cloneAuthEnv(
     // hand git a URL there is no canonical form to pair the env with —
     // authEnv alone answers the one question this helper asks: is the host
     // GitHub? `www.github.com` is (see GITHUB_HOSTS), stale remote or not.
+    // On a stale `www.` remote the token comes with a catch, though: authEnv
+    // also pins http.followRedirects=false, and `www.` answers only with a
+    // 301, so an authenticated read — the best-effort fetch in listCommits —
+    // degrades to the clone's local history until the next update repoints
+    // the remote. If that degradation ever matters, keep reads read-only via
+    // a per-invocation override:
+    // `git -C <dir> -c remote.origin.url=<canonical> fetch --prune origin`.
     return authEnv(url, token);
   } catch {
     return undefined;
