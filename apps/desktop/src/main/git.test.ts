@@ -595,6 +595,23 @@ describe("what is said when a git config takes the request elsewhere", () => {
     );
   }
 
+  /** Answers the probe with `rewritten`, and the real call with no refs at all */
+  function mockRewriteEmpty(rewritten: string): void {
+    execFileMock.mockImplementation(
+      (_file: string, args: string[], _opts: unknown, cb: ExecCallback) => {
+        if (args[0] === "--version") {
+          cb(null, { stdout: "git version 2.39.3\n" }, "");
+          return;
+        }
+        if (insteadOfProbeUrl(args)) {
+          cb(null, { stdout: `${rewritten}\n` }, "");
+          return;
+        }
+        cb(null, { stdout: "" }, "");
+      },
+    );
+  }
+
   it("explains the redirect when the branch listing fails", async () => {
     const { listRemoteBranches } = await importGit();
     const { t } = await import("./i18n");
@@ -630,6 +647,54 @@ describe("what is said when a git config takes the request elsewhere", () => {
         message: t("repoRedirectedByGitConfig", { message: NOT_FOUND }),
       }),
     );
+  });
+
+  it("explains the redirect when the rewritten address only reads as GitHub", async () => {
+    const { listRemoteBranches } = await importGit();
+    const { t } = await import("./i18n");
+    // The substituted address is the backslash lookalike: `new URL` reads its
+    // host as github.com while git dials evil.example. The token is withheld
+    // either way, but the answer decides what is said — and a request that
+    // left GitHub is exactly what the person waiting needs told.
+    const LOOKALIKE = "https://github.com\\@evil.example/acme/repo.git";
+    mockRewriteFailing(LOOKALIKE, NOT_FOUND);
+
+    const thrown = await listRemoteBranches(URL, TOKEN).catch((e: Error) => e.message);
+
+    expect(thrown).toBe(
+      t("lsRemoteFailed", {
+        message: t("repoRedirectedByGitConfig", { message: NOT_FOUND }),
+      }),
+    );
+    expect(envOf("ls-remote")).toBeUndefined();
+  });
+
+  it("explains the redirect when the mirror answers with no branches at all", async () => {
+    const { listRemoteBranches } = await importGit();
+    const { t } = await import("./i18n");
+    // An unauthorised private repository does not have to fail the call: an
+    // address can answer it with an empty ref list and exit 0, which lands on
+    // the listing's other failure exit. Without the explanation that exit
+    // echoes the bare URL — the same "does not exist" #169 is about.
+    mockRewriteEmpty(MIRROR);
+
+    const thrown = await listRemoteBranches(URL, TOKEN).catch((e: Error) => e.message);
+
+    expect(thrown).toBe(
+      t("lsRemoteFailed", { message: t("repoRedirectedByGitConfig", { message: URL }) }),
+    );
+  });
+
+  it("says nothing new when an empty ref list has no redirect behind it", async () => {
+    const { listRemoteBranches } = await importGit();
+    const { t } = await import("./i18n");
+    // A repository on GitHub with no branches yet answers the same way, and
+    // there is no config to blame for it
+    mockRewriteEmpty(URL);
+
+    const thrown = await listRemoteBranches(URL, TOKEN).catch((e: Error) => e.message);
+
+    expect(thrown).toBe(t("lsRemoteFailed", { message: URL }));
   });
 
   it("says nothing new when an SSH rewrite fails on its own terms", async () => {

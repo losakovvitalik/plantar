@@ -103,7 +103,7 @@ function authEnv(url: string, token?: string): NodeJS.ProcessEnv | undefined {
  * - `elsewhere` — the substitution names another web address, the corporate
  *   mirror case: unauthenticated, that address answers a private repository
  *   as a missing one, so the withholding is worth explaining (see
- *   explainWithheldToken).
+ *   explainRedirect).
  * - `unknown` — the question could not be answered (an unreadable config), or
  *   the answer is not a web address at all, which is the common SSH rewrite
  *   (`[url "git@github.com:"] insteadOf = https://github.com/`): git switches
@@ -125,24 +125,32 @@ async function dialsGithub(url: string): Promise<"github" | "elsewhere" | "unkno
   try {
     const { protocol, hostname } = new URL(dialled);
     const web = protocol === "https:" || protocol === "http:";
-    return web && !GITHUB_HOSTS.has(hostname) ? "elsewhere" : "unknown";
+    // A hostname read out of `new URL` cannot clear the address by itself: a
+    // backslash ends the authority for that parser but not for git's (see
+    // isGithubUrl), so `https://github.com\@evil.example/...` reads as
+    // github.com here while git dials evil.example. isGithubUrl has already
+    // refused it above, and a web address git aims off GitHub is exactly what
+    // this branch is for — calling it unknown would hide the one redirect the
+    // answer exists to explain.
+    const github = !dialled.includes("\\") && GITHUB_HOSTS.has(hostname);
+    return web && !github ? "elsewhere" : "unknown";
   } catch {
     return "unknown"; // scp-style address (git@host:path) — no URL to read
   }
 }
 
 /**
- * git's own failure, with the reason the sign-in went unused in front of it
- * when a config aimed the request at another address. The alternative is what
- * #169 describes: the far end's bare "not found", with nothing pointing at
- * the config that caused it.
+ * A failure as it would be reported, with the reason the sign-in went unused
+ * in front of it when a config aimed the request at another address. The
+ * alternative is what #169 describes: the far end's bare "not found", with
+ * nothing pointing at the config that caused it.
  *
  * Only a failure is annotated. The same config in front of a public
  * repository succeeds, and so does an SSH rewrite on the user's own key —
  * neither has anything to explain, and `redirected` is not set for the SSH
  * one in the first place (see dialsGithub).
  */
-function explainWithheldToken(redirected: boolean | undefined, message: string): string {
+function explainRedirect(redirected: boolean | undefined, message: string): string {
   return redirected ? t("repoRedirectedByGitConfig", { message }) : message;
 }
 
@@ -332,7 +340,7 @@ export async function listRemoteBranches(
     // --symref выводит симссылку HEAD (дефолтная ветка) + все refs; --heads её бы скрыл
     stdout = await git(["ls-remote", "--symref", "--", target], env);
   } catch (err) {
-    const message = explainWithheldToken(redirected, (err as Error).message);
+    const message = explainRedirect(redirected, (err as Error).message);
     throw new Error(t("lsRemoteFailed", { message }));
   }
 
@@ -350,7 +358,13 @@ export async function listRemoteBranches(
     if (head) branches.push(head[1]);
   }
 
-  if (branches.length === 0) throw new Error(t("lsRemoteFailed", { message: url }));
+  // The other way this listing fails: the call itself succeeds and answers
+  // with no refs at all, which is how an address can present a repository the
+  // caller may not read. The explanation belongs here too — behind a mirror
+  // this exit is the same "does not exist" as the failure above.
+  if (branches.length === 0) {
+    throw new Error(t("lsRemoteFailed", { message: explainRedirect(redirected, url) }));
+  }
   if (!defaultBranch || !branches.includes(defaultBranch)) defaultBranch = branches[0];
   return { branches, default: defaultBranch };
 }
@@ -374,7 +388,7 @@ export async function cloneRepo(
   try {
     await git(["clone", ...branchArgs, "--", target, dir], env);
   } catch (err) {
-    const message = explainWithheldToken(redirected, (err as Error).message);
+    const message = explainRedirect(redirected, (err as Error).message);
     throw new Error(t("cloneFailed", { message }));
   }
 }
