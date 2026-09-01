@@ -571,6 +571,148 @@ describe("a git config that sends github.com somewhere else", () => {
   });
 });
 
+describe("what is said when a git config takes the request elsewhere", () => {
+  // The setup of #169: a corporate mirror standing in for github.com. Not an
+  // attack — but not GitHub either, so the token stays behind and the mirror
+  // answers a private repository the way it answers a missing one.
+  const MIRROR = "https://ghproxy.corp/github/acme/repo.git";
+  const NOT_FOUND = `remote: Repository not found.\nfatal: repository '${MIRROR}/' not found`;
+
+  /** Answers the probe with `rewritten`, and fails the real call after it */
+  function mockRewriteFailing(rewritten: string, stderr: string): void {
+    execFileMock.mockImplementation(
+      (_file: string, args: string[], _opts: unknown, cb: ExecCallback) => {
+        if (args[0] === "--version") {
+          cb(null, { stdout: "git version 2.39.3\n" }, "");
+          return;
+        }
+        if (insteadOfProbeUrl(args)) {
+          cb(null, { stdout: `${rewritten}\n` }, "");
+          return;
+        }
+        cb(Object.assign(new Error("Command failed"), { code: 128, stderr }), "", stderr);
+      },
+    );
+  }
+
+  /** Answers the probe with `rewritten`, and the real call with no refs at all */
+  function mockRewriteEmpty(rewritten: string): void {
+    execFileMock.mockImplementation(
+      (_file: string, args: string[], _opts: unknown, cb: ExecCallback) => {
+        if (args[0] === "--version") {
+          cb(null, { stdout: "git version 2.39.3\n" }, "");
+          return;
+        }
+        if (insteadOfProbeUrl(args)) {
+          cb(null, { stdout: `${rewritten}\n` }, "");
+          return;
+        }
+        cb(null, { stdout: "" }, "");
+      },
+    );
+  }
+
+  it("explains the redirect when the branch listing fails", async () => {
+    const { listRemoteBranches } = await importGit();
+    const { t } = await import("./i18n");
+    mockRewriteFailing(MIRROR, NOT_FOUND);
+
+    const thrown = await listRemoteBranches(URL, TOKEN).catch((e: Error) => e.message);
+
+    // Alone, the mirror's "not found" reads as a repository that does not
+    // exist, with nothing pointing at the config that sent the request there
+    expect(thrown).toBe(
+      t("lsRemoteFailed", {
+        message: t("repoRedirectedByGitConfig", { message: NOT_FOUND }),
+      }),
+    );
+    // ...and git's own line stays below the explanation, so a failure that
+    // has nothing to do with the mirror is still readable
+    expect(thrown).toContain(NOT_FOUND);
+  });
+
+  it("explains the redirect when a clone fails", async () => {
+    const { cloneRepo } = await importGit();
+    const { t } = await import("./i18n");
+    mockRewriteFailing(MIRROR, NOT_FOUND);
+
+    const thrown = await cloneRepo(URL, "main", "/repos/app", TOKEN).catch(
+      (e: Error) => e.message,
+    );
+
+    // The other path that carries the URL as an argument — adding a project
+    // from a link, and linking a repository to an imported project
+    expect(thrown).toBe(
+      t("cloneFailed", {
+        message: t("repoRedirectedByGitConfig", { message: NOT_FOUND }),
+      }),
+    );
+  });
+
+  it("explains the redirect when the rewritten address only reads as GitHub", async () => {
+    const { listRemoteBranches } = await importGit();
+    const { t } = await import("./i18n");
+    // The substituted address is the backslash lookalike: `new URL` reads its
+    // host as github.com while git dials evil.example. The token is withheld
+    // either way, but the answer decides what is said — and a request that
+    // left GitHub is exactly what the person waiting needs told.
+    const LOOKALIKE = "https://github.com\\@evil.example/acme/repo.git";
+    mockRewriteFailing(LOOKALIKE, NOT_FOUND);
+
+    const thrown = await listRemoteBranches(URL, TOKEN).catch((e: Error) => e.message);
+
+    expect(thrown).toBe(
+      t("lsRemoteFailed", {
+        message: t("repoRedirectedByGitConfig", { message: NOT_FOUND }),
+      }),
+    );
+    expect(envOf("ls-remote")).toBeUndefined();
+  });
+
+  it("explains the redirect when the mirror answers with no branches at all", async () => {
+    const { listRemoteBranches } = await importGit();
+    const { t } = await import("./i18n");
+    // An unauthorised private repository does not have to fail the call: an
+    // address can answer it with an empty ref list and exit 0, which lands on
+    // the listing's other failure exit. Without the explanation that exit
+    // echoes the bare URL — the same "does not exist" #169 is about.
+    mockRewriteEmpty(MIRROR);
+
+    const thrown = await listRemoteBranches(URL, TOKEN).catch((e: Error) => e.message);
+
+    expect(thrown).toBe(
+      t("lsRemoteFailed", { message: t("repoRedirectedByGitConfig", { message: URL }) }),
+    );
+  });
+
+  it("says nothing new when an empty ref list has no redirect behind it", async () => {
+    const { listRemoteBranches } = await importGit();
+    const { t } = await import("./i18n");
+    // A repository on GitHub with no branches yet answers the same way, and
+    // there is no config to blame for it
+    mockRewriteEmpty(URL);
+
+    const thrown = await listRemoteBranches(URL, TOKEN).catch((e: Error) => e.message);
+
+    expect(thrown).toBe(t("lsRemoteFailed", { message: URL }));
+  });
+
+  it("says nothing new when an SSH rewrite fails on its own terms", async () => {
+    const { listRemoteBranches } = await importGit();
+    const { t } = await import("./i18n");
+    const DENIED = "git@github.com: Permission denied (publickey).";
+    // `[url "git@github.com:"] insteadOf = https://github.com/` is the rewrite
+    // people actually run: the request still reaches GitHub, over the user's
+    // own key, which the token was never part of. Nothing was redirected
+    // anywhere, so a failure here gets no explanation invented for it.
+    mockRewriteFailing("git@github.com:acme/repo.git", DENIED);
+
+    const thrown = await listRemoteBranches(URL, TOKEN).catch((e: Error) => e.message);
+
+    expect(thrown).toBe(t("lsRemoteFailed", { message: DENIED }));
+  });
+});
+
 describe("only an update rewrites the clone", () => {
   it("leaves a stale www origin alone when listing commits", async () => {
     const { listCommits } = await importGit();
